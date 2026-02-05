@@ -17,7 +17,9 @@ Dự án Monorepo bao gồm Backend (NestJS) và Frontend (Next.js 14).
 2. **Cài đặt thư viện (Chạy ở thư mục gốc):**
 
 Bash
+
 npm run install:all
+
 3. **Cấu hình môi trường (.env):**
 
 Vào folder backend, tạo file .env.
@@ -27,15 +29,21 @@ Liên hệ Leader (Tâm) để lấy nội dung file này (Chứa mật khẩu D
 4. **Đồng bộ Database (Nếu máy báo lỗi Prisma):**
 
 Bash
+
 cd backend
+
 npx prisma generate
-▶️ Cách chạy dự án
+
+**▶️ Cách chạy dự án**
 Tại thư mục gốc, chạy lệnh:
 
 Bash
+
 npm run dev
+
 Frontend: http://localhost:3000
 
 Backend API: http://localhost:3001
+
 
 API Docs (Swagger): http://localhost:3001/api
