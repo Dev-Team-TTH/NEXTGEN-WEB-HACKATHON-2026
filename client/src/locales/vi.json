@@ -1,0 +1,94 @@
+{
+    "app": {
+        "documentTitle": "Quản lý kho và tài sản | Team TTH"
+    },
+    "notFound": {
+        "title": "404 - Không tìm thấy trang",
+        "subtitle": "Ôi không! Đường dẫn bạn đang tìm kiếm không tồn tại hoặc đã bị di dời.",
+        "backHome": "Quay về Trang chủ"
+    },
+    "login": {
+        "title": "Đăng nhập hệ thống",
+        "subtitle": "Chào mừng trở lại! Vui lòng điền thông tin.",
+        "email": "Địa chỉ Email",
+        "password": "Mật khẩu",
+        "forgot": "Quên mật khẩu?",
+        "btn": "Đăng nhập",
+        "success": "Đăng nhập thành công!",
+        "error": "Sai email hoặc mật khẩu!"
+    },
+    "sidebar": {
+        "dashboard": "Tổng quan",
+        "inventory": "Kho hàng",
+        "products": "Sản phẩm",
+        "users": "Nhân viên",
+        "settings": "Cài đặt",
+        "expenses": "Chi phí"
+    },
+    "dashboard": {
+        "title": "Tổng quan hệ thống",
+        "salesSummary": "Báo cáo bán hàng"
+    },
+    "navbar": {
+        "profile": "Hồ sơ cá nhân",
+        "settings": "Cài đặt",
+        "logout": "Đăng xuất"
+    },
+    "pages": {
+        "dashboardSubtitle": "Báo cáo doanh thu, chi phí và tình hình kho hàng theo thời gian thực.",
+        "inventorySubtitle": "Danh sách toàn bộ vật tư, thiết bị và tài sản đang được lưu trữ.",
+        "productsSubtitle": "Quản lý danh mục sản phẩm, giá cả và mức tồn kho.",
+        "usersSubtitle": "Danh sách nhân sự và tài khoản quản trị hệ thống.",
+        "expensesSubtitle": "Phân tích và theo dõi các khoản chi phí."
+    },
+    "splash": {
+        "loading": "Đang khởi động hệ thống..."
+    },
+    "inventory": {
+        "loading": "Đang tải dữ liệu kho...",
+        "error": "Lỗi: Không thể kết nối đến máy chủ để tải dữ liệu.",
+        "empty": "Không tìm thấy vật tư / sản phẩm nào",
+        "columns": {
+        "id": "Mã số",
+        "name": "Tên vật tư / Sản phẩm",
+        "price": "Đơn giá",
+        "rating": "Đánh giá",
+        "stock": "Số lượng tồn",
+        "actions": "Hành động"
+        },
+        "exportBtn": "Xuất Excel",
+        "exportFileName": "Danh_Sach_Ton_Kho",
+        "edit": "Sửa",
+        "delete": "Xóa",
+        "deleteConfirm": "Bạn có chắc chắn muốn xóa sản phẩm này khỏi kho không?",
+        "deleteSuccess": "Đã xóa sản phẩm thành công!",
+        "editTitle": "Chỉnh sửa Thông tin Sản phẩm",
+        "updateSuccess": "Cập nhật sản phẩm thành công!",
+        "save": "Lưu thay đổi",
+        "cancel": "Hủy"
+    },
+    "products": {
+        "createBtn": "Thêm Sản phẩm",
+        "searchPlaceholder": "Tìm kiếm sản phẩm...",
+        "loading": "Đang tải dữ liệu sản phẩm...",
+        "error": "Lỗi: Không thể tải danh sách sản phẩm.",
+        "empty": "Không tìm thấy sản phẩm nào khớp với từ khóa",
+        "stock": "Kho"
+    },
+    "productModal": {
+        "title": "Thêm Sản phẩm Mới",
+        "step1": "Thông tin cơ bản",
+        "step2": "Kho hàng",
+        "step3": "Hình ảnh",
+        "name": "Tên sản phẩm",
+        "price": "Đơn giá ($)",
+        "rating": "Đánh giá (1-5 sao)",
+        "stock": "Số lượng tồn kho",
+        "upload": "Nhấn để tải ảnh lên",
+        "uploadHint": "Hỗ trợ PNG, JPG, GIF lên đến 10MB",
+        "next": "Tiếp tục",
+        "prev": "Quay lại",
+        "submit": "Hoàn tất tạo",
+        "cancel": "Hủy"
+    }
+}

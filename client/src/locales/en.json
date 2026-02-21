@@ -1,0 +1,94 @@
+{
+    "app": {
+        "documentTitle": "Inventory & Asset Management | Team TTH"
+    },
+    "notFound": {
+        "title": "404 - Page Not Found",
+        "subtitle": "Oops! The page you are looking for does not exist or has been moved.",
+        "backHome": "Back to Dashboard"
+    },
+    "login": {
+        "title": "System Sign In",
+        "subtitle": "Welcome back! Please enter your details.",
+        "email": "Email Address",
+        "password": "Password",
+        "forgot": "Forgot Password?",
+        "btn": "Sign In",
+        "success": "Login successful!",
+        "error": "Invalid email or password!"
+    },
+    "sidebar": {
+        "dashboard": "Dashboard",
+        "inventory": "Inventory",
+        "products": "Products",
+        "users": "Users",
+        "settings": "Settings",
+        "expenses": "Expenses"
+    },
+    "dashboard": {
+        "title": "Dashboard Overview",
+        "salesSummary": "Sales Summary"
+    },
+    "navbar": {
+        "profile": "My Profile",
+        "settings": "Settings",
+        "logout": "Sign Out"
+    },
+    "pages": {
+        "dashboardSubtitle": "Real-time revenue, expenses, and inventory reports.",
+        "inventorySubtitle": "List of all materials, equipment, and stored assets.",
+        "productsSubtitle": "Manage product catalog, pricing, and stock levels.",
+        "usersSubtitle": "List of employees and system admin accounts.",
+        "expensesSubtitle": "Analyze and track expenses over time."
+    },
+    "splash": {
+        "loading": "Initializing system..."
+    },
+    "inventory": {
+        "loading": "Loading inventory data...",
+        "error": "Error: Cannot connect to server to fetch data.",
+        "empty": "No materials or products found.",
+        "columns": {
+        "id": "ID",
+        "name": "Product Name",
+        "price": "Price",
+        "rating": "Rating",
+        "stock": "Stock Quantity",
+        "actions": "Actions"
+        },
+        "exportBtn": "Export Excel",
+        "exportFileName": "Inventory_List",
+        "edit": "Edit",
+        "delete": "Delete",
+        "deleteConfirm": "Are you sure you want to delete this product from inventory?",
+        "deleteSuccess": "Product deleted successfully!",
+        "editTitle": "Edit Product Information",
+        "updateSuccess": "Product updated successfully!",
+        "save": "Save Changes",
+        "cancel": "Cancel"
+    },
+    "products": {
+        "createBtn": "Create Product",
+        "searchPlaceholder": "Search products...",
+        "loading": "Loading products data...",
+        "error": "Error: Failed to fetch products list.",
+        "empty": "No products found matching the keyword",
+        "stock": "Stock"
+    },
+    "productModal": {
+        "title": "Create New Product",
+        "step1": "Basic Info",
+        "step2": "Inventory",
+        "step3": "Image",
+        "name": "Product Name",
+        "price": "Price ($)",
+        "rating": "Rating (1-5 stars)",
+        "stock": "Stock Quantity",
+        "upload": "Click to upload image",
+        "uploadHint": "PNG, JPG, GIF up to 10MB",
+        "next": "Next Step",
+        "prev": "Back",
+        "submit": "Complete",
+        "cancel": "Cancel"
+    }
+}

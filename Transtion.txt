@@ -1,0 +1,40 @@
+Bước 1: 
+Khi có một nội dung mới cần hiển thị (ví dụ: nút "Thêm mới"),
+tuyệt đối không gõ thẳng chữ đó vào mã nguồn. 
+ 
+!!!!Hãy mở 2 file JSON ra và thêm định nghĩa:
+
+                TRONG File vi.json: 
+                "products": { "addBtn": "Thêm Sản phẩm" }
+
+                TRONG File en.json: 
+                "products": { "addBtn": "Add Product" }
+
+Bước 2:
+Tại file giao diện đang viết (ví dụ page.tsx), 
+!!!import thư viện
+
+import { useTranslation } from "react-i18next";
+
+!!! và khởi tạo hàm t (đại diện cho thao tác translate) ở ngay đầu component:
+
+const MyPage = () => {
+  const { t } = useTranslation();
+  
+  return ( 
+    // ... giao diện HTML ở đây
+  );
+};
+
+Bước 3:
+Tìm đến đoạn HTML cần hiển thị chữ, xóa bỏ chữ cứng gõ tay và thay bằng hàm t('mã_từ_khóa'):
+
+Code cũ (Dễ lỗi): <button>addBtn</button>
+
+Code mới (Chuẩn): <button>{t('products.addBtn')}</button>
+
+công thức: \
+(0)Thêm từ vựng
+(1)Import useTranslation
+(2)Khai báo const { t } = useTranslation()
+(3)Dùng {t('từ_khóa')}
