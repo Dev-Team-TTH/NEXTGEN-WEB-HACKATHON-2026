@@ -38,3 +38,12 @@ công thức: \
 (1)Import useTranslation
 (2)Khai báo const { t } = useTranslation()
 (3)Dùng {t('từ_khóa')}
+
+
+ID Product
+
+Cấu trúc: [Mã Nhóm Hàng] - [Thương Hiệu] - [Thuộc tính] - [Số thứ tự]
+
+Ví dụ: ELEC-AP-IP15-001 (Đồ điện tử - Apple - iPhone 15 - Mẫu số 001).
+
+Ví dụ 2: SHOE-NK-BLK-42 (Giày - Nike - Đen - Size 42).

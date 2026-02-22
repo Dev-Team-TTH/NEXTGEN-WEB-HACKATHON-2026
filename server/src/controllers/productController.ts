@@ -3,19 +3,14 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-export const getProducts = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
+export const getProducts = async (req: Request, res: Response): Promise<void> => {
   try {
     const search = req.query.search?.toString();
     const products = await prisma.products.findMany({
       where: {
-        name: {
-          contains: search,
-          mode: "insensitive", // [NÂNG CẤP] Tìm kiếm thông minh không phân biệt hoa thường
-        },
+        name: { contains: search, mode: "insensitive" },
       },
+      orderBy: { productId: 'desc' }
     });
     res.json(products);
   } catch (error) {
@@ -23,19 +18,29 @@ export const getProducts = async (
   }
 };
 
-export const createProduct = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
+export const createProduct = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { productId, name, price, rating, stockQuantity } = req.body;
+    // 1. Hứng ĐẦY ĐỦ các trường từ Frontend
+    const { productId, name, price, rating, stockQuantity, baseUnit, largeUnit, conversionRate, imageUrl, purchasePrice, status, category, description, reorderPoint, location } = req.body;
+    
     const product = await prisma.products.create({
       data: {
         productId,
         name,
         price,
         rating,
-        stockQuantity,
+        stockQuantity: stockQuantity || 0,
+        baseUnit: baseUnit || "Cái",
+        largeUnit: largeUnit || null,
+        conversionRate: conversionRate ? parseInt(conversionRate) : 1,
+        imageUrl: imageUrl || null,
+        // Các trường Tập đoàn
+        purchasePrice: purchasePrice ? parseFloat(purchasePrice) : 0,
+        status: status || "ACTIVE",
+        category: category || "",
+        description: description || "",
+        reorderPoint: reorderPoint ? parseInt(reorderPoint) : 10,
+        location: location || "",
       },
     });
     res.status(201).json(product);
@@ -44,23 +49,30 @@ export const createProduct = async (
   }
 };
 
-// [MỚI] CẬP NHẬT SẢN PHẨM (UPDATE)
-export const updateProduct = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
+export const updateProduct = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { name, price, rating, stockQuantity } = req.body;
+    // 1. Hứng ĐẦY ĐỦ các trường từ Frontend cho hàm UPDATE
+    const { name, price, rating, stockQuantity, baseUnit, largeUnit, conversionRate, imageUrl, purchasePrice, status, category, description, reorderPoint, location } = req.body;
+    
     const product = await prisma.products.update({
-      where: {
-        productId: id,
-      },
+      where: { productId: id },
       data: {
         name,
         price,
         rating,
         stockQuantity,
+        baseUnit: baseUnit || "Cái",
+        largeUnit: largeUnit || null,
+        conversionRate: conversionRate ? parseInt(conversionRate) : 1,
+        imageUrl: imageUrl !== undefined ? imageUrl : undefined,
+        // Các trường Tập đoàn bắt buộc phải có ở đây
+        purchasePrice: purchasePrice ? parseFloat(purchasePrice) : 0,
+        status: status || "ACTIVE",
+        category: category || "",
+        description: description || "",
+        reorderPoint: reorderPoint ? parseInt(reorderPoint) : 10,
+        location: location || "",
       },
     });
     res.json(product);
@@ -69,18 +81,10 @@ export const updateProduct = async (
   }
 };
 
-// [MỚI] XÓA SẢN PHẨM (DELETE)
-export const deleteProduct = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
+export const deleteProduct = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    await prisma.products.delete({
-      where: {
-        productId: id,
-      },
-    });
+    await prisma.products.delete({ where: { productId: id } });
     res.json({ message: "Product deleted successfully" });
   } catch (error) {
     res.status(500).json({ message: "Error deleting product" });

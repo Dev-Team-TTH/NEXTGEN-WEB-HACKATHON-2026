@@ -8,30 +8,25 @@ export const getDashboardMetrics = async (
   res: Response
 ): Promise<void> => {
   try {
+    // 1. Lấy danh sách sản phẩm phổ biến (có tồn kho cao nhất)
     const popularProducts = await prisma.products.findMany({
       take: 15,
       orderBy: {
         stockQuantity: "desc",
       },
     });
-    const salesSummary = await prisma.salesSummary.findMany({
-      take: 5,
-      orderBy: {
-        date: "desc",
-      },
-    });
-    const purchaseSummary = await prisma.purchaseSummary.findMany({
-      take: 5,
-      orderBy: {
-        date: "desc",
-      },
-    });
+
+    // [ĐÃ XÓA]: salesSummary và purchaseSummary
+
+    // 2. Lấy tóm tắt chi phí (Expense Summary)
     const expenseSummary = await prisma.expenseSummary.findMany({
       take: 5,
       orderBy: {
         date: "desc",
       },
     });
+
+    // 3. Lấy chi tiết chi phí theo danh mục
     const expenseByCategorySummaryRaw = await prisma.expenseByCategory.findMany(
       {
         take: 5,
@@ -40,6 +35,8 @@ export const getDashboardMetrics = async (
         },
       }
     );
+    
+    // Prisma trả về kiểu BigInt cho cột amount, ta cần chuyển nó thành string để gửi qua JSON
     const expenseByCategorySummary = expenseByCategorySummaryRaw.map(
       (item) => ({
         ...item,
@@ -47,10 +44,9 @@ export const getDashboardMetrics = async (
       })
     );
 
+    // Trả về dữ liệu đã được làm sạch
     res.json({
       popularProducts,
-      salesSummary,
-      purchaseSummary,
       expenseSummary,
       expenseByCategorySummary,
     });

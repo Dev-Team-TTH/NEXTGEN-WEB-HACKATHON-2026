@@ -9,7 +9,8 @@ async function deleteAllData(orderedFileNames: string[]) {
     return modelName.charAt(0).toUpperCase() + modelName.slice(1);
   });
 
-  for (const modelName of modelNames) {
+  // [SỬA Ở ĐÂY]: Dùng .reverse() để lật ngược danh sách, giúp xóa Bảng con trước Bảng cha
+  for (const modelName of modelNames.reverse()) {
     const model: any = prisma[modelName as keyof typeof prisma];
     if (model) {
       await model.deleteMany({});
@@ -25,22 +26,26 @@ async function deleteAllData(orderedFileNames: string[]) {
 async function main() {
   const dataDirectory = path.join(__dirname, "seedData");
 
+  // Thứ tự nạp dữ liệu (Cha nạp trước, Con nạp sau)
   const orderedFileNames = [
     "products.json",
     "expenseSummary.json",
-    "sales.json",
-    "salesSummary.json",
-    "purchases.json",
-    "purchaseSummary.json",
     "users.json",
     "expenses.json",
     "expenseByCategory.json",
   ];
 
-  await deleteAllData(orderedFileNames);
+  // Gọi hàm xóa (Hàm này đã được đảo ngược mảng ở bên trong)
+  await deleteAllData([...orderedFileNames]); // Truyền bản sao của mảng để không làm thay đổi mảng gốc
 
+  // Vòng lặp nạp dữ liệu (Giữ nguyên thứ tự chuẩn)
   for (const fileName of orderedFileNames) {
     const filePath = path.join(dataDirectory, fileName);
+    if (!fs.existsSync(filePath)) {
+      console.warn(`File not found, skipping: ${fileName}`);
+      continue;
+    }
+    
     const jsonData = JSON.parse(fs.readFileSync(filePath, "utf-8"));
     const modelName = path.basename(fileName, path.extname(fileName));
     const model: any = prisma[modelName as keyof typeof prisma];

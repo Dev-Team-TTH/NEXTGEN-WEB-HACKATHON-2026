@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -20,54 +14,46 @@ model Users {
 }
 
 model Products {
-  productId     String      @id
-  name          String
-  price         Float
-  rating        Float?
-  stockQuantity Int
-  Sales         Sales[]
-  Purchases     Purchases[]
+  productId      String   @id
+  name           String
+  price          Float
+  rating         Float?
+  stockQuantity  Int      @default(0)
+  
+  baseUnit       String   @default("Cái")
+  largeUnit      String?
+  conversionRate Int      @default(1)
+  imageUrl       String?
+
+  // --- THÊM 6 TRƯỜNG CHUẨN TẬP ĐOÀN ---
+  purchasePrice  Float?   @default(0)
+  status         String   @default("ACTIVE") // Trạng thái: ACTIVE, OUT_OF_STOCK, DISCONTINUED
+  category       String?
+  description    String?
+  reorderPoint   Int      @default(10) // Mặc định dưới 10 là báo động
+  location       String?  // Vị trí kho (VD: Dãy A - Kệ 3)
+
+  InventoryTransactions InventoryTransaction[]
 }
 
-model Sales {
-  saleId      String   @id
-  productId   String
-  timestamp   DateTime
-  quantity    Int
-  unitPrice   Float
-  totalAmount Float
-  product     Products @relation(fields: [productId], references: [productId])
+// BẢNG: Lịch sử Nhập/Xuất kho
+model InventoryTransaction {
+  transactionId String   @id @default(uuid())
+  productId     String
+  type          String   // "IN" (Nhập kho) hoặc "OUT" (Xuất kho)
+  quantity      Int      
+  note          String?  
+  timestamp     DateTime @default(now())
+
+  product       Products @relation(fields: [productId], references: [productId], onDelete: Cascade)
 }
 
-model Purchases {
-  purchaseId String   @id
-  productId  String
-  timestamp  DateTime
-  quantity   Int
-  unitCost   Float
-  totalCost  Float
-  product    Products @relation(fields: [productId], references: [productId])
-}
-
+// Giữ lại chi phí để làm báo cáo Dashboard (VD: Chi phí bảo trì tài sản, phí vận chuyển)
 model Expenses {
   expenseId String   @id
   category  String
   amount    Float
   timestamp DateTime
-}
-
-model SalesSummary {
-  salesSummaryId   String   @id
-  totalValue       Float
-  changePercentage Float?
-  date             DateTime
-}
-
-model PurchaseSummary {
-  purchaseSummaryId String   @id
-  totalPurchased    Float
-  changePercentage  Float?
-  date              DateTime
 }
 
 model ExpenseSummary {
@@ -84,4 +70,14 @@ model ExpenseByCategory {
   amount              BigInt
   date                DateTime
   expenseSummary      ExpenseSummary @relation(fields: [expenseSummaryId], references: [expenseSummaryId])
+}
+
+model Assets {
+  assetId      String   @id @default(uuid())
+  name         String
+  category     String   // VD: Thiết bị điện tử, Nội thất, Phương tiện...
+  status       String   // VD: Đang sử dụng, Sẵn sàng, Đang bảo trì
+  assignedTo   String?  // Người hoặc phòng ban đang mượn/sử dụng
+  purchaseDate DateTime
+  price        Float
 }

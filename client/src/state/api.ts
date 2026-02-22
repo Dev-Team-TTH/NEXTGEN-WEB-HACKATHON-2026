@@ -6,37 +6,46 @@ export interface Product {
   price: number;
   rating?: number;
   stockQuantity: number;
+  baseUnit?: string;
+  largeUnit?: string;
+  conversionRate?: number;
+  imageUrl?: string;
+  // Bổ sung các trường mới:
+  purchasePrice?: number;
+  status?: string;
+  category?: string;
+  description?: string;
+  reorderPoint?: number;
+  location?: string;
 }
 
 export interface NewProduct {
+  productId: string;
   name: string;
   price: number;
   rating?: number;
   stockQuantity: number;
-}
-
-export interface SalesSummary {
-  salesSummaryId: string;
-  totalValue: number;
-  changePercentage?: number;
-  date: string;
-}
-
-export interface PurchaseSummary {
-  purchaseSummaryId: string;
-  totalPurchased: number;
-  changePercentage?: number;
-  date: string;
+  baseUnit?: string;
+  largeUnit?: string;
+  conversionRate?: number;
+  imageUrl?: string;
+  // Bổ sung các trường mới:
+  purchasePrice?: number;
+  status?: string;
+  category?: string;
+  description?: string;
+  reorderPoint?: number;
+  location?: string;
 }
 
 export interface ExpenseSummary {
-  expenseSummarId: string;
+  expenseSummaryId: string;
   totalExpenses: number;
   date: string;
 }
 
 export interface ExpenseByCategorySummary {
-  expenseByCategorySummaryId: string;
+  expenseByCategoryId: string;
   category: string;
   amount: string;
   date: string;
@@ -44,8 +53,6 @@ export interface ExpenseByCategorySummary {
 
 export interface DashboardMetrics {
   popularProducts: Product[];
-  salesSummary: SalesSummary[];
-  purchaseSummary: PurchaseSummary[];
   expenseSummary: ExpenseSummary[];
   expenseByCategorySummary: ExpenseByCategorySummary[];
 }
@@ -56,18 +63,44 @@ export interface User {
   email: string;
 }
 
+// INTERFACE CHO GIAO DỊCH KHO
+export interface InventoryTransaction {
+  productId: string;
+  type: "IN" | "OUT";
+  quantity: number;
+  note: string;
+}
+
+// INTERFACE CHO TÀI SẢN
+export interface Asset {
+  assetId: string;
+  name: string;
+  category: string;
+  status: string;
+  assignedTo: string | null;
+  purchaseDate: string;
+  price: number;
+}
+
+export interface NewAsset {
+  name: string;
+  category: string;
+  status: string;
+  assignedTo?: string;
+  purchaseDate: string;
+  price: number;
+}
+
 export const api = createApi({
   baseQuery: fetchBaseQuery({ baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL }),
   reducerPath: "api",
-  // Khai báo các Tags để Redux tự động refresh data khi có thay đổi
-  tagTypes: ["DashboardMetrics", "Products", "Users", "Expenses"],
+  tagTypes: ["DashboardMetrics", "Products", "Users", "Expenses", "Assets"],
   endpoints: (build) => ({
     getDashboardMetrics: build.query<DashboardMetrics, void>({
       query: () => "/dashboard",
       providesTags: ["DashboardMetrics"],
     }),
     
-    // [R] READ - Lấy danh sách sản phẩm
     getProducts: build.query<Product[], string | void>({
       query: (search) => ({
         url: "/products",
@@ -76,54 +109,90 @@ export const api = createApi({
       providesTags: ["Products"],
     }),
     
-    // [C] CREATE - Thêm sản phẩm mới
     createProduct: build.mutation<Product, NewProduct>({
       query: (newProduct) => ({
         url: "/products",
         method: "POST",
         body: newProduct,
       }),
-      // Báo cho Redux biết danh sách Products đã cũ, cần fetch lại
       invalidatesTags: ["Products"],
     }),
 
-    // [U] UPDATE - Cập nhật sản phẩm
     updateProduct: build.mutation<Product, { productId: string; updatedProduct: Partial<NewProduct> }>({
       query: ({ productId, updatedProduct }) => ({
         url: `/products/${productId}`,
-        method: "PUT", // Hoặc PATCH tùy theo cấu hình Backend NestJS của bạn
+        method: "PUT",
         body: updatedProduct,
       }),
-      invalidatesTags: ["Products"], // Tự động reload lại danh sách
+      invalidatesTags: ["Products"],
     }),
 
-    // [D] DELETE - Xóa sản phẩm
     deleteProduct: build.mutation<void, string>({
       query: (productId) => ({
         url: `/products/${productId}`,
         method: "DELETE",
       }),
-      invalidatesTags: ["Products"], // Tự động reload lại danh sách
+      invalidatesTags: ["Products", "DashboardMetrics"], 
+    }),
+
+    // API ĐIỀU PHỐI NHẬP/XUẤT KHO
+    createTransaction: build.mutation<void, InventoryTransaction>({
+      query: (transaction) => ({
+        url: "/inventory/transaction",
+        method: "POST",
+        body: transaction,
+      }),
+      invalidatesTags: ["Products", "DashboardMetrics"], 
     }),
 
     getUsers: build.query<User[], void>({
       query: () => "/users",
       providesTags: ["Users"],
     }),
+    
     getExpensesByCategory: build.query<ExpenseByCategorySummary[], void>({
       query: () => "/expenses",
       providesTags: ["Expenses"],
     }),
+
+    // API TÀI SẢN
+    getAssets: build.query<Asset[], string | void>({
+      query: (search) => ({
+        url: "/assets",
+        params: search ? { search } : {},
+      }),
+      providesTags: ["Assets"],
+    }),
+    
+    createAsset: build.mutation<Asset, NewAsset>({
+      query: (newAsset) => ({
+        url: "/assets",
+        method: "POST",
+        body: newAsset,
+      }),
+      invalidatesTags: ["Assets"],
+    }),
+
+    deleteAsset: build.mutation<void, string>({
+      query: (assetId) => ({
+        url: `/assets/${assetId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["Assets"],
+    }),
   }),
 });
 
-// EXPORT ĐẦY ĐỦ CÁC HOOKS CRUD
 export const {
   useGetDashboardMetricsQuery,
   useGetProductsQuery,
   useCreateProductMutation,
-  useUpdateProductMutation, // <-- MỚI THÊM
-  useDeleteProductMutation, // <-- MỚI THÊM
+  useUpdateProductMutation,
+  useDeleteProductMutation,
+  useCreateTransactionMutation,
   useGetUsersQuery,
   useGetExpensesByCategoryQuery,
+  useGetAssetsQuery,
+  useCreateAssetMutation,
+  useDeleteAssetMutation,
 } = api;

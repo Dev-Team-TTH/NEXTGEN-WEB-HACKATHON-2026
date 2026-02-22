@@ -23,11 +23,24 @@
         "products": "Products",
         "users": "Users",
         "settings": "Settings",
-        "expenses": "Expenses"
+        "expenses": "Expenses",
+        "assets": "Assets"
     },
     "dashboard": {
         "title": "Dashboard Overview",
-        "salesSummary": "Sales Summary"
+        "salesSummary": "Sales Summary",
+        "assetAndInventoryValue": "Asset & Inventory Value",
+        "totalInventoryValue": "Total Inventory Value",
+        "assetDepreciation": "Asset Depreciation",
+        "inventoryAlerts": "Inventory Alerts",
+        "lowStock": "Low Stock (<100)",
+        "damagedGoods": "Damaged Goods",
+        "expenseFluctuations": "Expense Fluctuations",
+        "operatingExpenses": "Operating Expenses",
+        "savedBudget": "Saved Budget",
+        "updatedToday": "Updated Today",
+        "last7Days": "Last 7 Days",
+        "currentMonth": "Current Month"
     },
     "navbar": {
         "profile": "My Profile",
@@ -48,13 +61,16 @@
         "loading": "Loading inventory data...",
         "error": "Error: Cannot connect to server to fetch data.",
         "empty": "No materials or products found.",
+        "subtitle": "Manage real-time inventory fluctuations.",
+        "searchPlaceholder": "Search material by Name or ID...",
         "columns": {
-        "id": "ID",
-        "name": "Product Name",
-        "price": "Price",
-        "rating": "Rating",
-        "stock": "Stock Quantity",
-        "actions": "Actions"
+            "id": "ID",
+            "name": "Product Name",
+            "price": "Price",
+            "rating": "Rating",
+            "stock": "Stock Quantity",
+            "actions": "Actions",
+            "dispatch": "Dispatch"
         },
         "exportBtn": "Export Excel",
         "exportFileName": "Inventory_List",
@@ -65,7 +81,23 @@
         "editTitle": "Edit Product Information",
         "updateSuccess": "Product updated successfully!",
         "save": "Save Changes",
-        "cancel": "Cancel"
+        "cancel": "Cancel",
+        "btnIn": "Stock In",
+        "btnOut": "Stock Out",
+        "modal": {
+            "titleIn": "Create Stock In Receipt",
+            "titleOut": "Create Stock Out Receipt",
+            "dispatchProduct": "Dispatch Product",
+            "currentStock": "Current Stock:",
+            "quantityIn": "Quantity to Stock In",
+            "quantityOut": "Quantity to Stock Out",
+            "note": "Note / Reason (Optional)",
+            "noteInPlaceholder": "Ex: Batch 2 from Supplier...",
+            "noteOutPlaceholder": "Ex: Dispatch for Alpha project...",
+            "cancel": "Cancel",
+            "confirmIn": "Confirm Stock In",
+            "confirmOut": "Confirm Stock Out"
+        }
     },
     "products": {
         "createBtn": "Create Product",
@@ -73,7 +105,18 @@
         "loading": "Loading products data...",
         "error": "Error: Failed to fetch products list.",
         "empty": "No products found matching the keyword",
-        "stock": "Stock"
+        "stock": "Stock",
+        "subtitle": "Manage materials/goods catalog (Master Data)",
+        "editTooltip": "Edit Information",
+        "deleteTooltip": "Delete Product",
+        "editModal": {
+            "title": "Update Catalog",
+            "name": "Product Name",
+            "price": "Listed Price",
+            "rating": "Rating",
+            "save": "Save Changes",
+            "cancel": "Cancel"
+        }
     },
     "productModal": {
         "title": "Create New Product",
@@ -89,6 +132,45 @@
         "next": "Next Step",
         "prev": "Back",
         "submit": "Complete",
-        "cancel": "Cancel"
+        "cancel": "Cancel",
+        "infoBox": "Newly declared products will have an initial stock of 0. Please switch to the Inventory module to perform Stock In."
+    },
+    "assets": {
+        "title": "Fixed Asset Management",
+        "subtitle": "Track, allocate, and depreciate internal corporate assets",
+        "createBtn": "Add New Asset",
+        "searchPlaceholder": "Search assets by name...",
+        "empty": "No assets found in the system",
+        "columns": {
+            "id": "Asset ID",
+            "name": "Asset Name",
+            "category": "Category",
+            "status": "Status",
+            "assignedTo": "Assigned To",
+            "purchaseDate": "Purchase Date",
+            "price": "Original Cost",
+            "actions": "Actions"
+        },
+        "modal": {
+            "title": "Declare New Asset",
+            "name": "Asset Name",
+            "category": "Category",
+            "status": "Status",
+            "purchaseDate": "Purchase Date",
+            "price": "Original Cost ($)",
+            "assignedTo": "Assigned Person / Dept",
+            "assignedToPlaceholder": "Ex: John Doe, IT Dept...",
+            "cancel": "Cancel",
+            "save": "Save Asset"
+        },
+        "options": {
+            "electronics": "Electronics",
+            "furniture": "Furniture",
+            "vehicles": "Vehicles",
+            "machinery": "Industrial Machinery",
+            "ready": "Ready",
+            "inUse": "In Use",
+            "maintenance": "Under Maintenance"
+        }
     }
 }
