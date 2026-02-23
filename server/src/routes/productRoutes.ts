@@ -1,18 +1,15 @@
 import { Router } from "express";
-import { 
-  createProduct, 
-  getProducts, 
-  updateProduct, 
-  deleteProduct 
-} from "../controllers/productController";
+import { getProducts, createProduct, updateProduct, deleteProduct } from "../controllers/productController";
 
 const router = Router();
 
 router.get("/", getProducts);
 router.post("/", createProduct);
 
-// [MỚI] Các route cho Sửa và Xóa
-router.put("/:id", updateProduct);    // Endpoint: PUT /products/:id
-router.delete("/:id", deleteProduct); // Endpoint: DELETE /products/:id
+// Đảm bảo bạn có dòng này để hứng request Sửa sản phẩm:
+router.put("/:productId", updateProduct);
+
+// Đảm bảo bạn có dòng này để hứng request Xóa sản phẩm:
+router.delete("/:productId", deleteProduct);
 
 export default router;

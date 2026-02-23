@@ -12,6 +12,7 @@ import {
   Menu,
   SlidersHorizontal,
   User,
+  ClipboardCheck,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -116,6 +117,12 @@ const Sidebar = () => {
           href="/dashboard"
           icon={Layout}
           label={t('sidebar.dashboard')}
+          isCollapsed={isSidebarCollapsed}
+        />
+        <SidebarLink
+          href="/approvals"
+          icon={ClipboardCheck}
+          label="Duyệt Phiếu Kho"
           isCollapsed={isSidebarCollapsed}
         />
         <SidebarLink

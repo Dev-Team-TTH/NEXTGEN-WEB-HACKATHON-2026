@@ -1,13 +1,21 @@
 "use client";
 
 import React, { useState, ChangeEvent, FormEvent } from "react";
-import { X, ArrowRight, ArrowLeft, CheckCircle, UploadCloud, Package, Image as ImageIcon, Scale, AlignLeft, DollarSign } from "lucide-react";
+import { 
+  X, ArrowRight, ArrowLeft, CheckCircle, UploadCloud, Package, 
+  Image as ImageIcon, AlignLeft, DollarSign, Layers, CalendarClock, Trash2, Tag, Box
+} from "lucide-react";
+
+export type VariantData = {
+  sku: string;
+  attributes: string;
+  additionalPrice: number | string;
+};
 
 export type ProductFormData = {
   productId: string;
   name: string;
   price: number | string;
-  stockQuantity: number; 
   rating: number | string;
   baseUnit: string;
   largeUnit: string;
@@ -18,34 +26,20 @@ export type ProductFormData = {
   category: string;
   description: string;
   reorderPoint: number | string;
-  location: string;
-};
-
-type CreateProductModalProps = {
-  isOpen: boolean;
-  onClose: () => void;
-  onCreate: (formData: ProductFormData) => void;
+  hasVariants: boolean;
+  hasBatches: boolean;
+  variants: VariantData[];
 };
 
 const generateSKU = () => "SP-" + Math.random().toString(36).substring(2, 8).toUpperCase();
 
-const CreateProductModal = ({ isOpen, onClose, onCreate }: CreateProductModalProps) => {
+const CreateProductModal = ({ isOpen, onClose, onCreate }: any) => {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState<ProductFormData>({
-    productId: generateSKU(),
-    name: "",
-    price: "", 
-    stockQuantity: 0, 
-    rating: "", 
-    baseUnit: "Cái",
-    largeUnit: "",
-    conversionRate: 1,
-    purchasePrice: "",
-    status: "ACTIVE",
-    category: "",
-    description: "",
-    reorderPoint: 10,
-    location: "",
+    productId: generateSKU(), name: "", price: "", rating: "", 
+    baseUnit: "Cái", largeUnit: "", conversionRate: 1,
+    purchasePrice: "", status: "ACTIVE", category: "", description: "", 
+    reorderPoint: 10, hasVariants: false, hasBatches: false, variants: []
   });
   
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -53,11 +47,9 @@ const CreateProductModal = ({ isOpen, onClose, onCreate }: CreateProductModalPro
   if (!isOpen) return null;
 
   const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData({
-      ...formData,
-      [name]: value,
-    });
+    const { name, value, type } = e.target;
+    const checked = (e.target as HTMLInputElement).checked;
+    setFormData({ ...formData, [name]: type === "checkbox" ? checked : value });
   };
 
   const handleImageChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -65,22 +57,26 @@ const CreateProductModal = ({ isOpen, onClose, onCreate }: CreateProductModalPro
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        const base64String = reader.result as string;
-        setImagePreview(base64String);
-        setFormData({ ...formData, imageUrl: base64String });
+        setImagePreview(reader.result as string);
+        setFormData({ ...formData, imageUrl: reader.result as string });
       };
       reader.readAsDataURL(file);
     }
   };
 
+  const addVariant = () => setFormData({ ...formData, variants: [...formData.variants, { sku: `${formData.productId}-V${formData.variants.length + 1}`, attributes: "", additionalPrice: 0 }] });
+  
+  const updateVariant = (index: number, field: string, value: string | number) => {
+    const newVariants = [...formData.variants];
+    newVariants[index] = { ...newVariants[index], [field]: value } as any;
+    setFormData({ ...formData, variants: newVariants });
+  };
+  
+  const removeVariant = (index: number) => setFormData({ ...formData, variants: formData.variants.filter((_, i) => i !== index) });
+
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    
-    // Nếu chưa tới bước cuối thì chuyển bước
-    if (step < 3) {
-      setStep(step + 1);
-      return;
-    }
+    if (step < 4) return setStep(step + 1);
 
     const finalData = {
       ...formData,
@@ -89,187 +85,253 @@ const CreateProductModal = ({ isOpen, onClose, onCreate }: CreateProductModalPro
       rating: Number(formData.rating) || 0,
       conversionRate: Number(formData.conversionRate) || 1,
       reorderPoint: Number(formData.reorderPoint) || 10,
+      variants: formData.hasVariants ? formData.variants.map(v => ({ ...v, additionalPrice: Number(v.additionalPrice) || 0 })) : [],
+      stockQuantity: 0 // Bắt buộc tồn kho ban đầu là 0 để tuân thủ quy trình WMS
     };
 
-    onCreate(finalData as any);
+    onCreate(finalData);
     
+    // Reset form
     setFormData({ 
-      productId: generateSKU(), name: "", price: "", stockQuantity: 0, rating: "", 
-      baseUnit: "Cái", largeUnit: "", conversionRate: 1, imageUrl: "",
-      purchasePrice: "", status: "ACTIVE", category: "", description: "", 
-      reorderPoint: 10, location: "",
+      productId: generateSKU(), name: "", price: "", rating: "", baseUnit: "Cái", largeUnit: "", conversionRate: 1,
+      purchasePrice: "", status: "ACTIVE", category: "", description: "", reorderPoint: 10, hasVariants: false, hasBatches: false, variants: []
     });
     setImagePreview(null);
     setStep(1);
-    onClose();
   };
+
+  // --- STANDARD CSS CLASSES ---
+  const labelClass = "block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1.5";
+  const inputClass = "w-full h-11 px-4 rounded-lg border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-gray-700 text-sm font-medium text-gray-800 dark:text-gray-100 transition-shadow";
+  const blockClass = "bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm";
+  const blockHeaderClass = "text-sm font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2 mb-5 pb-3 border-b border-gray-100 dark:border-gray-700";
 
   const renderStepContent = () => {
     switch (step) {
       case 1:
         return (
-          <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
-            <div className="flex gap-4">
-              <div className="w-1/3">
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Mã SKU / ID <span className="text-red-500">*</span></label>
-                <input type="text" name="productId" value={formData.productId ?? ""} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 dark:text-white outline-none transition-all font-mono text-sm uppercase" required placeholder="VD: SP-001..." />
+          <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+            <div className={blockClass}>
+              <h3 className={blockHeaderClass}><AlignLeft className="w-4 h-4 text-blue-500" /> Thông tin cơ bản</h3>
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
+                <div className="md:col-span-4">
+                  <label className={labelClass}>Mã SKU (Tự sinh) <span className="text-red-500">*</span></label>
+                  <input type="text" name="productId" value={formData.productId} onChange={handleChange} className={`${inputClass} font-mono uppercase bg-gray-50`} required />
+                </div>
+                <div className="md:col-span-8">
+                  <label className={labelClass}>Tên Sản phẩm Gốc <span className="text-red-500">*</span></label>
+                  <input type="text" name="name" value={formData.name} onChange={handleChange} className={inputClass} placeholder="VD: Sữa chua Vinamilk" required />
+                </div>
+                <div className="md:col-span-6">
+                  <label className={labelClass}>Danh mục</label>
+                  <input type="text" name="category" value={formData.category} onChange={handleChange} className={inputClass} placeholder="VD: Đồ uống" />
+                </div>
+                <div className="md:col-span-6">
+                  <label className={labelClass}>Mức cảnh báo Tồn kho thấp</label>
+                  <div className="relative">
+                    <input type="number" name="reorderPoint" value={formData.reorderPoint} onChange={handleChange} className={`${inputClass} pr-12 font-bold text-red-600`} />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-gray-400">{formData.baseUnit}</span>
+                  </div>
+                </div>
               </div>
-              <div className="w-2/3">
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Tên sản phẩm <span className="text-red-500">*</span></label>
-                <input type="text" name="name" value={formData.name ?? ""} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 dark:text-white outline-none transition-all" required />
-              </div>
-            </div>
-
-            <div className="flex gap-4">
-              <div className="w-1/2">
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Danh mục (Ngành hàng)</label>
-                <input type="text" name="category" placeholder="VD: Đồ điện tử..." value={formData.category ?? ""} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 dark:text-white outline-none transition-all" />
-              </div>
-              <div className="w-1/2">
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Đánh giá sơ bộ (Sao)</label>
-                <input type="number" name="rating" min="0" max="5" step="0.01" value={formData.rating ?? ""} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 dark:text-white outline-none transition-all" />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Mô tả / Ghi chú chi tiết</label>
-              <textarea name="description" rows={3} placeholder="VD: Cấu hình, chất liệu, lưu ý đóng gói..." value={formData.description ?? ""} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 dark:text-white outline-none resize-none transition-all" />
             </div>
           </div>
         );
       case 2:
         return (
-          <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
-            {/* NHÓM TÀI CHÍNH */}
-            <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200 dark:border-green-800">
-              <h4 className="flex items-center gap-2 text-sm font-bold text-green-800 dark:text-green-300 mb-3"><DollarSign className="w-4 h-4"/> Thiết lập Giá trị</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-green-700 dark:text-green-400 mb-1">Giá vốn (Nhập vào)</label>
-                  <input type="number" name="purchasePrice" min="0" value={formData.purchasePrice ?? ""} onChange={handleChange} className="w-full px-3 py-2.5 rounded-lg border border-green-200 dark:border-green-700 bg-white dark:bg-gray-700 dark:text-white outline-none transition-all" />
+          <div className="animate-in fade-in slide-in-from-right-4 duration-300 space-y-5">
+            <div className={blockClass}>
+              <h3 className={blockHeaderClass}><DollarSign className="w-4 h-4 text-green-500" /> Cấu hình Giá & Đơn vị tính</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Tài chính */}
+                <div className="bg-gray-50 dark:bg-gray-900 p-5 rounded-xl border border-gray-200 dark:border-gray-700 space-y-4">
+                  <div>
+                    <label className={labelClass}>Giá Vốn (Nhập)</label>
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold">$</span>
+                      <input type="number" name="purchasePrice" value={formData.purchasePrice} onChange={handleChange} className={`${inputClass} pl-9`} placeholder="0.00" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-green-700 dark:text-green-400 mb-1.5">Giá Bán Cơ Bản <span className="text-red-500">*</span></label>
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-green-600 font-black">$</span>
+                      <input type="number" name="price" value={formData.price} onChange={handleChange} className={`${inputClass} pl-9 border-green-300 bg-green-50 text-green-800 font-bold focus:ring-green-500`} placeholder="0.00" required />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-green-700 dark:text-green-400 mb-1">Giá Bán ra <span className="text-red-500">*</span></label>
-                  <input type="number" name="price" min="0" value={formData.price ?? ""} onChange={handleChange} className="w-full px-3 py-2.5 rounded-lg border border-green-200 dark:border-green-700 bg-white dark:bg-gray-700 dark:text-white outline-none transition-all font-bold text-green-700 dark:text-green-400" required />
-                </div>
-              </div>
-            </div>
 
-            {/* CẤU HÌNH UoM */}
-            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
-              <h4 className="flex items-center gap-2 text-sm font-bold text-blue-800 dark:text-blue-300 mb-3"><Scale className="w-4 h-4"/> Quy đổi Đơn vị (UoM)</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-blue-700 dark:text-blue-400 mb-1">Đơn vị Lẻ (Xuất) <span className="text-red-500">*</span></label>
-                  <input type="text" name="baseUnit" placeholder="VD: Cái, Chai" value={formData.baseUnit ?? ""} onChange={handleChange} className="w-full px-3 py-2.5 rounded-lg border border-blue-200 dark:border-blue-700 bg-white dark:bg-gray-700 dark:text-white outline-none transition-all" required />
+                {/* Đơn vị */}
+                <div className="bg-blue-50/50 dark:bg-blue-900/10 p-5 rounded-xl border border-blue-100 dark:border-blue-800/50 space-y-4">
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <label className={labelClass}>Đơn vị Lẻ <span className="text-red-500">*</span></label>
+                      <input type="text" name="baseUnit" value={formData.baseUnit} onChange={handleChange} className={inputClass} placeholder="Cái, Hộp" required />
+                    </div>
+                    <div className="flex-1">
+                      <label className={labelClass}>Đơn vị Sỉ (Thùng)</label>
+                      <input type="text" name="largeUnit" value={formData.largeUnit} onChange={handleChange} className={inputClass} placeholder="Thùng" />
+                    </div>
+                  </div>
+                  {formData.largeUnit && (
+                    <div className="flex items-center justify-center gap-3 bg-white dark:bg-gray-800 p-3 rounded-lg border border-blue-200 shadow-sm mt-2">
+                      <span className="text-xs font-semibold text-gray-500">1 {formData.largeUnit} = </span>
+                      <input type="number" name="conversionRate" min="2" value={formData.conversionRate} onChange={handleChange} className="w-20 h-9 px-2 text-center font-bold text-blue-700 rounded-md border border-gray-300 outline-none focus:ring-2 focus:ring-blue-500" required />
+                      <span className="text-xs font-semibold text-gray-500">{formData.baseUnit}</span>
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-blue-700 dark:text-blue-400 mb-1">Đơn vị Sỉ (Nhập)</label>
-                  <input type="text" name="largeUnit" placeholder="VD: Thùng, Lốc" value={formData.largeUnit ?? ""} onChange={handleChange} className="w-full px-3 py-2.5 rounded-lg border border-blue-200 dark:border-blue-700 bg-white dark:bg-gray-700 dark:text-white outline-none transition-all" />
-                </div>
-              </div>
-              {formData.largeUnit && (
-                <div className="mt-3 flex items-center gap-3 bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-blue-200 dark:border-blue-700">
-                  <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Công thức: 1 {formData.largeUnit} = </span>
-                  <input type="number" name="conversionRate" min="2" value={formData.conversionRate ?? ""} onChange={handleChange} className="w-20 px-2 py-1 text-center font-bold text-blue-600 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-white outline-none transition-all" required />
-                  <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">{formData.baseUnit}</span>
-                </div>
-              )}
-            </div>
-
-            {/* NHÓM QUẢN TRỊ KHO BÃI */}
-            <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-xl border border-orange-200 dark:border-orange-800 grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-orange-800 dark:text-orange-400 mb-1">Vị trí lưu kho</label>
-                <input type="text" name="location" placeholder="VD: Kệ A - Tầng 3" value={formData.location ?? ""} onChange={handleChange} className="w-full px-3 py-2.5 rounded-lg border border-orange-200 dark:border-orange-700 bg-white dark:bg-gray-700 dark:text-white outline-none transition-all" />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-orange-800 dark:text-orange-400 mb-1">Báo động khi tồn dưới</label>
-                <input type="number" name="reorderPoint" min="0" value={formData.reorderPoint ?? ""} onChange={handleChange} className="w-full px-3 py-2.5 rounded-lg border border-orange-200 dark:border-orange-700 bg-white dark:bg-gray-700 dark:text-white outline-none transition-all font-bold text-orange-600" />
               </div>
             </div>
           </div>
         );
       case 3:
         return (
-          <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
-            <div className="w-full">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Tải lên Ảnh Sản phẩm (Tùy chọn)</label>
-              <div className="mt-2 flex justify-center rounded-xl border border-dashed border-gray-300 dark:border-gray-600 px-6 py-12 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors relative">
-                <div className="text-center">
-                  {imagePreview ? (
-                    <div className="flex flex-col items-center">
-                      <img src={imagePreview} alt="Preview" className="rounded-lg object-cover shadow-md mb-3 h-40 w-40 border border-gray-200" />
-                      <span className="text-sm text-blue-600 font-bold cursor-pointer hover:underline">Nhấn để đổi ảnh khác</span>
-                    </div>
-                  ) : (
-                    <>
-                      <UploadCloud className="mx-auto h-16 w-16 text-gray-300 dark:text-gray-500" aria-hidden="true" />
-                      <div className="mt-4 flex justify-center text-sm leading-6 text-gray-600 dark:text-gray-400">
-                        <label className="relative cursor-pointer rounded-md font-semibold text-blue-600 hover:text-blue-500">
-                          <span>Chọn tệp từ máy tính</span>
-                          <input type="file" className="sr-only" accept="image/jpeg, image/png, image/webp" onChange={handleImageChange} />
-                        </label>
+          <div className="animate-in fade-in slide-in-from-right-4 duration-300 space-y-5">
+            <div className={blockClass}>
+              <h3 className={blockHeaderClass}><Box className="w-4 h-4 text-purple-500" /> Thiết lập Thuộc tính & Kho (WMS)</h3>
+              
+              {/* Quản lý Lô */}
+              <div className="p-4 border border-amber-200 bg-amber-50/50 dark:bg-amber-900/10 rounded-xl mb-4 transition-colors hover:bg-amber-50">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input type="checkbox" name="hasBatches" checked={formData.hasBatches} onChange={handleChange} className="w-5 h-5 mt-0.5 text-amber-600 rounded border-gray-300 focus:ring-amber-500" />
+                  <div>
+                    <span className="text-sm font-bold text-amber-800 flex items-center gap-2"><CalendarClock className="w-4 h-4"/> Yêu cầu quản lý theo Lô / HSD (FEFO)</span>
+                    <p className="text-xs text-amber-600/80 mt-1 font-medium">Bật tùy chọn này, hệ thống sẽ bắt buộc khai báo số Lô và Hạn sử dụng mỗi khi Nhập/Xuất kho.</p>
+                  </div>
+                </label>
+              </div>
+
+              {/* Phân loại (Variant) */}
+              <div className="p-4 border border-purple-200 bg-purple-50/50 dark:bg-purple-900/10 rounded-xl transition-colors hover:bg-purple-50">
+                <label className="flex items-center gap-3 cursor-pointer mb-4">
+                  <input type="checkbox" name="hasVariants" checked={formData.hasVariants} onChange={handleChange} className="w-5 h-5 text-purple-600 rounded border-gray-300 focus:ring-purple-500" />
+                  <span className="text-sm font-bold text-purple-800 flex items-center gap-2"><Layers className="w-4 h-4"/> Sản phẩm có Phân loại (Size, Màu sắc...)</span>
+                </label>
+                
+                {formData.hasVariants && (
+                  <div className="space-y-3 pt-3 border-t border-purple-100">
+                    {formData.variants.map((v, index) => (
+                      <div key={index} className="flex flex-col sm:flex-row items-end gap-3 bg-white dark:bg-gray-800 p-3 rounded-xl border border-purple-100 shadow-sm relative">
+                        <div className="w-full sm:w-1/3">
+                          <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5">Mã SKU Phân loại <span className="text-red-500">*</span></label>
+                          <input type="text" value={v.sku} onChange={(e) => updateVariant(index, "sku", e.target.value)} className={`${inputClass} font-mono text-xs`} required/>
+                        </div>
+                        <div className="w-full sm:w-1/3">
+                          <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5">Tên Thuộc tính <span className="text-red-500">*</span></label>
+                          <input type="text" value={v.attributes} onChange={(e) => updateVariant(index, "attributes", e.target.value)} placeholder="VD: Màu Đỏ - XL" className={inputClass} required/>
+                        </div>
+                        <div className="w-full sm:w-1/3">
+                          <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5">Giá phụ thu (+)</label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">$</span>
+                            <input type="number" value={v.additionalPrice} onChange={(e) => updateVariant(index, "additionalPrice", e.target.value)} className={`${inputClass} pl-8 text-blue-600 font-bold`} />
+                          </div>
+                        </div>
+                        <button type="button" onClick={() => removeVariant(index)} className="absolute -top-2 -right-2 p-1.5 bg-red-100 text-red-600 hover:bg-red-500 hover:text-white rounded-full shadow-sm transition-colors">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
-                      <p className="text-xs text-gray-400 mt-2">PNG, JPG, WEBP lên đến 10MB</p>
-                    </>
-                  )}
-                </div>
-                <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept="image/jpeg, image/png, image/webp" onChange={handleImageChange} />
+                    ))}
+                    <button type="button" onClick={addVariant} className="text-xs font-bold text-purple-700 bg-purple-100 px-4 py-2 rounded-lg hover:bg-purple-200 transition-colors w-full sm:w-auto border border-purple-200 border-dashed">
+                      + Thêm dòng Phân loại
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
         );
-      default: 
-        return null;
+      case 4:
+        return (
+          <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+            <div className={blockClass}>
+              <h3 className={blockHeaderClass}><ImageIcon className="w-4 h-4 text-pink-500" /> Hình ảnh Sản phẩm</h3>
+              <div className="flex flex-col sm:flex-row items-center gap-6 py-4">
+                {imagePreview ? (
+                  <div className="relative group">
+                    <img src={imagePreview} alt="Preview" className="rounded-xl object-cover h-40 w-40 shadow-md border border-gray-200" />
+                    <button type="button" onClick={() => setImagePreview(null)} className="absolute -top-3 -right-3 bg-red-500 text-white rounded-full p-2 shadow-lg hover:scale-110 transition-transform">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center w-40 h-40 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-2xl cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors bg-gray-50/50">
+                    <UploadCloud className="w-10 h-10 text-gray-400 mb-3" />
+                    <span className="text-xs text-gray-500 font-bold uppercase tracking-wider">Tải ảnh lên</span>
+                    <input type="file" className="hidden" accept="image/*" onChange={handleImageChange} />
+                  </label>
+                )}
+                <div className="flex-1 text-center sm:text-left">
+                  <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Ảnh đại diện Master Data</h4>
+                  <p className="text-xs text-gray-500 mb-4">Định dạng hỗ trợ: JPG, PNG, WEBP.<br/>Khuyến nghị kích thước vuông 500x500px.</p>
+                  {imagePreview && (
+                    <label className="inline-block px-4 py-2 bg-blue-50 text-blue-700 text-xs font-bold rounded-lg border border-blue-200 cursor-pointer hover:bg-blue-100 transition-colors">
+                      Đổi ảnh khác
+                      <input type="file" className="hidden" accept="image/*" onChange={handleImageChange} />
+                    </label>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      default: return null;
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 transition-all">
-      <div className="relative w-full max-w-3xl max-h-[90vh] flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 transition-all overflow-y-auto">
+      <div className="relative w-full max-w-3xl bg-gray-50 dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
         
         {/* HEADER */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 shrink-0">
-          <h2 className="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2"><Package className="w-6 h-6 text-blue-600" /> Khai báo Sản phẩm Mới</h2>
-          <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 bg-white dark:bg-gray-700 rounded-full shadow-sm hover:bg-gray-100"><X className="w-5 h-5" /></button>
+        <div className="flex items-center justify-between px-6 py-4 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
+          <h2 className="text-xl font-bold text-blue-800 dark:text-blue-400 flex items-center gap-2">
+            <Package className="w-6 h-6" /> Khởi tạo Master Data Mới
+          </h2>
+          <button onClick={onClose} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
-        {/* STEPPER */}
-        <div className="px-8 pt-6 pb-2 shrink-0">
-          <div className="flex items-center justify-between relative">
-            <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-1 bg-gray-100 dark:bg-gray-700 z-0"></div>
-            
-            {[
-              { num: 1, icon: <AlignLeft className="w-4 h-4" />, label: "Cơ bản" },
-              { num: 2, icon: <DollarSign className="w-4 h-4" />, label: "Vận hành" },
-              { num: 3, icon: <ImageIcon className="w-4 h-4" />, label: "Hình ảnh" }
-            ].map((s) => (
-              <div key={s.num} className={`relative z-10 flex flex-col items-center gap-2 ${step >= s.num ? 'opacity-100' : 'opacity-40'}`}>
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm border-4 border-white dark:border-gray-800 transition-colors ${step > s.num ? 'bg-green-500 text-white' : step === s.num ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'bg-gray-200 text-gray-500'}`}>
-                  {step > s.num ? <CheckCircle className="w-5 h-5" /> : s.icon}
+        {/* STEPPER (Thanh tiến trình đẹp mắt) */}
+        <div className="px-6 py-4 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-800 flex justify-between relative">
+          <div className="absolute top-1/2 left-6 right-6 h-0.5 bg-gray-200 dark:bg-gray-700 -z-0 -translate-y-1/2"></div>
+          {["Cơ bản", "Giá & Đơn vị", "WMS / Phân loại", "Hình ảnh"].map((label, i) => {
+            const isCompleted = step > i + 1;
+            const isActive = step === i + 1;
+            return (
+              <div key={i} className="flex flex-col items-center gap-1.5 z-10 bg-white dark:bg-gray-800 px-2">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-colors ${
+                  isCompleted ? "bg-blue-600 border-blue-600 text-white" : 
+                  isActive ? "bg-white border-blue-600 text-blue-600" : 
+                  "bg-white border-gray-300 text-gray-400"
+                }`}>
+                  {isCompleted ? <CheckCircle className="w-4 h-4" /> : i + 1}
                 </div>
-                <span className={`text-xs font-bold ${step === s.num ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500'}`}>{s.label}</span>
+                <span className={`text-[10px] font-bold uppercase tracking-wider hidden sm:block ${isActive ? 'text-blue-600' : 'text-gray-400'}`}>{label}</span>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
 
-        {/* FORM CONTENT DẠNG CUỘN */}
-        <form id="createProductForm" onSubmit={handleSubmit} className="p-6 overflow-y-auto flex-1 min-h-[350px]">
+        {/* BODY (Form lướt) */}
+        <form id="createProductForm" onSubmit={handleSubmit} className="p-6 overflow-y-auto bg-gray-50/50">
           {renderStepContent()}
         </form>
 
         {/* FOOTER */}
-        <div className="flex items-center justify-between px-6 py-5 bg-gray-50 dark:bg-gray-800/80 border-t border-gray-100 dark:border-gray-700 shrink-0">
-          <button type="button" onClick={step === 1 ? onClose : () => setStep(step - 1)} className="px-5 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl flex items-center gap-2 transition-colors">
-            {step === 1 ? "Hủy bỏ" : <><ArrowLeft className="w-4 h-4" /> Quay lại</>}
+        <div className="flex items-center justify-between px-6 py-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 sticky bottom-0 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+          <button type="button" onClick={step === 1 ? onClose : () => setStep(step - 1)} className="px-5 py-2.5 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors flex items-center gap-2">
+            {step === 1 ? "Hủy bỏ" : <><ArrowLeft className="w-4 h-4"/> Quay lại</>}
           </button>
           
-          <button type="submit" form="createProductForm" className={`px-6 py-2.5 text-sm font-bold text-white rounded-xl shadow-md flex items-center gap-2 active:scale-95 transition-all ${step < 3 ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/30' : 'bg-green-600 hover:bg-green-700 shadow-green-500/30'}`}>
-            {step < 3 ? <>Tiếp tục <ArrowRight className="w-4 h-4" /></> : <><CheckCircle className="w-4 h-4" /> Hoàn tất lưu</>}
+          <button type="submit" form="createProductForm" className="px-6 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-transform active:scale-95 flex items-center gap-2">
+            {step < 4 ? <>Tiếp tục <ArrowRight className="w-4 h-4"/></> : <><CheckCircle className="w-4 h-4" /> Hoàn tất Khởi tạo</>}
           </button>
         </div>
+
       </div>
     </div>
   );

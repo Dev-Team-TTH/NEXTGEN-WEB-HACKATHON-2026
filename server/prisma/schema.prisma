@@ -18,34 +18,87 @@ model Products {
   name           String
   price          Float
   rating         Float?
-  stockQuantity  Int      @default(0)
+  stockQuantity  Int      @default(0) // Sẽ chỉ thay đổi khi phiếu ĐÃ ĐƯỢC DUYỆT
   
   baseUnit       String   @default("Cái")
   largeUnit      String?
   conversionRate Int      @default(1)
   imageUrl       String?
 
-  // --- THÊM 6 TRƯỜNG CHUẨN TẬP ĐOÀN ---
   purchasePrice  Float?   @default(0)
-  status         String   @default("ACTIVE") // Trạng thái: ACTIVE, OUT_OF_STOCK, DISCONTINUED
+  status         String   @default("ACTIVE")
   category       String?
   description    String?
-  reorderPoint   Int      @default(10) // Mặc định dưới 10 là báo động
-  location       String?  // Vị trí kho (VD: Dãy A - Kệ 3)
+  reorderPoint   Int      @default(10)
+  
+  hasVariants    Boolean  @default(false)
+  hasBatches     Boolean  @default(false)
 
+  Variants              ProductVariant[]
+  Batches               ProductBatch[] // Vẫn giữ để tra cứu nhanh toàn bộ lô của SP
   InventoryTransactions InventoryTransaction[]
 }
 
-// BẢNG: Lịch sử Nhập/Xuất kho
-model InventoryTransaction {
-  transactionId String   @id @default(uuid())
-  productId     String
-  type          String   // "IN" (Nhập kho) hoặc "OUT" (Xuất kho)
-  quantity      Int      
-  note          String?  
-  timestamp     DateTime @default(now())
+model ProductVariant {
+  variantId      String   @id @default(uuid())
+  productId      String
+  sku            String   @unique 
+  attributes     String   
+  additionalPrice Float   @default(0) 
+  stockQuantity  Int      @default(0) 
 
-  product       Products @relation(fields: [productId], references: [productId], onDelete: Cascade)
+  product        Products @relation(fields: [productId], references: [productId], onDelete: Cascade)
+  
+  Batches        ProductBatch[] // MỐI QUAN HỆ CỐT LÕI: 1 Biến thể có nhiều Lô
+  Transactions   InventoryTransaction[]
+}
+
+model ProductBatch {
+  batchId        String   @id @default(uuid())
+  batchNumber    String   
+  
+  productId      String
+  variantId      String   // BẮT BUỘC: Lô này phải thuộc về 1 biến thể cụ thể (VD: Lô của Milo 150ML)
+  
+  manufactureDate DateTime? 
+  expiryDate      DateTime  
+  stockQuantity   Int      @default(0) 
+
+  product        Products @relation(fields: [productId], references: [productId], onDelete: Cascade)
+  variant        ProductVariant @relation(fields: [variantId], references: [variantId], onDelete: Cascade)
+  
+  Transactions   InventoryTransaction[]
+
+  @@unique([variantId, batchNumber]) // RÀNG BUỘC: Mỗi biến thể chỉ có 1 số lô duy nhất (Dùng để Gộp Lô)
+}
+
+// CẬP NHẬT BẢNG THỂ KHO (TRANSACTIONS) ĐỂ GẮN VỚI LÔ/BIẾN THỂ
+model InventoryTransaction {
+  transactionId  String   @id @default(uuid())
+  
+  productId      String
+  variantId      String?  
+  batchId        String?  // Có thể rỗng nếu lúc tạo phiếu chưa biết lô
+  
+  // -- THÔNG TIN DÀNH CHO NHẬP KHO (LÔ MỚI) --
+  newBatchNumber String?  // Thủ kho gõ số lô mới vào đây
+  expiryDate     DateTime?
+  location       String?  // Vị trí thực tế cất lô hàng này ở giao dịch này (Kệ A, Tầng 1)
+
+  timestamp      DateTime @default(now())
+  type           String   // IN / OUT
+  quantity       Int
+  note           String?
+
+  // --- QUY TRÌNH DUYỆT (APPROVAL WORKFLOW) ---
+  status         String   @default("PENDING") // PENDING (Chờ duyệt), COMPLETED (Đã duyệt), REJECTED (Từ chối)
+  createdBy      String?  // ID Thủ kho tạo phiếu
+  approvedBy     String?  // ID Quản lý duyệt phiếu
+  approvedAt     DateTime?
+
+  product        Products @relation(fields: [productId], references: [productId], onDelete: Cascade)
+  variant        ProductVariant? @relation(fields: [variantId], references: [variantId], onDelete: Cascade)
+  batch          ProductBatch? @relation(fields: [batchId], references: [batchId], onDelete: Cascade)
 }
 
 // Giữ lại chi phí để làm báo cáo Dashboard (VD: Chi phí bảo trì tài sản, phí vận chuyển)

@@ -1,136 +1,148 @@
 "use client";
 
-import { X, Save, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
-import { useState, useEffect, ChangeEvent, FormEvent } from "react";
+import React, { useState, FormEvent, useEffect, useMemo } from "react";
+import { X, ArrowDownToLine, ArrowUpFromLine, Package, Layers, CalendarClock, AlertTriangle, MapPin } from "lucide-react";
 
-const TransactionModal = ({ 
-  isOpen, 
-  onClose, 
-  product, 
-  txType, 
-  stockDisplay, 
-  onSubmit, 
-  isSubmitting 
-}: any) => {
-  const [txForm, setTxForm] = useState({ quantity: 0, note: "", unitType: "BASE" });
+const TransactionModal = ({ isOpen, onClose, product, txType, onSubmit, isSubmitting }: any) => {
+  const [quantity, setQuantity] = useState<number | "">("");
+  const [note, setNote] = useState("");
+  const [unitType, setUnitType] = useState<"BASE" | "LARGE">("BASE");
+  
+  const [selectedVariantId, setSelectedVariantId] = useState<string>("");
+  const [selectedBatchId, setSelectedBatchId] = useState<string>(""); 
+  const [newBatchNumber, setNewBatchNumber] = useState<string>(""); 
+  const [expiryDate, setExpiryDate] = useState<string>(""); 
+  const [location, setLocation] = useState<string>(""); 
+
+  const isOut = txType === "OUT";
+
+  const availableBatches = useMemo(() => {
+    if (!product?.Batches) return [];
+    let filtered = product.Batches;
+    if (product.hasVariants && selectedVariantId) {
+      filtered = filtered.filter((b: any) => b.variantId === selectedVariantId);
+    }
+    if (isOut) {
+      filtered = filtered.filter((b: any) => b.stockQuantity > 0);
+    }
+    return filtered.sort((a: any, b: any) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
+  }, [product, selectedVariantId, isOut]);
+
+  useEffect(() => {
+    if (isOut && availableBatches.length > 0) {
+      setSelectedBatchId(availableBatches[0].batchId);
+    } else {
+      setSelectedBatchId("");
+    }
+  }, [availableBatches, isOut]);
 
   useEffect(() => {
     if (isOpen) {
-      setTxForm({ quantity: 0, note: "", unitType: "BASE" });
+      setQuantity(""); setNote(""); setUnitType("BASE"); setSelectedVariantId(""); setSelectedBatchId(""); setNewBatchNumber(""); setExpiryDate(""); setLocation("");
     }
   }, [isOpen]);
 
   if (!isOpen || !product) return null;
 
-  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setTxForm((prev) => ({ 
-      ...prev, 
-      [name]: name === "quantity" ? parseInt(value) || 0 : value 
-    }));
-  };
-
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    onSubmit(txForm.quantity, txForm.note, txForm.unitType);
+    if (!quantity || quantity <= 0) return;
+    if (product.hasVariants && !selectedVariantId) return alert("Vui lòng chọn Phân loại!");
+    if (product.hasBatches) {
+      if (isOut && !selectedBatchId) return alert("Kho không còn lô hàng nào để xuất!");
+      if (!isOut && (!newBatchNumber || !expiryDate)) return alert("Vui lòng nhập Số lô và Hạn sử dụng!");
+    }
+
+    onSubmit(
+      Number(quantity), note, unitType, 
+      selectedVariantId || undefined, 
+      selectedBatchId || undefined,
+      newBatchNumber || undefined,
+      expiryDate || undefined,
+      location || undefined
+    );
   };
 
-  // Tính toán trực tiếp số lượng cơ bản sẽ bị biến động
-  const multiplier = txForm.unitType === "LARGE" ? (product.conversionRate || 1) : 1;
-  const finalQuantity = (txForm.quantity || 0) * multiplier;
-  const isLargeSelected = txForm.unitType === "LARGE";
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 transition-all">
-      <div className="relative w-full max-w-md bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className={`flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700 ${txType === "IN" ? "bg-green-50 dark:bg-green-900/20" : "bg-orange-50 dark:bg-orange-900/20"}`}>
-          <h2 className={`text-xl font-bold flex items-center gap-2 ${txType === "IN" ? "text-green-700 dark:text-green-400" : "text-orange-700 dark:text-orange-400"}`}>
-            {txType === "IN" ? <ArrowDownToLine className="w-5 h-5" /> : <ArrowUpFromLine className="w-5 h-5" />}
-            {txType === "IN" ? "Nhập Hàng" : "Xuất Hàng"}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 transition-all overflow-y-auto">
+      <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl overflow-hidden my-auto">
+        <div className={`flex items-center justify-between px-6 py-4 border-b border-gray-100 ${isOut ? "bg-orange-50" : "bg-green-50"}`}>
+          <h2 className={`text-xl font-bold flex items-center gap-2 ${isOut ? "text-orange-700" : "text-green-700"}`}>
+            {isOut ? <ArrowUpFromLine className="w-6 h-6" /> : <ArrowDownToLine className="w-6 h-6" />}
+            {isOut ? "Tạo Phiếu Yêu Cầu Xuất Kho" : "Tạo Phiếu Yêu Cầu Nhập Kho"}
           </h2>
-          <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 bg-white dark:bg-gray-700 rounded-full shadow-sm transition-all">
-            <X className="w-5 h-5" />
-          </button>
+          <button type="button" onClick={onClose} className="p-2 text-gray-400 hover:bg-white rounded-full"><X className="w-5 h-5" /></button>
         </div>
-        
+
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl border border-gray-100 dark:border-gray-600">
-            <h3 className="font-bold text-gray-900 dark:text-white mb-1 line-clamp-1">{product.name}</h3>
-            <p className="text-sm dark:text-gray-300">
-              Tồn kho hiện hành: <span className="font-bold text-blue-600 dark:text-blue-400">{stockDisplay}</span>
-            </p>
-          </div>
-          
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Số lượng</label>
-              <input 
-                type="number" 
-                name="quantity" 
-                min="1" 
-                value={txForm.quantity || ""} 
-                onChange={handleChange} 
-                className="w-full px-4 py-3 text-2xl font-bold text-center rounded-xl border border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-white outline-none transition-all" 
-                required 
-                autoFocus 
-              />
+          <div className="flex items-center gap-4 p-3 bg-gray-50 border border-gray-200 rounded-xl">
+            <div className="w-12 h-12 bg-white rounded flex items-center justify-center border shadow-sm"><Package className="w-6 h-6 text-gray-500" /></div>
+            <div>
+              <h3 className="font-bold text-gray-900 line-clamp-1">{product.name}</h3>
+              <p className="text-sm text-gray-500">Tổng kho SP: <strong className="text-blue-600">{product.stockQuantity} {product.baseUnit}</strong></p>
             </div>
-            <div className="w-1/2">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Chọn Đơn vị</label>
-              <select 
-                name="unitType" 
-                value={txForm.unitType} 
-                onChange={handleChange} 
-                className="w-full px-4 py-3 text-lg font-bold rounded-xl border border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-white outline-none cursor-pointer transition-all"
-              >
-                <option value="BASE">{product.baseUnit || "Cái"}</option>
-                {product.largeUnit && product.conversionRate && product.conversionRate > 1 && (
-                  <option value="LARGE">{product.largeUnit}</option>
-                )}
+          </div>
+
+          {product.hasVariants && (
+            <div>
+              <label className="flex items-center gap-2 text-sm font-bold text-purple-700 mb-2"><Layers className="w-4 h-4"/> 1. Chọn Phân loại <span className="text-red-500">*</span></label>
+              <select value={selectedVariantId} onChange={(e) => setSelectedVariantId(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-purple-200 bg-purple-50 focus:ring-2 focus:ring-purple-500 outline-none font-medium text-purple-900" required>
+                <option value="">-- Bấm để chọn phân loại --</option>
+                {product.Variants?.map((v: any) => (
+                  <option key={v.variantId} value={v.variantId}>{v.attributes} (Tồn loại này: {v.stockQuantity})</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {product.hasBatches && (!product.hasVariants || selectedVariantId) && (
+            <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 space-y-3">
+              <label className="flex items-center gap-2 text-sm font-bold text-amber-800"><CalendarClock className="w-4 h-4"/> 2. Quản lý Lô / Date <span className="text-red-500">*</span></label>
+              {isOut ? (
+                <div>
+                  <select value={selectedBatchId} onChange={(e) => setSelectedBatchId(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-white outline-none font-medium" required>
+                    <option value="">-- Chọn Lô để xuất hàng --</option>
+                    {availableBatches.map((b: any, index: number) => (
+                      <option key={b.batchId} value={b.batchId}>
+                        {index === 0 ? "🔥 ƯU TIÊN XUẤT (FEFO): " : ""} Lô {b.batchNumber} - HSD: {new Date(b.expiryDate).toLocaleDateString("vi-VN")} - Tồn: {b.stockQuantity}
+                      </option>
+                    ))}
+                  </select>
+                  {availableBatches.length === 0 && <p className="text-xs text-red-500 font-bold mt-2">Biến thể này đã hết hàng trong mọi lô!</p>}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="block text-xs font-semibold text-amber-700 mb-1">Mã Lô in trên hộp <span className="text-red-500">*</span></label><input type="text" value={newBatchNumber} onChange={(e) => setNewBatchNumber(e.target.value)} placeholder="VD: L01-2026" className="w-full px-3 py-2 rounded border border-amber-300 outline-none uppercase" required /></div>
+                  <div><label className="block text-xs font-semibold text-amber-700 mb-1">Ngày Hết Hạn <span className="text-red-500">*</span></label><input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="w-full px-3 py-2 rounded border border-red-300 text-red-700 font-bold outline-none" required /></div>
+                  <div className="col-span-2"><label className="flex items-center gap-1 text-xs font-semibold text-gray-600 mb-1"><MapPin className="w-3 h-3"/> Vị trí cất lô hàng này (Tùy chọn)</label><input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="VD: Kệ B - Tầng 2" className="w-full px-3 py-2 rounded border border-gray-300 outline-none" /></div>
+                  <p className="col-span-2 text-[11px] text-amber-600 italic">💡 Hệ thống sẽ tự gộp số lượng nếu bạn nhập trùng Mã Lô của cùng 1 biến thể.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">3. Số lượng Giao dịch <span className="text-red-500">*</span></label>
+            <div className="flex gap-3">
+              <input type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value === "" ? "" : Number(e.target.value))} className="flex-1 px-4 py-3 text-xl font-bold text-center rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="0" required />
+              <select value={unitType} onChange={(e) => setUnitType(e.target.value as any)} className="w-1/3 px-4 py-3 rounded-xl border border-gray-300 font-semibold outline-none cursor-pointer">
+                <option value="BASE">{product.baseUnit || "Lẻ"}</option>
+                {product.largeUnit && <option value="LARGE">{product.largeUnit} (x{product.conversionRate})</option>}
               </select>
             </div>
           </div>
 
-          <div className={`p-4 rounded-xl border ${txType === "IN" ? "bg-green-50 border-green-200 text-green-800" : "bg-orange-50 border-orange-200 text-orange-800"}`}>
-            <p className="text-xs font-semibold uppercase opacity-80 mb-1">Dữ liệu gốc ghi nhận vào thẻ kho:</p>
-            <p className="text-xl font-black">
-              {txType === "IN" ? "+" : "-"} {finalQuantity} {product.baseUnit}
-            </p>
-            {isLargeSelected && (
-              <div className="mt-2 pt-2 border-t border-current/20">
-                <p className="text-sm font-medium">
-                  Diễn giải: {txForm.quantity || 0} {product.largeUnit} × {product.conversionRate} {product.baseUnit}/{product.largeUnit}
-                </p>
-              </div>
-            )}
+          <div><label className="block text-xs font-semibold text-gray-500 mb-1">Ghi chú phiếu (Tùy chọn)</label><input type="text" value={note} onChange={(e) => setNote(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border border-gray-200 outline-none" placeholder="VD: Nhập hàng từ xe tải 51C..." /></div>
+
+          <div className="flex items-start gap-2 bg-blue-50 p-3 rounded-lg border border-blue-100">
+            <AlertTriangle className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-blue-800 leading-relaxed"><strong>Lưu ý:</strong> Nút này chỉ tạo <b>Phiếu Yêu Cầu</b> (PENDING). Tồn kho thực tế sẽ thay đổi sau khi Quản lý duyệt phiếu.</p>
           </div>
-          
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Ghi chú (Tùy chọn)</label>
-            <textarea 
-              name="note" 
-              rows={2} 
-              value={txForm.note} 
-              onChange={handleChange} 
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 dark:text-white outline-none resize-none transition-all" 
-              placeholder={`VD: ${txType === "IN" ? "Nhập" : "Xuất"} ${txForm.quantity || 0} ${txForm.unitType === "LARGE" ? product.largeUnit : product.baseUnit} từ NCC...`}
-            />
-          </div>
-          
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-700 mt-6">
-            <button 
-              type="button" 
-              onClick={onClose} 
-              className="px-5 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-colors"
-            >
-              Hủy
-            </button>
-            <button 
-              type="submit" 
-              disabled={isSubmitting} 
-              className={`px-6 py-2.5 text-sm font-bold text-white rounded-xl shadow-md flex items-center gap-2 transition-all active:scale-95 ${txType === "IN" ? "bg-green-600 hover:bg-green-700" : "bg-orange-600 hover:bg-orange-700"} ${isSubmitting ? "opacity-70 cursor-not-allowed" : ""}`}
-            >
-              <Save className="w-4 h-4" /> Ghi sổ thẻ kho
+
+          <div className="pt-2 flex gap-3">
+            <button type="button" onClick={onClose} className="px-5 py-3.5 font-bold text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">Hủy</button>
+            <button type="submit" disabled={isSubmitting || (isOut && product.hasBatches && availableBatches.length === 0)} className={`flex-1 py-3.5 text-base font-bold text-white rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-95 ${isSubmitting ? 'opacity-70 cursor-wait' : isOut ? 'bg-orange-500 hover:bg-orange-600' : 'bg-green-600 hover:bg-green-700'}`}>
+              Gửi Yêu Cầu {isOut ? "Xuất" : "Nhập"} Kho
             </button>
           </div>
         </form>
@@ -138,5 +150,4 @@ const TransactionModal = ({
     </div>
   );
 };
-
 export default TransactionModal;

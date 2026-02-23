@@ -1,5 +1,24 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 
+export interface ProductVariant {
+  variantId: string;
+  productId: string;
+  sku: string;
+  attributes: string;
+  additionalPrice: number;
+  stockQuantity: number;
+}
+
+export interface ProductBatch {
+  batchId: string;
+  batchNumber: string;
+  productId: string;
+  variantId?: string;
+  manufactureDate?: string;
+  expiryDate: string;
+  stockQuantity: number;
+}
+
 export interface Product {
   productId: string;
   name: string;
@@ -10,13 +29,16 @@ export interface Product {
   largeUnit?: string;
   conversionRate?: number;
   imageUrl?: string;
-  // Bổ sung các trường mới:
   purchasePrice?: number;
   status?: string;
   category?: string;
   description?: string;
   reorderPoint?: number;
   location?: string;
+  hasVariants?: boolean;
+  hasBatches?: boolean;
+  Variants?: ProductVariant[];
+  Batches?: ProductBatch[];
 }
 
 export interface NewProduct {
@@ -29,13 +51,15 @@ export interface NewProduct {
   largeUnit?: string;
   conversionRate?: number;
   imageUrl?: string;
-  // Bổ sung các trường mới:
   purchasePrice?: number;
   status?: string;
   category?: string;
   description?: string;
   reorderPoint?: number;
   location?: string;
+  hasVariants?: boolean;
+  hasBatches?: boolean;
+  variants?: any[];
 }
 
 export interface ExpenseSummary {
@@ -63,15 +87,31 @@ export interface User {
   email: string;
 }
 
-// INTERFACE CHO GIAO DỊCH KHO
 export interface InventoryTransaction {
+  transactionId: string;
   productId: string;
-  type: "IN" | "OUT";
+  timestamp: string;
+  type: string;
   quantity: number;
-  note: string;
+  note?: string;
+  variantId?: string;
+  batchId?: string;
+  status?: string;
 }
 
-// INTERFACE CHO TÀI SẢN
+export interface NewInventoryTransaction {
+  productId: string;
+  type: string;
+  quantity: number;
+  note?: string;
+  variantId?: string;
+  batchId?: string;
+  newBatchNumber?: string;
+  expiryDate?: string;
+  location?: string;
+  createdBy?: string;
+}
+
 export interface Asset {
   assetId: string;
   name: string;
@@ -135,15 +175,39 @@ export const api = createApi({
       invalidatesTags: ["Products", "DashboardMetrics"], 
     }),
 
-    // API ĐIỀU PHỐI NHẬP/XUẤT KHO
-    createTransaction: build.mutation<void, InventoryTransaction>({
-      query: (transaction) => ({
-        url: "/inventory/transaction",
+    createTransaction: build.mutation<InventoryTransaction, NewInventoryTransaction>({
+      query: (newTransaction) => ({
+        url: "/inventory",
         method: "POST",
-        body: transaction,
+        body: newTransaction,
       }),
-      invalidatesTags: ["Products", "DashboardMetrics"], 
+      invalidatesTags: ["Products"], 
     }),
+
+    // === 3 API MỚI CHO QUY TRÌNH DUYỆT PHIẾU ===
+    getTransactions: build.query<any[], void>({
+      query: () => "/inventory",
+      providesTags: ["Products"],
+    }),
+
+    approveTransaction: build.mutation<void, { id: string; approvedBy: string }>({
+      query: ({ id, approvedBy }) => ({
+        url: `/inventory/${id}/approve`,
+        method: "PUT",
+        body: { approvedBy },
+      }),
+      invalidatesTags: ["Products"],
+    }),
+
+    rejectTransaction: build.mutation<void, { id: string; approvedBy: string }>({
+      query: ({ id, approvedBy }) => ({
+        url: `/inventory/${id}/reject`,
+        method: "PUT",
+        body: { approvedBy },
+      }),
+      invalidatesTags: ["Products"],
+    }),
+    // ===========================================
 
     getUsers: build.query<User[], void>({
       query: () => "/users",
@@ -155,7 +219,6 @@ export const api = createApi({
       providesTags: ["Expenses"],
     }),
 
-    // API TÀI SẢN
     getAssets: build.query<Asset[], string | void>({
       query: (search) => ({
         url: "/assets",
@@ -183,6 +246,7 @@ export const api = createApi({
   }),
 });
 
+// XUẤT THÊM 3 CÁI HOOK MỚI VÀO ĐÂY
 export const {
   useGetDashboardMetricsQuery,
   useGetProductsQuery,
@@ -190,6 +254,9 @@ export const {
   useUpdateProductMutation,
   useDeleteProductMutation,
   useCreateTransactionMutation,
+  useGetTransactionsQuery,
+  useApproveTransactionMutation,
+  useRejectTransactionMutation,
   useGetUsersQuery,
   useGetExpensesByCategoryQuery,
   useGetAssetsQuery,

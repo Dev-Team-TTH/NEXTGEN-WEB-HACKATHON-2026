@@ -12,19 +12,20 @@ export const exportInventoryToExcel = async (filteredProducts: Product[]) => {
   const worksheet = workbook.addWorksheet("BaoCaoTonKho", { views: [{ showGridLines: false }] });
 
   // --- PHẦN 1: THÔNG TIN CHUNG & TIÊU ĐỀ ---
-  worksheet.mergeCells('A1:M1'); // Tăng lên M vì thêm 1 cột Ảnh
+  // Tăng lên O vì thêm 2 cột (Lô hàng, Phân loại)
+  worksheet.mergeCells('A1:O1'); 
   const companyCell = worksheet.getCell('A1');
   companyCell.value = 'HỆ THỐNG QUẢN TRỊ KHO TẬP ĐOÀN (ERP)';
   companyCell.font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FF1E3A8A' } };
   companyCell.alignment = { vertical: 'middle', horizontal: 'left' };
 
-  worksheet.mergeCells('A2:M2');
+  worksheet.mergeCells('A2:O2');
   const titleCell = worksheet.getCell('A2');
   titleCell.value = 'BÁO CÁO TỔNG HỢP MASTER DATA & TỒN KHO CÓ HÌNH ẢNH';
   titleCell.font = { name: 'Arial', size: 18, bold: true, color: { argb: 'FF111827' } };
   titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
 
-  worksheet.mergeCells('A3:M3');
+  worksheet.mergeCells('A3:O3');
   const dateCell = worksheet.getCell('A3');
   dateCell.value = `Thời gian trích xuất: ${new Date().toLocaleString('vi-VN')}`;
   dateCell.font = { name: 'Arial', size: 11, italic: true, color: { argb: 'FF4B5563' } };
@@ -36,7 +37,7 @@ export const exportInventoryToExcel = async (filteredProducts: Product[]) => {
   const headerRow = worksheet.addRow([
     "STT", "Hình Ảnh", "Mã SKU", "Tên Sản Phẩm", "Danh Mục", "Trạng Thái", 
     "Giá Vốn", "Giá Bán", "Lợi Nhuận", "Tồn Kho", "Đơn vị tính", 
-    "Vị trí Kho", "Cảnh Báo"
+    "Vị trí Kho", "Cảnh Báo", "Quản lý Lô", "Phân loại" // Bổ sung 2 cột WMS
   ]);
 
   worksheet.columns = [
@@ -53,6 +54,8 @@ export const exportInventoryToExcel = async (filteredProducts: Product[]) => {
     { key: "uom", width: 25 },
     { key: "location", width: 20 },
     { key: "reorder", width: 15 },
+    { key: "batches", width: 18 },   // CỘT MỚI
+    { key: "variants", width: 18 },  // CỘT MỚI
   ];
 
   headerRow.eachCell((cell) => {
@@ -67,7 +70,7 @@ export const exportInventoryToExcel = async (filteredProducts: Product[]) => {
     };
   });
   headerRow.height = 30;
-  worksheet.autoFilter = "A5:M5";
+  worksheet.autoFilter = "A5:O5";
 
   // --- PHẦN 3: ĐIỀN DỮ LIỆU, TÔ MÀU & NHÚNG ẢNH ---
   let totalStockValue = 0;
@@ -108,13 +111,15 @@ export const exportInventoryToExcel = async (filteredProducts: Product[]) => {
       item.stockQuantity,
       uomText,
       item.location || "N/A",
-      item.reorderPoint || 10
+      item.reorderPoint || 10,
+      item.hasBatches ? "Có (FEFO)" : "Không", // Dữ liệu Lô
+      item.hasVariants ? "Có Phân loại" : "Không" // Dữ liệu Phân loại
     ]);
 
     // Kéo giãn chiều cao dòng để nhét vừa ảnh (Cao 65 điểm Excel)
     row.height = 65;
 
-    // --- THUẬT TOÁN NHÚNG ẢNH VÀO EXCEL ---
+    // --- THUẬT TOÁN NHÚNG ẢNH VÀO EXCEL (Giữ nguyên của Sếp) ---
     if (item.imageUrl && item.imageUrl.startsWith('data:image')) {
       try {
         // Tách chuỗi Base64: Lấy phần sau dấu phẩy
@@ -130,11 +135,10 @@ export const exportInventoryToExcel = async (filteredProducts: Product[]) => {
         });
 
         // Neo ảnh vào cột số 2 (Hình Ảnh), tính toán Padding để ảnh nằm giữa ô
-        // ExcelJS dùng hệ tọa độ zero-based: col 1 = cột B. row.number - 1 = dòng hiện tại.
         worksheet.addImage(imageId, {
-          tl: { col: 1.15, row: row.number - 1 + 0.1 }, // tl: Top-Left (Cách trái 1.15 ô, cách trên 0.1 ô)
-          ext: { width: 75, height: 75 }, // Kích thước ảnh xuất ra (Pixel)
-          editAs: 'oneCell' // Thuộc tính giúp ảnh di chuyển/xóa theo ô
+          tl: { col: 1.15, row: row.number - 1 + 0.1 }, 
+          ext: { width: 75, height: 75 }, 
+          editAs: 'oneCell' 
         });
       } catch (error) {
         console.error("Lỗi chèn ảnh cho sản phẩm: ", item.name, error);
@@ -192,7 +196,7 @@ export const exportInventoryToExcel = async (filteredProducts: Product[]) => {
   
   const summaryRow = worksheet.addRow([
     "", "", "", "TỔNG CỘNG / DỰ KIẾN", "", "", 
-    totalStockValue, totalExpectedRevenue, totalExpectedRevenue - totalStockValue, "", "", "", ""
+    totalStockValue, totalExpectedRevenue, totalExpectedRevenue - totalStockValue, "", "", "", "", "", ""
   ]);
   
   summaryRow.height = 25; // Chiều cao dòng tổng
