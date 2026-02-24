@@ -13,6 +13,7 @@ import expenseRoutes from "./routes/expenseRoutes";
 // THÊM DÒNG NÀY:
 import inventoryRoutes from "./routes/inventoryRoutes"; 
 import assetRoutes from "./routes/assetRoutes";
+import warehouseRoutes from "./routes/warehouseRoutes";
 
 /* CONFIGURATIONS */
 dotenv.config();
@@ -34,7 +35,8 @@ app.use("/expenses", expenseRoutes); // http://localhost:8000/expenses
 
 // THÊM DÒNG NÀY:
 app.use("/inventory", inventoryRoutes); // http://localhost:8000/inventory
-app.use("/assets", assetRoutes)
+app.use("/assets", assetRoutes);
+app.use("/warehouses", warehouseRoutes);
 
 /* SERVER */
 const port = Number(process.env.PORT) || 3001;

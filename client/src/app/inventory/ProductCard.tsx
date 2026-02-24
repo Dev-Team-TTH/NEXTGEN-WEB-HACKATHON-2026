@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useMemo } from "react";
 import { Product } from "@/state/api";
 import Rating from "@/app/(components)/Rating";
 import { 
@@ -19,6 +19,25 @@ const ProductCard = ({ product, isExpanded, onToggleExpand, onOpenModal, onDelet
   const purchasePrice = product.purchasePrice || 0;
   const sellingPrice = product.price || 0;
   const profitMargin = sellingPrice - purchasePrice;
+  const actualReorderPoint = (product.reorderUnit === product.largeUnit && product.conversionRate)
+    ? (product.reorderPoint || 0) * product.conversionRate
+    : (product.reorderPoint || 0);
+  const [showEmptyBatches, setShowEmptyBatches] = useState(false);
+
+  const processedBatches = useMemo(() => {
+    if (!product.Batches) return [];
+    let filtered = product.Batches;
+    
+    // 1. Lọc lô hết hàng nếu không bật toggle
+    if (!showEmptyBatches) {
+      filtered = filtered.filter((b: any) => b.stockQuantity > 0);
+    }
+    
+    // 2. Sắp xếp lô hàng theo hạn sử dụng (FEFO - Gần nhất lên đầu)
+    return [...filtered].sort((a: any, b: any) => 
+      new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime()
+    );
+  }, [product.Batches, showEmptyBatches]);
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col group">
@@ -94,11 +113,12 @@ const ProductCard = ({ product, isExpanded, onToggleExpand, onOpenModal, onDelet
             {formatStockDisplay(product)}
           </span>
           
-          {product.stockQuantity > 0 && product.stockQuantity <= (product.reorderPoint || 0) && (
-            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-100 px-2 py-0.5 rounded-full border border-rose-200 animate-pulse">
-              <AlertTriangle className="w-3 h-3"/> Sắp hết hàng
-            </div>
-          )}
+          {product.stockQuantity > 0 && product.stockQuantity <= actualReorderPoint && (
+              <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-100 px-2 py-0.5 rounded-full border border-rose-200 animate-pulse">
+                <AlertTriangle className="w-3 h-3"/> Sắp hết hàng
+              </div>
+            )
+          }
 
           {/* Nút nội soi Tồn Kho chi tiết */}
           {(product.hasVariants || product.hasBatches) && (
@@ -133,14 +153,31 @@ const ProductCard = ({ product, isExpanded, onToggleExpand, onOpenModal, onDelet
       {/* --- PHẦN 2: EXPAND (CHI TIẾT LÔ / SIZE) --- */}
       {isExpanded && (
         <div className="border-t border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50/30 p-4 lg:p-6 animate-in slide-in-from-top-2 fade-in duration-300">
-          <h4 className="text-sm font-bold text-indigo-900 mb-3 flex items-center gap-2">
-            <Layers className="w-4 h-4 text-indigo-600"/> Phân bổ Tồn kho theo Thuộc tính & Lô hàng
-          </h4>
           
-          <div className="overflow-x-auto rounded-xl border border-indigo-100 shadow-sm bg-white">
-            <table className="w-full text-left border-collapse min-w-[600px]">
-              <thead>
-                <tr className="bg-indigo-50/50 text-indigo-800 text-[11px] font-bold uppercase tracking-wider border-b border-indigo-100">
+          {/* Tiêu đề & Nút Toggle ẩn/hiện lô cũ */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
+            <h4 className="text-sm font-bold text-indigo-900 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-indigo-600"/> Phân bổ Tồn kho chi tiết
+            </h4>
+            
+            {product.hasBatches && (
+              <label className="flex items-center gap-2 text-xs font-semibold text-indigo-700 bg-white px-3 py-1.5 rounded-lg border border-indigo-200 cursor-pointer hover:bg-indigo-50 transition-colors shadow-sm">
+                <input 
+                  type="checkbox" 
+                  checked={showEmptyBatches} 
+                  onChange={(e) => setShowEmptyBatches(e.target.checked)} 
+                  className="w-3.5 h-3.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" 
+                />
+                Hiển thị cả Lô cũ / Hết hàng
+              </label>
+            )}
+          </div>
+          
+          {/* Bảng dữ liệu có giới hạn chiều cao (max-h-[250px]) và thanh cuộn */}
+          <div className="overflow-x-auto overflow-y-auto max-h-[250px] rounded-xl border border-indigo-100 shadow-sm bg-white custom-scrollbar">
+            <table className="w-full text-left border-collapse min-w-[600px] relative">
+              <thead className="sticky top-0 z-10 bg-indigo-50 shadow-sm">
+                <tr className="text-indigo-800 text-[11px] font-bold uppercase tracking-wider border-b border-indigo-100">
                   <th className="px-5 py-3">Phân loại (Variant)</th>
                   <th className="px-5 py-3">Mã Lô (Batch)</th>
                   <th className="px-5 py-3">Hạn sử dụng</th>
@@ -148,22 +185,30 @@ const ProductCard = ({ product, isExpanded, onToggleExpand, onOpenModal, onDelet
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {product.hasBatches && product.Batches && product.Batches.length > 0 ? (
-                  product.Batches.map((batch: any) => {
-                    const variantInfo = product.Variants?.find(v => v.variantId === batch.variantId);
-                    const isExpired = new Date(batch.expiryDate).getTime() < new Date().getTime();
-                    return (
-                      <tr key={batch.batchId} className="hover:bg-blue-50/50 text-sm transition-colors">
-                        <td className="px-5 py-3.5 font-semibold text-indigo-700">{variantInfo?.attributes || "Mặc định"}</td>
-                        <td className="px-5 py-3.5 font-mono font-bold text-orange-700">{batch.batchNumber}</td>
-                        <td className={`px-5 py-3.5 font-bold flex items-center gap-2 ${isExpired ? 'text-rose-600' : 'text-slate-700'}`}>
-                          {new Date(batch.expiryDate).toLocaleDateString("vi-VN")} 
-                          {isExpired && <span className="text-[9px] bg-rose-100 px-1.5 py-0.5 rounded text-rose-700 border border-rose-200">HẾT HẠN</span>}
-                        </td>
-                        <td className="px-5 py-3.5 text-right font-black text-blue-700 text-base">{batch.stockQuantity}</td>
-                      </tr>
-                    );
-                  })
+                {product.hasBatches ? (
+                  processedBatches.length > 0 ? (
+                    processedBatches.map((batch: any) => {
+                      const variantInfo = product.Variants?.find(v => v.variantId === batch.variantId);
+                      const isExpired = new Date(batch.expiryDate).getTime() < new Date().getTime();
+                      const isZeroStock = batch.stockQuantity === 0;
+
+                      return (
+                        <tr key={batch.batchId} className={`hover:bg-blue-50/50 text-sm transition-colors ${isZeroStock ? 'opacity-60 bg-gray-50/50' : ''}`}>
+                          <td className="px-5 py-3.5 font-semibold text-indigo-700">{variantInfo?.attributes || "Mặc định"}</td>
+                          <td className="px-5 py-3.5 font-mono font-bold text-orange-700">{batch.batchNumber}</td>
+                          <td className={`px-5 py-3.5 font-bold flex items-center gap-2 ${isExpired ? 'text-rose-600' : 'text-slate-700'}`}>
+                            {new Date(batch.expiryDate).toLocaleDateString("vi-VN")} 
+                            {isExpired && <span className="text-[9px] bg-rose-100 px-1.5 py-0.5 rounded text-rose-700 border border-rose-200">HẾT HẠN</span>}
+                          </td>
+                          <td className={`px-5 py-3.5 text-right font-black text-base ${isZeroStock ? 'text-gray-400' : 'text-blue-700'}`}>
+                            {batch.stockQuantity}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr><td colSpan={4} className="px-5 py-8 text-center text-sm font-medium text-slate-500">Đang không có lô hàng nào còn tồn kho. (Bật "Hiển thị lô cũ" để xem lịch sử)</td></tr>
+                  )
                 ) : product.hasVariants && product.Variants && product.Variants.length > 0 ? (
                   product.Variants.map((variant: any) => (
                     <tr key={variant.variantId} className="hover:bg-blue-50/50 text-sm transition-colors">

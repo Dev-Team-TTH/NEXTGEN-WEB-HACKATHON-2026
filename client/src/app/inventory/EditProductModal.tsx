@@ -55,6 +55,7 @@ const EditProductModal = ({ isOpen, onClose, product, onSubmit }: EditProductMod
       rating: Number(formData.rating) || 0,
       conversionRate: Number(formData.conversionRate) || 1,
       reorderPoint: Number(formData.reorderPoint) || 10,
+      reorderUnit: formData.reorderUnit || formData.baseUnit,
     } as Product;
     onSubmit(finalData);
   };
@@ -165,8 +166,24 @@ const EditProductModal = ({ isOpen, onClose, product, onSubmit }: EditProductMod
                 <div>
                   <label className={labelClass}>Mức cảnh báo Tồn kho thấp:</label>
                   <div className="flex items-center gap-3">
-                    <input type="number" name="reorderPoint" value={formData.reorderPoint || ""} onChange={handleChange} className="w-24 h-10 px-3 rounded-lg border border-gray-300 text-center font-bold text-red-600 outline-none focus:ring-2 focus:ring-red-500" />
-                    <span className="text-sm font-medium text-gray-500">{formData.baseUnit}</span>
+                    <input 
+                      type="number" 
+                      name="reorderPoint" 
+                      value={formData.reorderPoint || ""} 
+                      onChange={handleChange} 
+                      className="w-24 h-10 px-3 rounded-lg border border-gray-300 text-center font-bold text-red-600 outline-none focus:ring-2 focus:ring-red-500" 
+                    />
+                    <select 
+                      name="reorderUnit"
+                      value={formData.reorderUnit || formData.baseUnit || ""} 
+                      onChange={handleChange}
+                      className="h-10 px-3 rounded-lg border border-gray-300 outline-none bg-gray-50 cursor-pointer text-sm font-medium text-gray-700"
+                    >
+                      <option value={formData.baseUnit || ""}>{formData.baseUnit || "Đơn vị cơ bản"}</option>
+                      {formData.largeUnit && (
+                        <option value={formData.largeUnit}>{formData.largeUnit} (Đơn vị lớn)</option>
+                      )}
+                    </select>
                   </div>
                 </div>
                 <div className="pt-4 border-t border-gray-100 flex flex-col gap-4">

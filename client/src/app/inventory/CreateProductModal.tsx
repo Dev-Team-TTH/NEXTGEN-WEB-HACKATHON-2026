@@ -26,6 +26,7 @@ export type ProductFormData = {
   category: string;
   description: string;
   reorderPoint: number | string;
+  reorderUnit: string;
   hasVariants: boolean;
   hasBatches: boolean;
   variants: VariantData[];
@@ -39,7 +40,7 @@ const CreateProductModal = ({ isOpen, onClose, onCreate }: any) => {
     productId: generateSKU(), name: "", price: "", rating: "", 
     baseUnit: "Cái", largeUnit: "", conversionRate: 1,
     purchasePrice: "", status: "ACTIVE", category: "", description: "", 
-    reorderPoint: 10, hasVariants: false, hasBatches: false, variants: []
+    reorderPoint: 10, reorderUnit: "", hasVariants: false, hasBatches: false, variants: []
   });
   
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -85,6 +86,7 @@ const CreateProductModal = ({ isOpen, onClose, onCreate }: any) => {
       rating: Number(formData.rating) || 0,
       conversionRate: Number(formData.conversionRate) || 1,
       reorderPoint: Number(formData.reorderPoint) || 10,
+      reorderUnit: formData.reorderUnit || formData.baseUnit,
       variants: formData.hasVariants ? formData.variants.map(v => ({ ...v, additionalPrice: Number(v.additionalPrice) || 0 })) : [],
       stockQuantity: 0 // Bắt buộc tồn kho ban đầu là 0 để tuân thủ quy trình WMS
     };
@@ -94,7 +96,7 @@ const CreateProductModal = ({ isOpen, onClose, onCreate }: any) => {
     // Reset form
     setFormData({ 
       productId: generateSKU(), name: "", price: "", rating: "", baseUnit: "Cái", largeUnit: "", conversionRate: 1,
-      purchasePrice: "", status: "ACTIVE", category: "", description: "", reorderPoint: 10, hasVariants: false, hasBatches: false, variants: []
+      purchasePrice: "", status: "ACTIVE", category: "", description: "", reorderPoint: 10, reorderUnit: "", hasVariants: false, hasBatches: false, variants: []
     });
     setImagePreview(null);
     setStep(1);
@@ -128,9 +130,26 @@ const CreateProductModal = ({ isOpen, onClose, onCreate }: any) => {
                 </div>
                 <div className="md:col-span-6">
                   <label className={labelClass}>Mức cảnh báo Tồn kho thấp</label>
-                  <div className="relative">
-                    <input type="number" name="reorderPoint" value={formData.reorderPoint} onChange={handleChange} className={`${inputClass} pr-12 font-bold text-red-600`} />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-gray-400">{formData.baseUnit}</span>
+                  <div className="flex gap-2">
+                    <input 
+                      type="number" 
+                      name="reorderPoint" 
+                      value={formData.reorderPoint} 
+                      onChange={handleChange} 
+                      className={`${inputClass} w-1/2 font-bold text-red-600`} 
+                    />
+                    {/* Dropdown thông minh tự động lấy đơn vị */}
+                    <select 
+                      name="reorderUnit"
+                      value={formData.reorderUnit || formData.baseUnit} 
+                      onChange={handleChange}
+                      className="w-1/2 px-4 py-2 border border-gray-300 rounded-lg outline-none bg-gray-50 cursor-pointer text-sm font-semibold text-gray-700"
+                    >
+                      <option value={formData.baseUnit}>{formData.baseUnit || "Đơn vị cơ bản"}</option>
+                      {formData.largeUnit && (
+                        <option value={formData.largeUnit}>{formData.largeUnit} (Đơn vị lớn)</option>
+                      )}
+                    </select>
                   </div>
                 </div>
               </div>

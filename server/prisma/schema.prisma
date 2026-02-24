@@ -8,9 +8,19 @@ datasource db {
 }
 
 model Users {
-  userId String @id
-  name   String
-  email  String
+  userId      String  @id @default(uuid()) // Tự động sinh mã ID cho user mới
+  name        String  // Họ và tên
+  email       String  @unique // Bắt buộc ĐỘC NHẤT để làm tài khoản đăng nhập
+  password    String  // Mật khẩu (Sẽ được mã hóa bcrypt ở Backend)
+  
+  phone       String? // Số điện thoại liên hệ
+  address     String? // Địa chỉ sinh sống
+  
+  // Phân quyền và Nơi làm việc
+  role        String  @default("STAFF") // Các role: "ADMIN" (Tổng công ty), "MANAGER" (Quản lý kho), "STAFF" (Thủ kho)
+  warehouseId String? // ID của Kho mà nhân viên này trực thuộc (ADMIN có thể để trống)
+  
+  warehouse   Warehouse? @relation(fields: [warehouseId], references: [warehouseId], onDelete: SetNull)
 }
 
 model Products {
@@ -30,6 +40,7 @@ model Products {
   category       String?
   description    String?
   reorderPoint   Int      @default(10)
+  reorderUnit    String?
   
   hasVariants    Boolean  @default(false)
   hasBatches     Boolean  @default(false)
@@ -37,6 +48,7 @@ model Products {
   Variants              ProductVariant[]
   Batches               ProductBatch[] // Vẫn giữ để tra cứu nhanh toàn bộ lô của SP
   InventoryTransactions InventoryTransaction[]
+  WarehouseStocks       WarehouseStock[]
 }
 
 model ProductVariant {
@@ -76,29 +88,62 @@ model ProductBatch {
 model InventoryTransaction {
   transactionId  String   @id @default(uuid())
   
-  productId      String
-  variantId      String?  
-  batchId        String?  // Có thể rỗng nếu lúc tạo phiếu chưa biết lô
+  // THÊM DÒNG NÀY: Giao dịch này xảy ra ở kho nào?
+  warehouseId    String
   
-  // -- THÔNG TIN DÀNH CHO NHẬP KHO (LÔ MỚI) --
-  newBatchNumber String?  // Thủ kho gõ số lô mới vào đây
+  productId      String
+  variantId      String?
+  batchId        String?  
+  
+  newBatchNumber String?
   expiryDate     DateTime?
-  location       String?  // Vị trí thực tế cất lô hàng này ở giao dịch này (Kệ A, Tầng 1)
+  location       String?  
 
   timestamp      DateTime @default(now())
-  type           String   // IN / OUT
+  type           String   // IN / OUT / TRANSFER (Luân chuyển)
   quantity       Int
   note           String?
 
-  // --- QUY TRÌNH DUYỆT (APPROVAL WORKFLOW) ---
-  status         String   @default("PENDING") // PENDING (Chờ duyệt), COMPLETED (Đã duyệt), REJECTED (Từ chối)
-  createdBy      String?  // ID Thủ kho tạo phiếu
-  approvedBy     String?  // ID Quản lý duyệt phiếu
+  status         String   @default("PENDING") 
+  createdBy      String?
+  approvedBy     String?
   approvedAt     DateTime?
 
+  // Khóa ngoại
+  warehouse      Warehouse @relation(fields: [warehouseId], references: [warehouseId], onDelete: Cascade)
   product        Products @relation(fields: [productId], references: [productId], onDelete: Cascade)
   variant        ProductVariant? @relation(fields: [variantId], references: [variantId], onDelete: Cascade)
   batch          ProductBatch? @relation(fields: [batchId], references: [batchId], onDelete: Cascade)
+}
+
+model Warehouse {
+  warehouseId   String   @id @default(uuid())
+  name          String   // VD: Kho Tổng Miền Nam, Kho Chi Nhánh A
+  address       String?
+  
+  // Quan hệ
+  users         Users[]
+  transactions  InventoryTransaction[]
+  stocks        WarehouseStock[] 
+}
+
+// --- BẢNG MỚI: TỒN KHO CHI TIẾT THEO TỪNG KHO ---
+model WarehouseStock {
+  id            String   @id @default(uuid())
+  
+  warehouseId   String
+  productId     String
+  variantId     String?
+  batchId       String?  
+  
+  quantity      Int      @default(0) // Số lượng thực tế tại KHO NÀY
+
+  // Khóa ngoại
+  warehouse     Warehouse @relation(fields: [warehouseId], references: [warehouseId], onDelete: Cascade)
+  product       Products  @relation(fields: [productId], references: [productId], onDelete: Cascade)
+  
+  // Ràng buộc: Mỗi sản phẩm/biến thể/lô chỉ có 1 dòng duy nhất trong 1 kho
+  @@unique([warehouseId, productId, variantId, batchId]) 
 }
 
 // Giữ lại chi phí để làm báo cáo Dashboard (VD: Chi phí bảo trì tài sản, phí vận chuyển)

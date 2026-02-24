@@ -34,6 +34,7 @@ export interface Product {
   category?: string;
   description?: string;
   reorderPoint?: number;
+  reorderUnit?: string;
   location?: string;
   hasVariants?: boolean;
   hasBatches?: boolean;
@@ -56,6 +57,7 @@ export interface NewProduct {
   category?: string;
   description?: string;
   reorderPoint?: number;
+  reorderUnit?: string;
   location?: string;
   hasVariants?: boolean;
   hasBatches?: boolean;
@@ -81,10 +83,31 @@ export interface DashboardMetrics {
   expenseByCategorySummary: ExpenseByCategorySummary[];
 }
 
+export interface Warehouse {
+  warehouseId: string;
+  name: string;
+  address?: string;
+}
+
 export interface User {
   userId: string;
   name: string;
   email: string;
+  phone?: string;
+  address?: string;
+  role: string;
+  warehouseId?: string;
+  warehouse?: any; // Chứa thông tin kho nếu có
+}
+
+export interface NewUser {
+  name: string;
+  email: string;
+  password?: string;
+  phone?: string;
+  address?: string;
+  role: string;
+  warehouseId?: string;
 }
 
 export interface InventoryTransaction {
@@ -97,6 +120,8 @@ export interface InventoryTransaction {
   variantId?: string;
   batchId?: string;
   status?: string;
+  warehouseId: string; // <-- THÊM DÒNG NÀY
+  warehouse?: any;     // <-- THÊM DÒNG NÀY NỮA (để chứa tên kho khi lấy list)
 }
 
 export interface NewInventoryTransaction {
@@ -110,6 +135,7 @@ export interface NewInventoryTransaction {
   expiryDate?: string;
   location?: string;
   createdBy?: string;
+  warehouseId: string;
 }
 
 export interface Asset {
@@ -213,6 +239,37 @@ export const api = createApi({
       query: () => "/users",
       providesTags: ["Users"],
     }),
+
+    registerUser: build.mutation<User, NewUser>({
+      query: (newUser) => ({
+        url: "/users/register",
+        method: "POST",
+        body: newUser,
+      }),
+      invalidatesTags: ["Users"], // Cập nhật lại danh sách ngay sau khi tạo
+    }),
+
+    getWarehouses: build.query<Warehouse[], void>({
+      query: () => "/warehouses",
+      providesTags: ["Products"], // Tạm dùng chung tag để cache
+    }),
+
+    createWarehouse: build.mutation<Warehouse, Partial<Warehouse>>({
+      query: (newWarehouse) => ({
+        url: "/warehouses",
+        method: "POST",
+        body: newWarehouse,
+      }),
+      invalidatesTags: ["Products"], // Tự động load lại danh sách sau khi tạo
+    }),
+
+    deleteWarehouse: build.mutation<void, string>({
+      query: (id) => ({
+        url: `/warehouses/${id}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["Products"],
+    }),
     
     getExpensesByCategory: build.query<ExpenseByCategorySummary[], void>({
       query: () => "/expenses",
@@ -243,6 +300,15 @@ export const api = createApi({
       }),
       invalidatesTags: ["Assets"],
     }),
+
+    login: build.mutation<any, any>({
+      query: (credentials) => ({
+        url: "/users/login",
+        method: "POST",
+        body: credentials,
+      }),
+    }),
+
   }),
 });
 
@@ -258,8 +324,13 @@ export const {
   useApproveTransactionMutation,
   useRejectTransactionMutation,
   useGetUsersQuery,
+  useRegisterUserMutation,
   useGetExpensesByCategoryQuery,
   useGetAssetsQuery,
   useCreateAssetMutation,
   useDeleteAssetMutation,
+  useLoginMutation,
+  useGetWarehousesQuery,
+  useCreateWarehouseMutation,
+  useDeleteWarehouseMutation,
 } = api;

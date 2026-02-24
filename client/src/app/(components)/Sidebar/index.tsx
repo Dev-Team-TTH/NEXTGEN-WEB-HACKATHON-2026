@@ -5,6 +5,7 @@ import { setIsSidebarCollapsed } from "@/state";
 import {
   Archive,
   Briefcase,
+  Building2,
   CircleDollarSign,
   Clipboard,
   Layout,
@@ -135,6 +136,12 @@ const Sidebar = () => {
           href="/assets"
           icon={Briefcase}
           label={t('sidebar.assets')} 
+          isCollapsed={isSidebarCollapsed}
+        />
+        <SidebarLink
+          href="/warehouses"
+          icon={Building2}
+          label="Hệ Thống Kho"
           isCollapsed={isSidebarCollapsed}
         />
         <SidebarLink

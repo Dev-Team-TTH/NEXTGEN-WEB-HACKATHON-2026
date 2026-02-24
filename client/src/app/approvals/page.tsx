@@ -30,7 +30,11 @@ const ApprovalsPage = () => {
     try {
       await approveTx({ id, approvedBy: "Giám Đốc Lâm" }).unwrap();
       toast.success("Đã duyệt phiếu thành công!");
-    } catch (err) { toast.error("Lỗi khi duyệt phiếu!"); }
+    } catch (err: any) { 
+      // Lấy câu thông báo lỗi chi tiết từ Backend (Interactive Transaction)
+      const errorMessage = err?.data?.message || "Lỗi hệ thống khi duyệt phiếu!";
+      toast.error(errorMessage); 
+    }
   };
 
   const handleReject = async (id: string) => {

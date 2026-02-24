@@ -53,7 +53,14 @@ const InventoryUnified = () => {
       const matchesCategory = filterCategory === "ALL" || p.category === filterCategory;
       const matchesStatus = filterStatus === "ALL" || p.status === filterStatus;
       let matchesStock = true;
-      if (filterStock === "LOW") matchesStock = p.stockQuantity > 0 && p.stockQuantity <= (p.reorderPoint || 0);
+      if (filterStock === "LOW") {
+        let actualReorderPoint = p.reorderPoint || 0;
+        // Xử lý thông minh: Nếu đơn vị cảnh báo là Đơn vị lớn (largeUnit), nhân với tỷ lệ quy đổi
+        if (p.reorderUnit && p.reorderUnit === p.largeUnit && p.conversionRate) {
+          actualReorderPoint = actualReorderPoint * p.conversionRate;
+        }
+        matchesStock = p.stockQuantity > 0 && p.stockQuantity <= actualReorderPoint;
+      }
       else if (filterStock === "OUT_OF_STOCK") matchesStock = p.stockQuantity === 0;
 
       return matchesSearch && matchesCategory && matchesStatus && matchesStock;
@@ -98,14 +105,24 @@ const InventoryUnified = () => {
     if (!selectedProduct) return;
     const txType = activeModal === "TX_IN" ? "IN" : "OUT";
     const multiplier = unitType === "LARGE" ? (selectedProduct.conversionRate || 1) : 1;
+    
+    // Lấy thông tin user đang đăng nhập từ LocalStorage
+    const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
+
     try {
       await createTransaction({
-        productId: selectedProduct.productId, type: txType, quantity: quantity * multiplier,
+        productId: selectedProduct.productId, 
+        type: txType, 
+        quantity: quantity * multiplier,
         note: note || `Yêu cầu ${txType === "IN" ? "Nhập" : "Xuất"} ${quantity} ${unitType === "LARGE" ? selectedProduct.largeUnit : selectedProduct.baseUnit}`,
-        variantId, batchId, newBatchNumber, expiryDate, location, createdBy: "Thủ Kho" 
+        variantId, batchId, newBatchNumber, expiryDate, location, 
+        createdBy: currentUser.name || "Thủ Kho", // Tự động lấy tên thật
+        warehouseId: currentUser.warehouseId || "KHO_TONG" // Tự động lấy ID Kho
       }).unwrap();
       toast.info("Đã gửi Phiếu Yêu Cầu! Chờ duyệt.", { autoClose: 3000 }); closeModal();
-    } catch (error) { toast.error("Lỗi khi gửi phiếu giao dịch!"); }
+    } catch (error: any) { 
+      toast.error(error?.data?.message || "Lỗi khi gửi phiếu giao dịch!"); 
+    }
   };
 
   const handleDelete = async (id: string) => {
