@@ -118,13 +118,13 @@ model InventoryTransaction {
 
 model Warehouse {
   warehouseId   String   @id @default(uuid())
-  name          String   // VD: Kho Tổng Miền Nam, Kho Chi Nhánh A
+  name          String   
   address       String?
   
-  // Quan hệ
   users         Users[]
   transactions  InventoryTransaction[]
   stocks        WarehouseStock[] 
+  assets        Assets[] // <-- THÊM DÒNG NÀY (Để 1 Chi nhánh có thể có nhiều Tài sản)
 }
 
 // --- BẢNG MỚI: TỒN KHO CHI TIẾT THEO TỪNG KHO ---
@@ -171,11 +171,19 @@ model ExpenseByCategory {
 }
 
 model Assets {
-  assetId      String   @id @default(uuid())
-  name         String
-  category     String   // VD: Thiết bị điện tử, Nội thất, Phương tiện...
-  status       String   // VD: Đang sử dụng, Sẵn sàng, Đang bảo trì
-  assignedTo   String?  // Người hoặc phòng ban đang mượn/sử dụng
-  purchaseDate DateTime
-  price        Float
+  assetId        String   @id @default(uuid())
+  name           String
+  category       String   // VD: Máy móc, Nội thất, Điện tử...
+  
+  purchaseDate   DateTime
+  purchasePrice  Float
+  currentValue   Float    // Giá trị hiện tại (sau khấu hao)
+  
+  status         String   @default("ACTIVE") // ACTIVE, MAINTENANCE, BROKEN, DISPOSED
+  location       String?  // Vị trí cụ thể trong chi nhánh (VD: Phòng họp A, Khu sản xuất 1)
+  assignedTo     String?  // Có thể lưu userId của người đang giữ tài sản này
+  
+  // THÊM 2 DÒNG NÀY ĐỂ GẮN TÀI SẢN VÀO CHI NHÁNH
+  warehouseId    String?  // Nếu rỗng nghĩa là tài sản thuộc Tổng công ty chưa phân bổ
+  warehouse      Warehouse? @relation(fields: [warehouseId], references: [warehouseId], onDelete: SetNull)
 }

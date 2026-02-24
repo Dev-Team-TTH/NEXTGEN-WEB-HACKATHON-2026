@@ -1,139 +1,139 @@
 "use client";
 
 import { useAppDispatch, useAppSelector } from "@/app/redux";
-import { setIsDarkMode, setIsSidebarCollapsed, setIsAuthenticated, setIsNotificationsEnabled } from "@/state";
-import { Bell, Menu, Moon, Settings, Sun, User, LogOut } from "lucide-react";
-import Image from "next/image";
-import Link from "next/link";
-import React, { useState } from "react";
+import { setIsDarkMode, setIsSidebarCollapsed } from "@/state";
+import { Bell, Menu, Moon, Sun, Settings, LogOut, User as UserIcon } from "lucide-react";
+import React, { useEffect, useState, useRef } from "react";
+// (1) Import thư viện
 import { useTranslation } from "react-i18next";
-import { toast } from "react-toastify";
+import Link from "next/link";
 
 const Navbar = () => {
   const dispatch = useAppDispatch();
-  const isSidebarCollapsed = useAppSelector(
-    (state) => state.global.isSidebarCollapsed
-  );
+  const isSidebarCollapsed = useAppSelector((state) => state.global.isSidebarCollapsed);
   const isDarkMode = useAppSelector((state) => state.global.isDarkMode);
-  const isNotificationsEnabled = useAppSelector((state) => state.global.isNotificationsEnabled);
   
+  // (2) Khai báo hàm t
   const { t } = useTranslation();
-  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const toggleSidebar = () => {
-    dispatch(setIsSidebarCollapsed(!isSidebarCollapsed));
-  };
+  useEffect(() => {
+    const user = JSON.parse(localStorage.getItem("user") || "null");
+    setCurrentUser(user);
+  }, []);
 
-  const toggleDarkMode = () => {
-    dispatch(setIsDarkMode(!isDarkMode));
-    if (!isDarkMode) toast.dark("🌙 Đã bật chế độ Ban đêm");
-    else toast.info("☀️ Đã bật chế độ Ban ngày");
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const toggleSidebar = () => dispatch(setIsSidebarCollapsed(!isSidebarCollapsed));
+  const toggleDarkMode = () => dispatch(setIsDarkMode(!isDarkMode));
+  const handleLogout = () => {
+    localStorage.removeItem("user");
+    localStorage.removeItem("token");
+    window.location.href = "/";
   };
 
   return (
-    <div className="flex justify-between items-center w-full mb-7">
-      {/* TRÁI: SEARCH & MENU */}
-      <div className="flex justify-between items-center gap-5">
+    <div className="flex justify-between items-center w-full bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 px-4 md:px-8 py-3 transition-colors duration-300 z-30 relative">
+      <div className="flex items-center gap-2 md:gap-5">
         <button
-          className="px-3 py-3 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-blue-100 dark:hover:bg-gray-700 transition-colors"
+          className="md:hidden p-2.5 bg-gray-50 dark:bg-gray-800 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           onClick={toggleSidebar}
         >
-          <Menu className="w-4 h-4 text-gray-700 dark:text-gray-300" />
+          <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
         </button>
+        <div className="hidden sm:block ml-2">
+           <span className="font-bold text-gray-800 dark:text-gray-100 text-lg">
+             {/* (3) Dùng {t('từ_khóa')} */}
+             {t('navbar.welcome')} 👋
+           </span>
+        </div>
       </div>
 
-      {/* PHẢI: ICONS & AVATAR */}
-      <div className="flex justify-between items-center gap-5">
-        <div className="hidden md:flex justify-between items-center gap-5">
-          {/* NÚT DARK MODE */}
-          <div>
-            <button onClick={toggleDarkMode}>
-              {isDarkMode ? (
-                <Sun className="cursor-pointer text-gray-500 dark:text-gray-300 hover:text-blue-500 transition-colors" size={24} />
-              ) : (
-                <Moon className="cursor-pointer text-gray-500 hover:text-blue-500 transition-colors" size={24} />
-              )}
-            </button>
+      <div className="flex justify-end items-center gap-1 sm:gap-2 md:gap-4">
+        <button onClick={toggleDarkMode} className="flex items-center gap-2.5 p-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl transition-colors text-gray-500 dark:text-gray-400">
+          {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          {/* (3) Dùng {t('từ_khóa')} */}
+          <span className="hidden md:block text-sm font-bold">{isDarkMode ? t('navbar.lightMode') : t('navbar.darkMode')}</span>
+        </button>
+        
+        <button className="flex items-center gap-2.5 p-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl transition-colors text-gray-500 dark:text-gray-400">
+          <div className="relative">
+            <Bell className="w-5 h-5" />
+            <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white ring-2 ring-white dark:ring-gray-900">
+              3
+            </span>
           </div>
-          
-          {/* KHU VỰC THÔNG BÁO TƯƠNG TÁC */}
-          <div 
-            className="relative cursor-pointer"
-            onClick={() => {
-              if (isNotificationsEnabled) {
-                toast.info("🔔 Bạn có 3 phiếu nhập kho cần duyệt!");
-              } else {
-                toast.warning("🔕 Thông báo đang bị tắt. Hãy bật trong Cài đặt.");
-              }
-            }}
-          >
-            <Bell className={`w-6 h-6 transition-colors ${isNotificationsEnabled ? 'text-blue-500' : 'text-gray-400 dark:text-gray-600'}`} />
-            {isNotificationsEnabled && (
-              <span className="absolute -top-2 -right-2 inline-flex items-center justify-center px-[0.4rem] py-1 text-xs font-semibold leading-none text-red-100 bg-red-400 rounded-full animate-bounce">
-                3
-              </span>
-            )}
-          </div>
-          
-          <hr className="w-0 h-7 border border-solid border-l border-gray-300 dark:border-gray-600 mx-3" />
-          
-          {/* KHU VỰC AVATAR ĐƯỢC NÂNG CẤP */}
-          <div className="relative flex items-center gap-3 cursor-pointer">
+          {/* (3) Dùng {t('từ_khóa')} */}
+          <span className="hidden md:block text-sm font-bold">{t('navbar.notifications')}</span>
+        </button>
+
+        <Link href="/settings" className="hidden sm:flex items-center gap-2.5 p-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl transition-colors text-gray-500 dark:text-gray-400">
+          <Settings className="w-5 h-5" />
+          {/* (3) Dùng {t('từ_khóa')} */}
+          <span className="hidden lg:block text-sm font-bold">{t('navbar.settings')}</span>
+        </Link>
+        
+        <div className="hidden sm:block w-px h-8 bg-gray-200 dark:bg-gray-700 mx-1"></div>
+        
+        {currentUser && (
+          <div className="relative" ref={dropdownRef}>
             <div 
-              className="flex items-center gap-3"
-              onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+              className="flex items-center gap-3 cursor-pointer p-1.5 pl-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl transition-all border border-transparent hover:border-gray-200 dark:hover:border-gray-700"
+              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
             >
-              <Image
-                src="/profile.jpg"
-                alt="Profile"
-                width={40}
-                height={40}
-                className="rounded-full h-10 w-10 border-2 border-transparent hover:border-blue-500 transition-all object-cover"
-              />
-              <span className="font-semibold text-gray-700 dark:text-gray-200 hover:text-blue-500">
-                Leader Tâm
-              </span>
+              <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white font-bold text-sm shadow-sm shrink-0">
+                {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : "U"}
+              </div>
+              <div className="hidden md:flex flex-col pr-2">
+                <span className="font-bold text-sm text-gray-800 dark:text-gray-100 leading-tight">
+                  {currentUser.name}
+                </span>
+                <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wider">
+                  {currentUser.role}
+                </span>
+              </div>
             </div>
 
-            {/* DROPDOWN MENU */}
-            {isProfileMenuOpen && (
-              <div className="absolute top-14 right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-100 dark:border-gray-700 z-50 overflow-hidden">
-                <div className="flex flex-col">
-                  {/* Hồ sơ */}
-                  <Link href="/profile" onClick={() => setIsProfileMenuOpen(false)}>
-                    <div className="flex items-center gap-3 px-4 py-3 hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors">
-                      <User className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{t('navbar.profile')}</span>
-                    </div>
+            {isDropdownOpen && (
+              <div className="absolute right-0 mt-3 w-64 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 overflow-hidden animate-in fade-in slide-in-from-top-2 z-50">
+                <div className="p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
+                  <p className="font-bold text-gray-800 dark:text-gray-100">{currentUser.name}</p>
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mt-1 truncate">{currentUser.email}</p>
+                </div>
+                
+                <div className="p-2 space-y-1">
+                  <Link href="/profile" onClick={() => setIsDropdownOpen(false)} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 font-semibold transition-colors">
+                    <UserIcon className="w-4 h-4 text-gray-400" />
+                    {/* (3) Dùng {t('từ_khóa')} */}
+                    {t('navbar.profile')}
                   </Link>
-                  
-                  {/* Cài đặt */}
-                  <Link href="/settings" onClick={() => setIsProfileMenuOpen(false)}>
-                    <div className="flex items-center gap-3 px-4 py-3 hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors">
-                      <Settings className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{t('navbar.settings')}</span>
-                    </div>
+                  <Link href="/settings" onClick={() => setIsDropdownOpen(false)} className="flex sm:hidden items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 font-semibold transition-colors">
+                    <Settings className="w-4 h-4 text-gray-400" />
+                    {/* (3) Dùng {t('từ_khóa')} */}
+                    {t('navbar.settings')}
                   </Link>
-
-                  <hr className="border-gray-100 dark:border-gray-700" />
-                  
-                  {/* Đăng xuất */}
-                  <div 
-                    className="flex items-center gap-3 px-4 py-3 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-red-600 dark:text-red-400 cursor-pointer"
-                    onClick={() => {
-                      setIsProfileMenuOpen(false);
-                      dispatch(setIsAuthenticated(false)); // Văng ra màn Login
-                      toast.info("Bạn đã đăng xuất khỏi hệ thống!");
-                    }}
-                  >
+                  <div className="my-1 border-t border-gray-100 dark:border-gray-700"></div>
+                  <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 font-bold transition-colors">
                     <LogOut className="w-4 h-4" />
-                    <span className="text-sm font-medium">{t('navbar.logout')}</span>
-                  </div>
+                    {/* (3) Dùng {t('từ_khóa')} */}
+                    {t('navbar.logout')}
+                  </button>
                 </div>
               </div>
             )}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

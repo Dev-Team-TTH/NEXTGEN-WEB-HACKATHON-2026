@@ -3,60 +3,16 @@
 import React, { useEffect } from "react";
 import Navbar from "@/app/(components)/Navbar";
 import Sidebar from "@/app/(components)/Sidebar";
-import StoreProvider, { useAppSelector } from "./redux";
-import '../i18n';
-import { ToastContainer } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
-import { useTranslation } from "react-i18next";
-import Login from "@/app/(components)/Login";
+import StoreProvider, { useAppSelector } from "@/app/redux";
+import "@/i18n";
 
 const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
   const isSidebarCollapsed = useAppSelector(
     (state) => state.global.isSidebarCollapsed
   );
-  
   const isDarkMode = useAppSelector((state) => state.global.isDarkMode);
 
-  const { t, i18n } = useTranslation();
-
-  useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.add("light");
-    }
-  }, [isDarkMode]);
-
-  useEffect(() => {
-    // Mỗi khi i18n.language thay đổi, nó sẽ lôi từ điển ra dịch và gắn lên tab trình duyệt
-    document.title = t("app.documentTitle");
-  }, [i18n.language, t]);
-
-  return (
-    <div
-      className={`${
-        isDarkMode ? "dark" : "light"
-      } flex bg-gray-50 text-gray-900 w-full min-h-screen`}
-    >
-      <Sidebar />
-      <main
-        className={`flex flex-col w-full h-full py-7 px-9 bg-gray-50 ${
-          isSidebarCollapsed ? "md:pl-24" : "md:pl-72"
-        }`}
-      >
-        <Navbar />
-        {children}
-        <ToastContainer position="bottom-right" autoClose={3000} />
-      </main>
-    </div>
-  );
-};
-
-const AuthGuard = ({ children }: { children: React.ReactNode }) => {
-  const isAuthenticated = useAppSelector((state) => state.global.isAuthenticated);
-  const isDarkMode = useAppSelector((state) => state.global.isDarkMode);
-
-  // Ép trình duyệt đổi màu ngay từ ngoài cổng
+  // Xử lý chuyển đổi chế độ Sáng / Tối an toàn, không bị kẹt class
   useEffect(() => {
     if (isDarkMode) {
       document.documentElement.classList.add("dark");
@@ -67,26 +23,44 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
     }
   }, [isDarkMode]);
 
-  // Nếu chưa đăng nhập -> Trả về giao diện Login
-  if (!isAuthenticated) {
-    return (
-      <div className={`${isDarkMode ? "dark" : "light"} w-full min-h-screen bg-gray-50 dark:bg-gray-900`}>
-        {/* Toast cũng đổi màu theo Dark Mode luôn */}
-        <ToastContainer position="bottom-right" autoClose={3000} theme={isDarkMode ? "dark" : "light"} />
-        <Login />
-      </div>
-    );
-  }
+  return (
+    // 1. CONTAINER NGOÀI CÙNG: 
+    // - Khóa chặt chiều cao bằng đúng màn hình (h-screen).
+    // - Cắt bỏ thanh cuộn thừa (overflow-hidden) để tránh trang web bị giật nảy.
+    <div className={`${isDarkMode ? "dark bg-gray-900" : "light bg-gray-50"} flex h-screen w-full overflow-hidden text-gray-900 transition-colors duration-300`}>
+      
+      {/* 2. SIDEBAR CỦA HỆ THỐNG */}
+      <Sidebar />
 
-  // Nếu đăng nhập rồi -> Trả về giao diện Hệ thống
-  return <DashboardLayout>{children}</DashboardLayout>;
+      {/* 3. KHU VỰC NỘI DUNG CHÍNH (MAIN CONTENT): 
+          - Tự lấp đầy phần chiều ngang còn lại (flex-1).
+          - Có thanh cuộn dọc độc lập (overflow-y-auto).
+      */}
+      <main className="flex-1 flex flex-col h-screen overflow-y-auto bg-[#f8fafc] dark:bg-gray-900 transition-all duration-300 relative">
+        
+        {/* THANH ĐIỀU HƯỚNG TRÊN CÙNG */}
+        <Navbar />
+        
+        {/* 4. WORKSPACE (Không gian làm việc hiển thị nội dung các trang): 
+            - Giới hạn độ rộng tối đa (max-w-[1600px]) để không bị loãng trên màn hình Ultrawide.
+            - Căn giữa tự động (mx-auto).
+            - Responsive padding: Tự động rộng ra khi màn hình to hơn.
+        */}
+        <div className="w-full max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8 2xl:p-10 flex-grow flex flex-col">
+          {children}
+        </div>
+
+      </main>
+
+    </div>
+  );
 };
 
-// COMPONENT GỐC
+// COMPONENT BỌC NGOÀI CÙNG ĐỂ CUNG CẤP STATE REDUX CHO TOÀN BỘ APP
 const DashboardWrapper = ({ children }: { children: React.ReactNode }) => {
   return (
     <StoreProvider>
-      <AuthGuard>{children}</AuthGuard>
+      <DashboardLayout>{children}</DashboardLayout>
     </StoreProvider>
   );
 };

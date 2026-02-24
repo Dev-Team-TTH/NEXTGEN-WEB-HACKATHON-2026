@@ -160,7 +160,7 @@ export interface NewAsset {
 export const api = createApi({
   baseQuery: fetchBaseQuery({ baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL }),
   reducerPath: "api",
-  tagTypes: ["DashboardMetrics", "Products", "Users", "Expenses", "Assets"],
+  tagTypes: ["DashboardMetrics", "Products", "Users", "Expenses", "Assets", "Warehouses"],
   endpoints: (build) => ({
     getDashboardMetrics: build.query<DashboardMetrics, void>({
       query: () => "/dashboard",
@@ -249,9 +249,32 @@ export const api = createApi({
       invalidatesTags: ["Users"], // Cập nhật lại danh sách ngay sau khi tạo
     }),
 
+    updateUser: build.mutation<User, { id: string; data: Partial<User> }>({
+      query: ({ id, data }) => ({
+        url: `/users/${id}`,
+        method: "PUT",
+        body: data,
+      }),
+      invalidatesTags: ["Users"], // Cập nhật lại danh sách ngay sau khi sửa
+    }),
+
+    deleteUser: build.mutation<void, string>({
+      query: (id) => ({
+        url: `/users/${id}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["Users"],
+    }),
+
     getWarehouses: build.query<Warehouse[], void>({
       query: () => "/warehouses",
       providesTags: ["Products"], // Tạm dùng chung tag để cache
+    }),
+
+    getWarehouseById: build.query<any, string>({
+      query: (id) => `/warehouses/${id}`,
+      providesTags: ["Warehouses", "Users", "Assets"], 
+      // Note: Gắn 3 tag này để khi User/Asset thay đổi, trang này cũng tự động làm mới!
     }),
 
     createWarehouse: build.mutation<Warehouse, Partial<Warehouse>>({
@@ -261,6 +284,15 @@ export const api = createApi({
         body: newWarehouse,
       }),
       invalidatesTags: ["Products"], // Tự động load lại danh sách sau khi tạo
+    }),
+
+    updateWarehouse: build.mutation<Warehouse, { id: string; data: Partial<Warehouse> }>({
+      query: ({ id, data }) => ({
+        url: `/warehouses/${id}`,
+        method: "PUT",
+        body: data,
+      }),
+      invalidatesTags: ["Warehouses"], // Cập nhật lại UI ngay lập tức
     }),
 
     deleteWarehouse: build.mutation<void, string>({
@@ -325,12 +357,16 @@ export const {
   useRejectTransactionMutation,
   useGetUsersQuery,
   useRegisterUserMutation,
+  useUpdateUserMutation,
+  useDeleteUserMutation,
   useGetExpensesByCategoryQuery,
   useGetAssetsQuery,
   useCreateAssetMutation,
   useDeleteAssetMutation,
   useLoginMutation,
   useGetWarehousesQuery,
+  useGetWarehouseByIdQuery,
   useCreateWarehouseMutation,
+  useUpdateWarehouseMutation,
   useDeleteWarehouseMutation,
 } = api;

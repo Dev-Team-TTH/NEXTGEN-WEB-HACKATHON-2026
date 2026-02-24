@@ -19,13 +19,14 @@
     },
     "sidebar": {
         "dashboard": "Dashboard",
+        "approvals": "Approvals",
         "inventory": "Inventory",
-        "products": "Products",
-        "users": "Users",
-        "settings": "Settings",
-        "expenses": "Expenses",
-        "assets": "Assets"
+        "assets": "Assets Management",
+        "users": "Users & Roles",
+        "warehouses": "Branch System",
+        "expenses": "Financial Reports"
     },
+    
     "dashboard": {
         "title": "Dashboard Overview",
         "salesSummary": "Sales Summary",
@@ -43,9 +44,13 @@
         "currentMonth": "Current Month"
     },
     "navbar": {
-        "profile": "My Profile",
+        "welcome": "Welcome",
+        "lightMode": "Light Mode",
+        "darkMode": "Dark Mode",
+        "notifications": "Notifications",
         "settings": "Settings",
-        "logout": "Sign Out"
+        "profile": "My Profile",
+        "logout": "Logout"
     },
     "pages": {
         "dashboardSubtitle": "Real-time revenue, expenses, and inventory reports.",

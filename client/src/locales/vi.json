@@ -17,15 +17,17 @@
         "success": "Đăng nhập thành công!",
         "error": "Sai email hoặc mật khẩu!"
     },
+
     "sidebar": {
-        "dashboard": "Tổng quan",
-        "inventory": "Kho hàng",
-        "products": "Sản phẩm",
-        "users": "Nhân viên",
-        "settings": "Cài đặt",
-        "expenses": "Chi phí",
-        "assets": "Tài sản"
+        "dashboard": "Bảng Điều Khiển",
+        "approvals": "Duyệt Phiếu Kho",
+        "inventory": "Quản Lý Kho",
+        "assets": "Quản Lý Tài Sản",
+        "users": "Nhân Sự & Quyền",
+        "warehouses": "Hệ Thống Chi Nhánh",
+        "expenses": "Báo Cáo Thu Chi"
     },
+
     "dashboard": {
         "title": "Tổng quan hệ thống",
         "salesSummary": "Báo cáo bán hàng",
@@ -43,8 +45,12 @@
         "currentMonth": "Tháng hiện tại"
     },
     "navbar": {
-        "profile": "Hồ sơ cá nhân",
+        "welcome": "Xin chào",
+        "lightMode": "Bật Sáng",
+        "darkMode": "Bật Tối",
+        "notifications": "Thông báo",
         "settings": "Cài đặt",
+        "profile": "Hồ sơ cá nhân",
         "logout": "Đăng xuất"
     },
     "pages": {

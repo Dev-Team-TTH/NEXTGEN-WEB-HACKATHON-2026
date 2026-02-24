@@ -7,19 +7,18 @@ import {
   Briefcase,
   Building2,
   CircleDollarSign,
-  Clipboard,
+  ClipboardCheck,
   Layout,
   LucideIcon,
   Menu,
-  SlidersHorizontal,
-  User,
-  ClipboardCheck,
+  ChevronRight,
+  User // Đã import đầy đủ
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import React from "react";
-// 1. IMPORT HOOK DỊCH THUẬT
+import React, { useEffect, useState } from "react";
+// (1) Import thư viện
 import { useTranslation } from "react-i18next";
 
 interface SidebarLinkProps {
@@ -29,36 +28,22 @@ interface SidebarLinkProps {
   isCollapsed: boolean;
 }
 
-const SidebarLink = ({
-  href,
-  icon: Icon,
-  label,
-  isCollapsed,
-}: SidebarLinkProps) => {
+const SidebarLink = ({ href, icon: Icon, label, isCollapsed }: SidebarLinkProps) => {
   const pathname = usePathname();
-  const isActive =
-    pathname === href || (pathname === "/" && href === "/dashboard");
+  const isActive = pathname === href || (pathname === "/" && href === "/dashboard");
 
   return (
     <Link href={href}>
-      <div
-        className={`cursor-pointer flex items-center ${
-          isCollapsed ? "justify-center py-4" : "justify-start px-8 py-4"
-        }
-        hover:text-blue-500 hover:bg-blue-100 gap-3 transition-colors ${
-          isActive ? "bg-blue-200 text-white" : ""
-        }
-      }`}
-      >
-        <Icon className="w-6 h-6 !text-gray-700" />
-
-        <span
-          className={`${
-            isCollapsed ? "hidden" : "block"
-          } font-medium text-gray-700`}
-        >
+      <div className={`relative flex items-center py-3.5 px-4 my-1.5 rounded-xl transition-all duration-300 ease-out group overflow-hidden ${isActive ? "bg-blue-600 text-white shadow-md shadow-blue-500/20" : "text-gray-500 dark:text-gray-400 hover:bg-blue-50 dark:hover:bg-gray-800 hover:text-blue-700 dark:hover:text-blue-400"}`}>
+        <div className={`flex justify-center items-center shrink-0 ${isCollapsed ? "w-full" : "w-6"}`}>
+          <Icon className={`w-5 h-5 transition-transform duration-300 group-hover:scale-110 ${isActive ? "text-white" : "text-gray-500 dark:text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400"}`} />
+        </div>
+        <span className={`font-semibold text-sm whitespace-nowrap transition-all duration-300 ease-out ${isCollapsed ? "opacity-0 max-w-0 ml-0" : "opacity-100 max-w-[200px] ml-4"}`}>
           {label}
         </span>
+         {!isCollapsed && (
+          <ChevronRight className={`w-4 h-4 ml-auto opacity-0 -translate-x-3 transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-x-0 ${isActive ? "text-white opacity-100 translate-x-0" : ""}`} />
+        )}
       </div>
     </Link>
   );
@@ -66,101 +51,79 @@ const SidebarLink = ({
 
 const Sidebar = () => {
   const dispatch = useAppDispatch();
-  const isSidebarCollapsed = useAppSelector(
-    (state) => state.global.isSidebarCollapsed
-  );
+  const isSidebarCollapsed = useAppSelector((state) => state.global.isSidebarCollapsed);
   
-  // 2. KHỞI TẠO HÀM T() ĐỂ DỊCH
+  // (2) Khai báo hàm t
   const { t } = useTranslation();
 
-  const toggleSidebar = () => {
-    dispatch(setIsSidebarCollapsed(!isSidebarCollapsed));
-  };
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isHovered, setIsHovered] = useState(false);
 
-  const sidebarClassNames = `fixed flex flex-col ${
-    isSidebarCollapsed ? "w-0 md:w-16" : "w-72 md:w-64"
-  } bg-white transition-all duration-300 overflow-hidden h-full shadow-md z-40`;
+  useEffect(() => {
+    const user = JSON.parse(localStorage.getItem("user") || "null");
+    setCurrentUser(user);
+  }, []);
+
+  const isEffectivelyExpanded = !isSidebarCollapsed || isHovered;
+
+  if (!currentUser) return null;
+  const role = currentUser.role;
 
   return (
-    <div className={sidebarClassNames}>
-      {/* TOP LOGO */}
-      <div
-        className={`flex gap-3 justify-between md:justify-normal items-center pt-8 ${
-          isSidebarCollapsed ? "px-5" : "px-8"
-        }`}
-      >
-        <Image
-          src="/logo.png" 
-          alt="tth-logo"
-          width={27}
-          height={27}
-          className="rounded w-8"
-        />
-        <h1
-          className={`${
-            isSidebarCollapsed ? "hidden" : "block"
-          } font-extrabold text-2xl`}
-        >
-          TEAM TTH
-        </h1>
-
+    <div
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className={`relative h-screen bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800 flex flex-col transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] will-change-[width] z-40 shrink-0 ${isEffectivelyExpanded ? "w-[280px]" : "w-[88px]"}`}
+    >
+      <div className={`flex items-center pt-8 pb-6 transition-all duration-300 ${!isEffectivelyExpanded ? "justify-center px-0" : "justify-between px-6"}`}>
+        <div className={`flex items-center overflow-hidden transition-all duration-300 ${!isEffectivelyExpanded ? "gap-0" : "gap-3"}`}>
+          <div className="bg-blue-600 p-2.5 rounded-xl shadow-lg shadow-blue-500/30 shrink-0 flex items-center justify-center">
+            <Image src="/logo.png" alt="logo" width={24} height={24} className="brightness-0 invert" style={{ width: "auto", height: "auto" }} />
+          </div>
+          <h1 className={`font-black text-xl tracking-tight text-gray-800 dark:text-gray-100 transition-all duration-300 whitespace-nowrap ${!isEffectivelyExpanded ? "opacity-0 w-0" : "opacity-100 w-auto"}`}>
+            TEAM TTH
+          </h1>
+        </div>
         <button
-          className="md:hidden px-3 py-3 bg-gray-100 rounded-full hover:bg-blue-100"
-          onClick={toggleSidebar}
+          className={`p-2 bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors shrink-0 ${!isEffectivelyExpanded ? "hidden" : "block"}`}
+          onClick={() => {
+            dispatch(setIsSidebarCollapsed(!isSidebarCollapsed));
+            setIsHovered(false);
+          }}
         >
-          <Menu className="w-4 h-4" />
+          <Menu className="w-5 h-5" />
         </button>
       </div>
 
-      {/* 3. ÁP DỤNG HÀM T() VÀO CÁC LABEL */}
-      <div className="flex-grow mt-8">
-        <SidebarLink
-          href="/dashboard"
-          icon={Layout}
-          label={t('sidebar.dashboard')}
-          isCollapsed={isSidebarCollapsed}
-        />
-        <SidebarLink
-          href="/approvals"
-          icon={ClipboardCheck}
-          label="Duyệt Phiếu Kho"
-          isCollapsed={isSidebarCollapsed}
-        />
-        <SidebarLink
-          href="/inventory"
-          icon={Archive}
-          label={t('sidebar.inventory')}
-          isCollapsed={isSidebarCollapsed}
-        />
-        <SidebarLink
-          href="/assets"
-          icon={Briefcase}
-          label={t('sidebar.assets')} 
-          isCollapsed={isSidebarCollapsed}
-        />
-        <SidebarLink
-          href="/warehouses"
-          icon={Building2}
-          label="Hệ Thống Kho"
-          isCollapsed={isSidebarCollapsed}
-        />
-        <SidebarLink
-          href="/users"
-          icon={User}
-          label={t('sidebar.users')}
-          isCollapsed={isSidebarCollapsed}
-        />
-        <SidebarLink
-          href="/expenses"
-          icon={CircleDollarSign}
-          label={t('sidebar.expenses')}
-          isCollapsed={isSidebarCollapsed}
-        />
+      <div className="px-6 mb-4">
+        <div className="w-full h-[1px] bg-gradient-to-r from-transparent via-gray-200 dark:via-gray-700 to-transparent"></div>
       </div>
 
-      {/* FOOTER */}
-      <div className={`${isSidebarCollapsed ? "hidden" : "block"} mb-10`}>
-        <p className="text-center text-xs text-gray-500">&copy; 2026 Team TTH</p>
+      <div className={`flex-grow flex flex-col overflow-y-auto scrollbar-hide transition-all duration-300 pb-8 ${!isEffectivelyExpanded ? "px-3" : "px-5"}`}>
+        {/* (3) Dùng {t('từ_khóa')} tuyệt đối */}
+        <SidebarLink href="/dashboard" icon={Layout} label={t('sidebar.dashboard')} isCollapsed={!isEffectivelyExpanded} />
+        
+        {(role === "ADMIN" || role === "MANAGER") && (
+          <SidebarLink href="/approvals" icon={ClipboardCheck} label={t('sidebar.approvals')} isCollapsed={!isEffectivelyExpanded} />
+        )}
+
+        <SidebarLink href="/inventory" icon={Archive} label={t('sidebar.inventory')} isCollapsed={!isEffectivelyExpanded} />
+        
+        {(role === "ADMIN" || role === "MANAGER") && (
+          <SidebarLink href="/assets" icon={Briefcase} label={t('sidebar.assets')} isCollapsed={!isEffectivelyExpanded} />
+        )}
+
+        {(role === "ADMIN" || role === "MANAGER") && (
+          <SidebarLink href="/users" icon={User} label={t('sidebar.users')} isCollapsed={!isEffectivelyExpanded} />
+        )}
+
+        {role === "ADMIN" && (
+          <SidebarLink href="/warehouses" icon={Building2} label={t('sidebar.warehouses')} isCollapsed={!isEffectivelyExpanded} />
+        )}
+
+        {role === "ADMIN" && (
+          <SidebarLink href="/expenses" icon={CircleDollarSign} label={t('sidebar.expenses')} isCollapsed={!isEffectivelyExpanded} />
+        )}
       </div>
     </div>
   );
