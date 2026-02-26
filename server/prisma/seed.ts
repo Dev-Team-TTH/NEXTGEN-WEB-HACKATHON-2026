@@ -18,7 +18,6 @@ async function main() {
         email: "admin@team-tth.com",
         password: hashedPassword,
         role: "ADMIN",
-        warehouseId: null, // Root Admin không bị trói buộc vào kho nào
         phone: "0909000000"
       }
     });

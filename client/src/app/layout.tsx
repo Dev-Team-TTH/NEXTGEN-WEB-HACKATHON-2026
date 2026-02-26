@@ -16,7 +16,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    // THÊM suppressHydrationWarning ĐỂ FIX TRÚNG ĐÍCH LỖI HYDRATION (KHÔNG SỬA GÌ THÊM)
+    <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <DashboardWrapper>{children}</DashboardWrapper>
       </body>

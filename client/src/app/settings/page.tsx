@@ -2,134 +2,176 @@
 
 import React, { useState } from "react";
 import Header from "@/app/(components)/Header";
-import { useTranslation } from "react-i18next";
 import { useAppDispatch, useAppSelector } from "@/app/redux";
-import { setIsDarkMode, setIsNotificationsEnabled } from "@/state";
+import { setIsDarkMode } from "@/state";
+import { 
+  Settings as SettingsIcon, Moon, Sun, 
+  Bell, Lock, User, Palette, Globe, ShieldCheck, Mail
+} from "lucide-react";
 import { toast } from "react-toastify";
-import { SlidersHorizontal } from "lucide-react";
 
-type SystemSetting = {
-  label: string;
-  value: string | boolean;
-  type: "text" | "toggle" | "select"; 
-  options?: { value: string; label: string }[];
-};
-
-const mockSettings: SystemSetting[] = [
-  { label: "Notification", value: true, type: "toggle" },
-  { label: "Dark Mode", value: false, type: "toggle" },
-  { 
-    label: "Language", 
-    value: "en", 
-    type: "select",
-    options: [
-      { value: "en", label: "English" },
-      { value: "vi", label: "Tiếng Việt" }
-    ]
-  },
-];
-
-const Settings = () => {
-  const [systemSettings, setsystemSettings] = useState<SystemSetting[]>(mockSettings);
-  const { i18n, t } = useTranslation();
-
+const SettingsPage = () => {
   const dispatch = useAppDispatch();
   const isDarkMode = useAppSelector((state) => state.global.isDarkMode);
-  const isNotificationsEnabled = useAppSelector((state) => state.global.isNotificationsEnabled);
-
-  // ĐỒNG BỘ BẢNG DỮ LIỆU VỚI REDUX STATE
-  const currentSettings = systemSettings.map((setting) => {
-    if (setting.label === "Dark Mode") return { ...setting, value: isDarkMode };
-    if (setting.label === "Language") return { ...setting, value: i18n.language };
-    if (setting.label === "Notification") return { ...setting, value: isNotificationsEnabled };
-    return setting;
+  
+  const [activeTab, setActiveTab] = useState("APPEARANCE");
+  const [notifications, setNotifications] = useState({
+    email: true,
+    push: true,
+    weeklyReport: false,
   });
 
-  // XỬ LÝ NÚT GẠT (TOGGLE)
-  const handleToggleChange = (index: number) => {
-    const settingLabel = currentSettings[index].label;
-
-    if (settingLabel === "Dark Mode") {
-      dispatch(setIsDarkMode(!isDarkMode));
-      if (!isDarkMode) toast.dark("🌙 Chế độ Ban đêm đã bật");
-      else toast.info("☀️ Chế độ Ban ngày đã bật");
-    } 
-    else if (settingLabel === "Notification") {
-      dispatch(setIsNotificationsEnabled(!isNotificationsEnabled));
-      
-      if (!isNotificationsEnabled) {
-        toast.success("🔔 Đã bật thông báo hệ thống!");
-      } else {
-        toast.warning("🔕 Đã tắt thông báo hệ thống.");
-      }
-    }
-  };
-
-  // XỬ LÝ DROPDOWN (SELECT)
-  const handleSelectChange = (index: number, val: string) => {
-    const settingLabel = currentSettings[index].label;
-    
-    if (settingLabel === "Language") {
-      i18n.changeLanguage(val);
-      toast.success(`Ngôn ngữ đã đổi sang: ${val === 'vi' ? 'Tiếng Việt' : 'English'}`);
-    }
+  const handleSave = () => {
+    toast.success("Đã lưu cài đặt hệ thống thành công!");
   };
 
   return (
-    <div className="w-full">
+    <div className="flex flex-col w-full pb-10">
       <Header 
-        name={t("sidebar.settings")} 
-        subtitle="Quản lý cấu hình hệ thống, ngôn ngữ và giao diện."
-        icon={SlidersHorizontal} 
+        name="Cài Đặt Hệ Thống" 
+        subtitle="Quản lý giao diện, bảo mật và tùy chọn cá nhân hóa"
+        icon={SettingsIcon}
       />
-      <div className="overflow-x-auto mt-5 shadow-md">
-        <table className="min-w-full bg-white dark:bg-gray-800 rounded-lg">
-          <thead className="bg-gray-800 dark:bg-gray-900 text-white">
-            <tr>
-              <th className="text-left py-3 px-4 uppercase font-semibold text-sm">
-                Setting
-              </th>
-              <th className="text-left py-3 px-4 uppercase font-semibold text-sm">
-                Value
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {currentSettings.map((setting, index) => (
-              <tr className="hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors" key={setting.label}>
-                <td className="py-2 px-4 dark:text-gray-200">{setting.label}</td>
-                <td className="py-2 px-4">
-                  {setting.type === "toggle" ? (
-                    <label className="inline-flex relative items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="sr-only peer"
-                        checked={setting.value as boolean}
-                        onChange={() => handleToggleChange(index)}
-                      />
-                      <div className="w-11 h-6 bg-gray-200 dark:bg-gray-600 rounded-full peer peer-focus:ring-blue-400 peer-focus:ring-4 transition peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                    </label>
-                  ) : setting.type === "select" ? (
-                    <select
-                      className="px-4 py-2 border dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-200 focus:outline-none focus:border-blue-500 bg-white dark:bg-gray-700"
-                      value={setting.value as string}
-                      onChange={(e) => handleSelectChange(index, e.target.value)}
-                    >
-                      {setting.options?.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+
+      <div className="mt-6 flex flex-col md:flex-row gap-6">
+        {/* SIDEBAR TABS (Danh mục Cài đặt) */}
+        <div className="w-full md:w-64 flex-shrink-0 space-y-2">
+          <button 
+            onClick={() => setActiveTab("APPEARANCE")} 
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${activeTab === "APPEARANCE" ? "bg-blue-600 text-white shadow-md" : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 border border-transparent dark:border-gray-700"}`}
+          >
+            <Palette className="w-5 h-5" /> Giao diện
+          </button>
+          <button 
+            onClick={() => setActiveTab("NOTIFICATIONS")} 
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${activeTab === "NOTIFICATIONS" ? "bg-blue-600 text-white shadow-md" : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 border border-transparent dark:border-gray-700"}`}
+          >
+            <Bell className="w-5 h-5" /> Thông báo
+          </button>
+          <button 
+            onClick={() => setActiveTab("ACCOUNT")} 
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${activeTab === "ACCOUNT" ? "bg-blue-600 text-white shadow-md" : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 border border-transparent dark:border-gray-700"}`}
+          >
+            <User className="w-5 h-5" /> Tài khoản
+          </button>
+          <button 
+            onClick={() => setActiveTab("SECURITY")} 
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${activeTab === "SECURITY" ? "bg-blue-600 text-white shadow-md" : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 border border-transparent dark:border-gray-700"}`}
+          >
+            <ShieldCheck className="w-5 h-5" /> Bảo mật
+          </button>
+        </div>
+
+        {/* CONTENT AREA (Nội dung chi tiết bên phải) */}
+        <div className="flex-1 bg-white dark:bg-gray-800 rounded-2xl p-6 md:p-8 border border-gray-200 dark:border-gray-700 shadow-sm min-h-[500px]">
+          
+          {/* ========================================================= */}
+          {/* TAB: GIAO DIỆN (APPEARANCE) - NƠI CHUYỂN ĐỔI LIGHT/DARK */}
+          {/* ========================================================= */}
+          {activeTab === "APPEARANCE" && (
+            <div className="animate-in fade-in duration-300 space-y-8">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1">Chủ đề hiển thị</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">Tùy chỉnh giao diện Sáng/Tối cho hệ thống WMS của bạn.</p>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+                  {/* Nút Light Mode */}
+                  <button 
+                    onClick={() => dispatch(setIsDarkMode(false))}
+                    className={`flex flex-col items-center justify-center gap-3 p-6 rounded-2xl border-2 transition-all ${!isDarkMode ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/20" : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"}`}
+                  >
+                    <Sun className={`w-10 h-10 ${!isDarkMode ? "text-blue-500" : "text-gray-400 dark:text-gray-500"}`} />
+                    <span className="font-bold">Chế độ Sáng</span>
+                  </button>
+
+                  {/* Nút Dark Mode */}
+                  <button 
+                    onClick={() => dispatch(setIsDarkMode(true))}
+                    className={`flex flex-col items-center justify-center gap-3 p-6 rounded-2xl border-2 transition-all ${isDarkMode ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400" : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"}`}
+                  >
+                    <Moon className={`w-10 h-10 ${isDarkMode ? "text-blue-500 dark:text-blue-400" : "text-gray-400 dark:text-gray-500"}`} />
+                    <span className="font-bold">Chế độ Tối (Dark)</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-6 border-t border-gray-100 dark:border-gray-700">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1">Ngôn ngữ hệ thống</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">Hỗ trợ đa ngôn ngữ cho doanh nghiệp quốc tế.</p>
+                <div className="max-w-xs relative">
+                  <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <select className="w-full pl-10 pr-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-bold text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer transition-colors">
+                    <option value="vi">🇻🇳 Tiếng Việt (Mặc định)</option>
+                    <option value="en">🇺🇸 English</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* TAB: THÔNG BÁO (NOTIFICATIONS) */}
+          {/* ========================================================= */}
+          {activeTab === "NOTIFICATIONS" && (
+            <div className="animate-in fade-in duration-300 space-y-6">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1">Cài đặt Thông báo</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Kiểm soát cách hệ thống báo cáo biến động tồn kho cho bạn.</p>
+
+              <div className="space-y-4 max-w-2xl">
+                <label className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                  <div className="flex items-center gap-4">
+                    <div className="p-2 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-lg"><Mail className="w-5 h-5" /></div>
+                    <div>
+                      <h4 className="font-bold text-gray-900 dark:text-white">Email nhắc nhở</h4>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Gửi email khi có phiếu kho chờ duyệt.</p>
+                    </div>
+                  </div>
+                  <input type="checkbox" checked={notifications.email} onChange={(e) => setNotifications({...notifications, email: e.target.checked})} className="w-5 h-5 rounded text-blue-600 border-gray-300 focus:ring-blue-500 cursor-pointer" />
+                </label>
+
+                <label className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                  <div className="flex items-center gap-4">
+                    <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-lg"><Bell className="w-5 h-5" /></div>
+                    <div>
+                      <h4 className="font-bold text-gray-900 dark:text-white">Thông báo hệ thống (Push)</h4>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Đẩy thông báo trực tiếp trên góc màn hình.</p>
+                    </div>
+                  </div>
+                  <input type="checkbox" checked={notifications.push} onChange={(e) => setNotifications({...notifications, push: e.target.checked})} className="w-5 h-5 rounded text-emerald-600 border-gray-300 focus:ring-emerald-500 cursor-pointer" />
+                </label>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* TAB: TÀI KHOẢN & BẢO MẬT (Placeholder) */}
+          {/* ========================================================= */}
+          {(activeTab === "ACCOUNT" || activeTab === "SECURITY") && (
+            <div className="flex flex-col items-center justify-center py-16 text-center animate-in fade-in">
+              <Lock className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
+              <h3 className="text-xl font-bold text-gray-700 dark:text-gray-300 mb-2">Tính năng đang phát triển</h3>
+              <p className="text-gray-500 dark:text-gray-400 max-w-sm">
+                Mô-đun Đổi Mật Khẩu và Phân Quyền đang được đội ngũ tích hợp. Vui lòng quay lại sau!
+              </p>
+            </div>
+          )}
+
+          {/* FOOTER NÚT LƯU */}
+          {activeTab !== "ACCOUNT" && activeTab !== "SECURITY" && (
+            <div className="mt-10 pt-6 border-t border-gray-100 dark:border-gray-700 flex justify-end">
+              <button 
+                onClick={handleSave} 
+                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all active:scale-95"
+              >
+                Lưu Thay Đổi
+              </button>
+            </div>
+          )}
+
+        </div>
       </div>
     </div>
   );
 };
 
-export default Settings;
+export default SettingsPage;

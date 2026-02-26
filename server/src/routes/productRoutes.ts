@@ -1,15 +1,21 @@
 import { Router } from "express";
-import { getProducts, createProduct, updateProduct, deleteProduct } from "../controllers/productController";
+import { 
+  getProducts, createProduct, updateProduct, deleteProduct,
+  getMasterDataRequests, approveMasterData, rejectMasterData // THÊM IMPORT
+} from "../controllers/productController";
 
 const router = Router();
 
 router.get("/", getProducts);
 router.post("/", createProduct);
+router.delete("/:productId", deleteProduct);
 
-// Đảm bảo bạn có dòng này để hứng request Sửa sản phẩm:
+// ĐỔI ROUTE UPDATE THÀNH PUT (tạo yêu cầu)
 router.put("/:productId", updateProduct);
 
-// Đảm bảo bạn có dòng này để hứng request Xóa sản phẩm:
-router.delete("/:productId", deleteProduct);
+// THÊM 3 ROUTE MỚI CHO ENTERPRISE DUYỆT:
+router.get("/requests", getMasterDataRequests);
+router.put("/requests/:id/approve", approveMasterData);
+router.put("/requests/:id/reject", rejectMasterData);
 
 export default router;

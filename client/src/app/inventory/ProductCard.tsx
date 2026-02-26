@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { Product } from "@/state/api";
 import Rating from "@/app/(components)/Rating";
 import { 
-  ArrowDownToLine, ArrowUpFromLine, Edit, Trash2, QrCode, 
+  ArrowRightLeft, Edit, Trash2, QrCode, 
   ImageOff, Tag, AlertTriangle, ChevronDown, ChevronUp, Layers, TrendingUp, Package, Box
 } from "lucide-react";
 
@@ -10,7 +10,8 @@ type ProductCardProps = {
   product: Product;
   isExpanded: boolean;
   onToggleExpand: (id: string) => void;
-  onOpenModal: (type: "TX_IN" | "TX_OUT" | "EDIT" | "QR", product: Product) => void;
+  // ĐÃ SỬA LỖI KIỂU DỮ LIỆU Ở ĐÂY: Dùng "TRANSACTION" thay cho "TX_IN" | "TX_OUT"
+  onOpenModal: (type: "TRANSACTION" | "EDIT" | "QR", product: Product) => void;
   onDelete: (id: string) => void;
   formatStockDisplay: (product: Product) => string;
 };
@@ -45,7 +46,7 @@ const ProductCard = ({ product, isExpanded, onToggleExpand, onOpenModal, onDelet
       {/* --- PHẦN 1: THÔNG TIN TỔNG QUAN --- */}
       <div className="flex flex-col lg:flex-row p-4 gap-5 items-stretch">
         
-        {/* CỘT 1: HÌNH ẢNH (Kích thước cố định chống vỡ) */}
+        {/* CỘT 1: HÌNH ẢNH */}
         <div className="w-full lg:w-28 lg:h-28 rounded-xl bg-gray-50 border border-gray-200 flex-shrink-0 relative flex items-center justify-center overflow-hidden">
           {product.imageUrl ? (
             <img src={product.imageUrl} alt={product.name} className="object-cover w-full h-full group-hover:scale-110 transition-transform duration-500" />
@@ -62,7 +63,7 @@ const ProductCard = ({ product, isExpanded, onToggleExpand, onOpenModal, onDelet
           )}
         </div>
 
-        {/* CỘT 2: THÔNG TIN CƠ BẢN (Dùng min-w-0 để chống tràn text dài) */}
+        {/* CỘT 2: THÔNG TIN CƠ BẢN */}
         <div className="flex-1 min-w-0 flex flex-col justify-between">
           <div>
             <h3 className="text-lg font-bold text-gray-900 dark:text-white truncate mb-1.5" title={product.name}>
@@ -88,7 +89,7 @@ const ProductCard = ({ product, isExpanded, onToggleExpand, onOpenModal, onDelet
           </div>
         </div>
 
-        {/* CỘT 3: TÀI CHÍNH (Widget Độc lập, Nền xám nhạt) */}
+        {/* CỘT 3: TÀI CHÍNH */}
         <div className="w-full lg:w-48 bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col justify-center flex-shrink-0">
           <div className="flex justify-between items-center mb-1.5">
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Giá Bán</span>
@@ -105,7 +106,7 @@ const ProductCard = ({ product, isExpanded, onToggleExpand, onOpenModal, onDelet
           )}
         </div>
 
-        {/* CỘT 4: TỒN KHO & NÚT EXPAND (Widget Độc lập, Nền xanh nhạt) */}
+        {/* CỘT 4: TỒN KHO */}
         <div className="w-full lg:w-44 bg-blue-50/50 border border-blue-100 rounded-xl p-3 flex flex-col justify-center items-center flex-shrink-0 relative">
           <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1 flex items-center gap-1"><Box className="w-3 h-3"/> TỔNG TỒN KHO</span>
           
@@ -120,7 +121,6 @@ const ProductCard = ({ product, isExpanded, onToggleExpand, onOpenModal, onDelet
             )
           }
 
-          {/* Nút nội soi Tồn Kho chi tiết */}
           {(product.hasVariants || product.hasBatches) && (
             <button 
               onClick={() => onToggleExpand(product.productId)} 
@@ -131,14 +131,16 @@ const ProductCard = ({ product, isExpanded, onToggleExpand, onOpenModal, onDelet
           )}
         </div>
 
-        {/* CỘT 5: THAO TÁC (Chia dòng logic) */}
+        {/* CỘT 5: THAO TÁC */}
         <div className="w-full lg:w-36 flex flex-col gap-2 flex-shrink-0">
           <div className="flex gap-2">
-            <button onClick={() => onOpenModal("TX_IN", product)} disabled={product.status === "DISCONTINUED"} className="flex-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white border border-emerald-200 px-2 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
-              <ArrowDownToLine className="w-4 h-4"/> Nhập
-            </button>
-            <button onClick={() => onOpenModal("TX_OUT", product)} disabled={product.stockQuantity <= 0} className="flex-1 bg-amber-50 text-amber-700 hover:bg-amber-500 hover:text-white border border-amber-200 px-2 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
-              <ArrowUpFromLine className="w-4 h-4"/> Xuất
+            {/* ĐÃ SỬA: Gộp 2 nút Nhập/Xuất thành 1 nút Giao dịch duy nhất */}
+            <button 
+              onClick={() => onOpenModal("TRANSACTION", product)} 
+              disabled={product.status === "DISCONTINUED"} 
+              className="flex-1 bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white border border-purple-200 px-2 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            >
+              <ArrowRightLeft className="w-4 h-4"/> Giao dịch
             </button>
           </div>
           <div className="flex gap-2">
@@ -173,7 +175,6 @@ const ProductCard = ({ product, isExpanded, onToggleExpand, onOpenModal, onDelet
             )}
           </div>
           
-          {/* Bảng dữ liệu có giới hạn chiều cao (max-h-[250px]) và thanh cuộn */}
           <div className="overflow-x-auto overflow-y-auto max-h-[250px] rounded-xl border border-indigo-100 shadow-sm bg-white custom-scrollbar">
             <table className="w-full text-left border-collapse min-w-[600px] relative">
               <thead className="sticky top-0 z-10 bg-indigo-50 shadow-sm">

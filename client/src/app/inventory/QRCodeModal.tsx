@@ -3,29 +3,27 @@
 import { X, QrCode, Printer, Download, Box } from "lucide-react";
 import { useState } from "react";
 import { toast } from "react-toastify";
+import { QRCodeCanvas } from "qrcode.react"; // Dùng thư viện thay vì API
 
 const QRCodeModal = ({ isOpen, onClose, product, onPrint }: any) => {
   const [isDownloading, setIsDownloading] = useState(false);
 
   if (!isOpen || !product) return null;
 
-  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${product.productId}`;
-
-  // TÍNH NĂNG 1: TẢI ẢNH QR XUỐNG MÁY
-  const handleDownload = async () => {
+  // TÍNH NĂNG 1: TẢI ẢNH QR XUỐNG MÁY (Trực tiếp từ Canvas, cực nhanh)
+  const handleDownload = () => {
     try {
       setIsDownloading(true);
-      const response = await fetch(qrImageUrl);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      const canvas = document.getElementById("qr-canvas-inventory") as HTMLCanvasElement;
+      if (!canvas) throw new Error("Canvas không tồn tại");
       
+      const url = canvas.toDataURL("image/png");
       const a = document.createElement("a");
       a.href = url;
       a.download = `QR_${product.productId.substring(0, 10)}.png`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
       
       toast.success("Đã tải mã QR về máy!");
     } catch (error) {
@@ -35,16 +33,19 @@ const QRCodeModal = ({ isOpen, onClose, product, onPrint }: any) => {
     }
   };
 
-  // TÍNH NĂNG 2: IN TEM TRỰC TIẾP (KẾT NỐI VỚI MÁY IN MÃ VẠCH)
+  // TÍNH NĂNG 2: IN TEM TRỰC TIẾP
   const handleRealPrint = () => {
-    // Mở một cửa sổ ẩn chuyên dùng để in
+    // Trích xuất ảnh từ QR Canvas
+    const canvas = document.getElementById("qr-canvas-inventory") as HTMLCanvasElement;
+    if (!canvas) return;
+    const qrImageUrl = canvas.toDataURL("image/png");
+
     const printWindow = window.open('', '', 'height=600,width=800');
     if (!printWindow) {
       toast.error("Trình duyệt đã chặn Popup. Vui lòng cấp quyền!");
       return;
     }
 
-    // Thiết kế HTML/CSS riêng biệt cho máy in (Bỏ qua giao diện Web)
     printWindow.document.write(`
       <html>
         <head>
@@ -61,7 +62,6 @@ const QRCodeModal = ({ isOpen, onClose, product, onPrint }: any) => {
             .info-label { color: #555; font-weight: bold; }
             .info-value { font-weight: bold; color: #000; font-family: monospace; }
             
-            /* Tối ưu khi in ra giấy thực tế */
             @media print {
               body { background: white; padding: 0; display: block; }
               .label-card { border: none; width: 100%; }
@@ -72,7 +72,7 @@ const QRCodeModal = ({ isOpen, onClose, product, onPrint }: any) => {
           <div class="label-card">
             <div class="label-header">KHO DOANH NGHIỆP</div>
             <div class="label-body">
-              <img src="${qrImageUrl}" class="qr-image" onload="window.printReady = true;" />
+              <img src="${qrImageUrl}" class="qr-image" />
               <h3 class="product-name">${product.name}</h3>
               <div class="divider"></div>
               <div class="info-row">
@@ -86,18 +86,17 @@ const QRCodeModal = ({ isOpen, onClose, product, onPrint }: any) => {
             </div>
           </div>
           <script>
-            // Chờ ảnh load xong mới gọi lệnh in
             setTimeout(() => {
               window.print();
               window.close();
-            }, 500);
+            }, 300);
           </script>
         </body>
       </html>
     `);
     
     printWindow.document.close();
-    if(onPrint) onPrint(); // Gọi hàm hiển thị thông báo "Đã gửi lệnh in" từ component cha
+    if(onPrint) onPrint(); 
   };
 
   return (
@@ -116,19 +115,18 @@ const QRCodeModal = ({ isOpen, onClose, product, onPrint }: any) => {
         
         {/* KHU VỰC HIỂN THỊ TEM NHÃN MÔ PHỎNG VẬT LÝ */}
         <div className="p-6 flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900">
-          
           <div className="bg-white p-5 rounded-xl shadow-md border-2 border-dashed border-gray-300 dark:border-gray-600 flex flex-col items-center w-full relative">
-            {/* Tag mác phía trên */}
             <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-gray-800 text-white text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full flex items-center gap-1">
               <Box className="w-3 h-3" /> SKU Tag
             </div>
 
             <div className="bg-white p-2 rounded-xl border border-gray-100 mt-2 mb-4">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img 
-                src={qrImageUrl} 
-                alt="Product QR" 
-                className="w-40 h-40" 
+              {/* TẠO MÃ QR BẰNG CANVAS (Thư viện nội bộ) */}
+              <QRCodeCanvas 
+                id="qr-canvas-inventory"
+                value={product.productId} 
+                size={160} 
+                level={"H"} 
               />
             </div>
             
@@ -149,23 +147,14 @@ const QRCodeModal = ({ isOpen, onClose, product, onPrint }: any) => {
               </div>
             </div>
           </div>
-          
         </div>
         
         {/* BỘ NÚT CHỨC NĂNG */}
         <div className="flex items-center gap-3 p-4 border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800">
-          <button 
-            onClick={handleDownload} 
-            disabled={isDownloading}
-            className="flex-1 py-3 text-sm font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50 rounded-xl transition-all flex items-center justify-center gap-2 active:scale-95"
-          >
-            <Download className="w-4 h-4" /> {isDownloading ? "Đang tải..." : "Tải Ảnh"}
+          <button onClick={handleDownload} disabled={isDownloading} className="flex-1 py-3 text-sm font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-xl transition-all flex items-center justify-center gap-2 active:scale-95">
+            <Download className="w-4 h-4" /> Tải Ảnh
           </button>
-          
-          <button 
-            onClick={handleRealPrint} 
-            className="flex-[2] py-3 text-sm font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-lg hover:shadow-purple-500/30 transition-all flex items-center justify-center gap-2 active:scale-95"
-          >
+          <button onClick={handleRealPrint} className="flex-[2] py-3 text-sm font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-lg hover:shadow-purple-500/30 transition-all flex items-center justify-center gap-2 active:scale-95">
             <Printer className="w-4 h-4" /> In Tem Nhãn
           </button>
         </div>

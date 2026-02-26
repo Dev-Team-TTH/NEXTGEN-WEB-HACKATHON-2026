@@ -83,12 +83,6 @@ export interface DashboardMetrics {
   expenseByCategorySummary: ExpenseByCategorySummary[];
 }
 
-export interface Warehouse {
-  warehouseId: string;
-  name: string;
-  address?: string;
-}
-
 export interface User {
   userId: string;
   name: string;
@@ -96,8 +90,6 @@ export interface User {
   phone?: string;
   address?: string;
   role: string;
-  warehouseId?: string;
-  warehouse?: any; // Chứa thông tin kho nếu có
 }
 
 export interface NewUser {
@@ -107,7 +99,6 @@ export interface NewUser {
   phone?: string;
   address?: string;
   role: string;
-  warehouseId?: string;
 }
 
 export interface InventoryTransaction {
@@ -120,8 +111,6 @@ export interface InventoryTransaction {
   variantId?: string;
   batchId?: string;
   status?: string;
-  warehouseId: string; // <-- THÊM DÒNG NÀY
-  warehouse?: any;     // <-- THÊM DÒNG NÀY NỮA (để chứa tên kho khi lấy list)
 }
 
 export interface NewInventoryTransaction {
@@ -135,7 +124,6 @@ export interface NewInventoryTransaction {
   expiryDate?: string;
   location?: string;
   createdBy?: string;
-  warehouseId: string;
 }
 
 export interface Asset {
@@ -143,9 +131,24 @@ export interface Asset {
   name: string;
   category: string;
   status: string;
-  assignedTo: string | null;
+  
+  // Thông tin bàn giao & Vị trí
+  assignedTo?: string | null;
+  location?: string | null;
+  
+  // Thông tin Tài chính
   purchaseDate: string;
-  price: number;
+  purchasePrice: number;
+  currentValue: number;
+  
+  imageUrl?: string | null;
+  
+  // Khấu hao & Bảo trì định kỳ
+  depreciationMonths?: number;
+  maintenanceCycle?: number;
+  lastMaintenance?: string;
+  nextMaintenance?: string;
+  isMaintenanceOverdue?: boolean;
 }
 
 export interface NewAsset {
@@ -155,12 +158,34 @@ export interface NewAsset {
   assignedTo?: string;
   purchaseDate: string;
   price: number;
+  imageUrl?: string;
+}
+
+export interface AssetHistory {
+  historyId: string;
+  assetId: string;
+  actionType: string;
+  description: string;
+  changedBy: string;
+  timestamp: string;
+}
+
+export interface PaginationMeta {
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface InventoryTransactionResponse {
+  data: InventoryTransaction[];
+  pagination: PaginationMeta;
 }
 
 export const api = createApi({
   baseQuery: fetchBaseQuery({ baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL }),
   reducerPath: "api",
-  tagTypes: ["DashboardMetrics", "Products", "Users", "Expenses", "Assets", "Warehouses"],
+  tagTypes: ["DashboardMetrics", "Products", "Users", "Expenses", "Assets", "Inventory"],
   endpoints: (build) => ({
     getDashboardMetrics: build.query<DashboardMetrics, void>({
       query: () => "/dashboard",
@@ -207,13 +232,18 @@ export const api = createApi({
         method: "POST",
         body: newTransaction,
       }),
-      invalidatesTags: ["Products"], 
+      invalidatesTags: ["Products", "Inventory"], 
     }),
 
-    // === 3 API MỚI CHO QUY TRÌNH DUYỆT PHIẾU ===
-    getTransactions: build.query<any[], void>({
-      query: () => "/inventory",
-      providesTags: ["Products"],
+    getTransactions: build.query<
+      InventoryTransactionResponse, 
+      { page?: number; limit?: number; search?: string; type?: string; startDate?: string; endDate?: string } | void
+    >({
+      query: (params) => ({
+        url: "/inventory",
+        params: params ? params : undefined,
+      }),
+      providesTags: ["Inventory"],
     }),
 
     approveTransaction: build.mutation<void, { id: string; approvedBy: string }>({
@@ -222,7 +252,7 @@ export const api = createApi({
         method: "PUT",
         body: { approvedBy },
       }),
-      invalidatesTags: ["Products"],
+      invalidatesTags: ["Products", "Inventory"],
     }),
 
     rejectTransaction: build.mutation<void, { id: string; approvedBy: string }>({
@@ -231,9 +261,33 @@ export const api = createApi({
         method: "PUT",
         body: { approvedBy },
       }),
+      invalidatesTags: ["Products", "Inventory"],
+    }),
+
+    // --- API DUYỆT MASTER DATA ---
+    getMasterDataRequests: build.query<any[], void>({
+      query: () => "/products/requests",
+      providesTags: ["Products"],
+    }),
+
+    approveMasterData: build.mutation<void, { id: string; approvedBy: string }>({
+      query: ({ id, approvedBy }) => ({
+        url: `/products/requests/${id}/approve`,
+        method: "PUT",
+        body: { approvedBy },
+      }),
       invalidatesTags: ["Products"],
     }),
-    // ===========================================
+
+    rejectMasterData: build.mutation<void, { id: string; approvedBy: string }>({
+      query: ({ id, approvedBy }) => ({
+        url: `/products/requests/${id}/reject`,
+        method: "PUT",
+        body: { approvedBy },
+      }),
+      invalidatesTags: ["Products"],
+    }),
+    // ---------------------------------
 
     getUsers: build.query<User[], void>({
       query: () => "/users",
@@ -246,7 +300,7 @@ export const api = createApi({
         method: "POST",
         body: newUser,
       }),
-      invalidatesTags: ["Users"], // Cập nhật lại danh sách ngay sau khi tạo
+      invalidatesTags: ["Users"],
     }),
 
     updateUser: build.mutation<User, { id: string; data: Partial<User> }>({
@@ -255,7 +309,7 @@ export const api = createApi({
         method: "PUT",
         body: data,
       }),
-      invalidatesTags: ["Users"], // Cập nhật lại danh sách ngay sau khi sửa
+      invalidatesTags: ["Users"],
     }),
 
     deleteUser: build.mutation<void, string>({
@@ -264,43 +318,6 @@ export const api = createApi({
         method: "DELETE",
       }),
       invalidatesTags: ["Users"],
-    }),
-
-    getWarehouses: build.query<Warehouse[], void>({
-      query: () => "/warehouses",
-      providesTags: ["Products"], // Tạm dùng chung tag để cache
-    }),
-
-    getWarehouseById: build.query<any, string>({
-      query: (id) => `/warehouses/${id}`,
-      providesTags: ["Warehouses", "Users", "Assets"], 
-      // Note: Gắn 3 tag này để khi User/Asset thay đổi, trang này cũng tự động làm mới!
-    }),
-
-    createWarehouse: build.mutation<Warehouse, Partial<Warehouse>>({
-      query: (newWarehouse) => ({
-        url: "/warehouses",
-        method: "POST",
-        body: newWarehouse,
-      }),
-      invalidatesTags: ["Products"], // Tự động load lại danh sách sau khi tạo
-    }),
-
-    updateWarehouse: build.mutation<Warehouse, { id: string; data: Partial<Warehouse> }>({
-      query: ({ id, data }) => ({
-        url: `/warehouses/${id}`,
-        method: "PUT",
-        body: data,
-      }),
-      invalidatesTags: ["Warehouses"], // Cập nhật lại UI ngay lập tức
-    }),
-
-    deleteWarehouse: build.mutation<void, string>({
-      query: (id) => ({
-        url: `/warehouses/${id}`,
-        method: "DELETE",
-      }),
-      invalidatesTags: ["Products"],
     }),
     
     getExpensesByCategory: build.query<ExpenseByCategorySummary[], void>({
@@ -325,10 +342,48 @@ export const api = createApi({
       invalidatesTags: ["Assets"],
     }),
 
+    updateAsset: build.mutation<Asset, { id: string; data: Partial<Asset> }>({
+      query: ({ id, data }) => ({
+        url: `/assets/${id}`,
+        method: "PUT",
+        body: data,
+      }),
+      invalidatesTags: ["Assets"], // Cập nhật lại UI ngay lập tức
+    }),
+
     deleteAsset: build.mutation<void, string>({
       query: (assetId) => ({
         url: `/assets/${assetId}`,
         method: "DELETE",
+      }),
+      invalidatesTags: ["Assets"],
+    }),
+
+    getAssetHistory: build.query<AssetHistory[], string>({
+      query: (id) => `/assets/${id}/history`,
+      providesTags: ["Assets"],
+    }),
+
+    // === API DUYỆT TÀI SẢN (ENTERPRISE) ===
+    getAssetRequests: build.query<any[], void>({
+      query: () => "/assets/requests/all",
+      providesTags: ["Assets"],
+    }),
+
+    approveAssetRequest: build.mutation<void, { id: string; approvedBy: string }>({
+      query: ({ id, approvedBy }) => ({
+        url: `/assets/requests/${id}/approve`,
+        method: "PUT",
+        body: { approvedBy },
+      }),
+      invalidatesTags: ["Assets"],
+    }),
+
+    rejectAssetRequest: build.mutation<void, { id: string; approvedBy: string }>({
+      query: ({ id, approvedBy }) => ({
+        url: `/assets/requests/${id}/reject`,
+        method: "PUT",
+        body: { approvedBy },
       }),
       invalidatesTags: ["Assets"],
     }),
@@ -344,7 +399,6 @@ export const api = createApi({
   }),
 });
 
-// XUẤT THÊM 3 CÁI HOOK MỚI VÀO ĐÂY
 export const {
   useGetDashboardMetricsQuery,
   useGetProductsQuery,
@@ -355,6 +409,9 @@ export const {
   useGetTransactionsQuery,
   useApproveTransactionMutation,
   useRejectTransactionMutation,
+  useApproveMasterDataMutation, 
+  useGetMasterDataRequestsQuery,  
+  useRejectMasterDataMutation,   
   useGetUsersQuery,
   useRegisterUserMutation,
   useUpdateUserMutation,
@@ -363,10 +420,10 @@ export const {
   useGetAssetsQuery,
   useCreateAssetMutation,
   useDeleteAssetMutation,
+  useUpdateAssetMutation,
+  useGetAssetHistoryQuery,
+  useGetAssetRequestsQuery,
+  useApproveAssetRequestMutation,
+  useRejectAssetRequestMutation,
   useLoginMutation,
-  useGetWarehousesQuery,
-  useGetWarehouseByIdQuery,
-  useCreateWarehouseMutation,
-  useUpdateWarehouseMutation,
-  useDeleteWarehouseMutation,
 } = api;

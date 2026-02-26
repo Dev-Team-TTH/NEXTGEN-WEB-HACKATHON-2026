@@ -2,13 +2,11 @@
 
 import React, { useState, useEffect, FormEvent } from "react";
 import { X, UserCheck, Phone, MapPin, Shield, Building2 } from "lucide-react";
-import { useGetWarehousesQuery } from "@/state/api";
 
 const EditUserModal = ({ isOpen, onClose, onUpdate, isLoading, currentUser }: any) => {
-  const { data: warehouses } = useGetWarehousesQuery();
   
   const [formData, setFormData] = useState({
-    name: "", phone: "", address: "", role: "STAFF", warehouseId: ""
+    name: "", phone: "", address: "", role: "STAFF"
   });
 
   // Tự động điền dữ liệu cũ khi mở Modal
@@ -19,7 +17,6 @@ const EditUserModal = ({ isOpen, onClose, onUpdate, isLoading, currentUser }: an
         phone: currentUser.phone || "",
         address: currentUser.address || "",
         role: currentUser.role || "STAFF",
-        warehouseId: currentUser.warehouseId || ""
       });
     }
   }, [currentUser]);
@@ -86,18 +83,6 @@ const EditUserModal = ({ isOpen, onClose, onUpdate, isLoading, currentUser }: an
                 </div>
               </div>
 
-              <div>
-                <label className={labelClass}>Kho trực thuộc</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><Building2 className="h-4 w-4 text-gray-400" /></div>
-                  <select name="warehouseId" value={formData.warehouseId} onChange={handleChange} className={`${inputClass} cursor-pointer`}>
-                    <option value="">-- Thuộc Tổng công ty (Không gán) --</option>
-                    {warehouses?.map((wh) => (
-                      <option key={wh.warehouseId} value={wh.warehouseId}>{wh.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
             </div>
           </div>
 

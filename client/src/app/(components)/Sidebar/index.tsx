@@ -118,10 +118,6 @@ const Sidebar = () => {
         )}
 
         {role === "ADMIN" && (
-          <SidebarLink href="/warehouses" icon={Building2} label={t('sidebar.warehouses')} isCollapsed={!isEffectivelyExpanded} />
-        )}
-
-        {role === "ADMIN" && (
           <SidebarLink href="/expenses" icon={CircleDollarSign} label={t('sidebar.expenses')} isCollapsed={!isEffectivelyExpanded} />
         )}
       </div>

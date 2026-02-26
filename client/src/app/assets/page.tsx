@@ -1,218 +1,288 @@
 "use client";
 
-import { useState, useMemo, ChangeEvent, FormEvent } from "react";
+import { useState, useMemo } from "react";
 import { 
   useGetAssetsQuery, 
   useCreateAssetMutation, 
-  useDeleteAssetMutation 
+  useUpdateAssetMutation,
+  useDeleteAssetMutation,
+  Asset
 } from "@/state/api";
-import { PlusCircleIcon, Search, Briefcase, Trash2, X, Save, BoxSelect } from "lucide-react";
 import Header from "@/app/(components)/Header";
-import { DataGrid, GridColDef } from "@mui/x-data-grid";
+import AssetCard from "./AssetCard";
+import CreateAssetModal from "./CreateAssetModal";
+import EditAssetModal from "./EditAssetModal";
+import AssetQRCodeModal from "./AssetQRCodeModal";
+import AssetHistoryModal from "./AssetHistoryModal";
+
+import { 
+  Briefcase, 
+  PlusCircleIcon, 
+  Search, 
+  SlidersHorizontal, 
+  XCircle,
+  AlertTriangle
+} from "lucide-react";
 import { toast } from "react-toastify";
-import { useTranslation } from "react-i18next";
 
 const AssetsPage = () => {
-  const { t } = useTranslation();
-  const [searchTerm, setSearchTerm] = useState("");
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [formData, setFormData] = useState({
-    name: "", category: "Thiết bị điện tử", status: "Sẵn sàng", assignedTo: "", purchaseDate: "", price: 0
-  });
+  // --- STATE MODAL & DỮ LIỆU ---
+  const [activeModal, setActiveModal] = useState<"CREATE" | "EDIT" | "QR" | "HISTORY" | null>(null);
+  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
 
+  // --- STATE BỘ LỌC (ĐÃ ĐƯỢC NÂNG CẤP CHUẨN ASSET) ---
+  const [searchTerm, setSearchTerm] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterCategory, setFilterCategory] = useState("ALL");
+  const [filterStatus, setFilterStatus] = useState("ALL");
+  const [filterMaintenance, setFilterMaintenance] = useState("ALL"); // Lọc theo hạn bảo trì
+  
+  // --- API HOOKS ---
   const { data: assets, isLoading, isError } = useGetAssetsQuery();
   const [createAsset, { isLoading: isCreating }] = useCreateAssetMutation();
+  const [updateAsset, { isLoading: isUpdating }] = useUpdateAssetMutation();
   const [deleteAsset] = useDeleteAssetMutation();
 
-  const CustomNoRowsOverlay = () => (
-    <div className="flex flex-col items-center justify-center h-full text-gray-500">
-      <BoxSelect className="w-16 h-16 mb-4 text-gray-300" />
-      <span className="text-lg font-medium">{t("assets.empty")}</span>
-    </div>
-  );
+  // --- TỰ ĐỘNG TRÍCH XUẤT DANH MỤC ---
+  const uniqueCategories = useMemo(() => {
+    if (!assets) return [];
+    const categories = assets.map(a => a.category).filter(Boolean);
+    return Array.from(new Set(categories));
+  }, [assets]);
 
+  // --- LOGIC LỌC TÀI SẢN NÂNG CAO ---
   const filteredAssets = useMemo(() => {
     if (!assets) return [];
-    if (!searchTerm) return assets;
-    return assets.filter((a) => a.name.toLowerCase().includes(searchTerm.toLowerCase()));
-  }, [assets, searchTerm]);
+    return assets.filter((a) => {
+      // 1. Tìm kiếm đa luồng (Tên, ID, Người giữ, Vị trí)
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch = !searchTerm || 
+        a.name.toLowerCase().includes(searchLower) || 
+        a.assetId.toLowerCase().includes(searchLower) ||
+        (a.assignedTo && a.assignedTo.toLowerCase().includes(searchLower)) ||
+        (a.location && a.location.toLowerCase().includes(searchLower));
 
-  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: name === "price" ? parseFloat(value) || 0 : value }));
+      // 2. Lọc theo danh mục và trạng thái
+      const matchesCategory = filterCategory === "ALL" || a.category === filterCategory;
+      const matchesStatus = filterStatus === "ALL" || a.status === filterStatus;
+      
+      // 3. Lọc theo tình trạng bảo trì
+      const matchesMaintenance = filterMaintenance === "ALL" || 
+        (filterMaintenance === "OVERDUE" && a.isMaintenanceOverdue) ||
+        (filterMaintenance === "OK" && !a.isMaintenanceOverdue);
+      
+      return matchesSearch && matchesCategory && matchesStatus && matchesMaintenance;
+    });
+  }, [assets, searchTerm, filterCategory, filterStatus, filterMaintenance]);
+
+  const resetFilters = () => { 
+    setFilterCategory("ALL"); 
+    setFilterStatus("ALL"); 
+    setFilterMaintenance("ALL");
+    setSearchTerm(""); 
   };
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  // --- ĐIỀU KHIỂN MODAL ---
+  const openModal = (type: typeof activeModal, asset?: Asset) => { 
+    setSelectedAsset(asset || null); 
+    setActiveModal(type); 
+  };
+  
+  const closeModal = () => { 
+    setActiveModal(null); 
+    setSelectedAsset(null); 
+  };
+
+  // --- HÀM XỬ LÝ (HANDLERS) THEO LUỒNG ENTERPRISE ---
+  const handleCreate = async (data: any) => {
     try {
-      await createAsset({
-        ...formData,
-        assignedTo: formData.assignedTo || undefined,
-        purchaseDate: new Date(formData.purchaseDate).toISOString(),
+      await createAsset({ 
+        ...data, 
+        purchaseDate: new Date(data.purchaseDate).toISOString() 
       }).unwrap();
-      toast.success("Thành công! / Success!");
-      setIsModalOpen(false);
-      setFormData({ name: "", category: "Thiết bị điện tử", status: "Sẵn sàng", assignedTo: "", purchaseDate: "", price: 0 });
-    } catch (error) {
-      toast.error("Lỗi! / Error!");
+      toast.info("Đã gửi phiếu yêu cầu Mua tài sản! Vui lòng chờ duyệt.", { autoClose: 4000 });
+      closeModal();
+    } catch (e: any) { 
+      toast.error("Lỗi khi tạo yêu cầu!"); 
+    }
+  };
+
+  const handleEdit = async (id: string, data: any) => {
+    try {
+      await updateAsset({ id, data }).unwrap();
+      toast.info("Đã gửi phiếu yêu cầu Bàn giao / Cập nhật! Vui lòng chờ duyệt.", { autoClose: 4000 });
+      closeModal();
+    } catch (e: any) { 
+      toast.error("Lỗi khi tạo yêu cầu cập nhật!"); 
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm("Bạn có chắc chắn muốn xóa? / Are you sure?")) {
-      try {
-        await deleteAsset(id).unwrap();
-        toast.success("Đã xóa! / Deleted!");
-      } catch (error) {
-        toast.error("Lỗi xóa! / Delete error!");
+    if (window.confirm("CẢNH BÁO: Bạn đang đề xuất thanh lý tài sản này lên cấp Quản lý. Đồng ý?")) {
+      try { 
+        await deleteAsset(id).unwrap(); 
+        toast.info("Đã gửi đề xuất Thanh lý thành công!", { autoClose: 4000 }); 
+      } 
+      catch (e) { 
+        toast.error("Lỗi khi gửi yêu cầu thanh lý!"); 
       }
     }
   };
 
-  const columns: GridColDef[] = [
-    { field: "assetId", headerName: t("assets.columns.id"), width: 130 },
-    { field: "name", headerName: t("assets.columns.name"), minWidth: 250, flex: 1 },
-    { 
-      field: "category", headerName: t("assets.columns.category"), width: 180,
-      renderCell: (params) => {
-        switch(params.value) {
-          case "Thiết bị điện tử": return t("assets.options.electronics");
-          case "Nội thất": return t("assets.options.furniture");
-          case "Phương tiện": return t("assets.options.vehicles");
-          case "Máy móc công nghiệp": return t("assets.options.machinery");
-          default: return params.value;
-        }
-      }
-    },
-    { 
-      field: "status", headerName: t("assets.columns.status"), width: 150,
-      renderCell: (params) => {
-        let colorClass = "bg-gray-100 text-gray-800";
-        let label = params.value;
-        if (params.value === "Đang sử dụng") { colorClass = "bg-blue-100 text-blue-800"; label = t("assets.options.inUse"); }
-        if (params.value === "Sẵn sàng") { colorClass = "bg-green-100 text-green-800"; label = t("assets.options.ready"); }
-        if (params.value === "Đang bảo trì") { colorClass = "bg-yellow-100 text-yellow-800"; label = t("assets.options.maintenance"); }
-        return <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${colorClass}`}>{label}</span>;
-      }
-    },
-    { field: "assignedTo", headerName: t("assets.columns.assignedTo"), width: 180, renderCell: (params) => params.value || "-" },
-    { 
-      field: "purchaseDate", headerName: t("assets.columns.purchaseDate"), width: 130,
-      renderCell: (params) => new Date(params.value).toLocaleDateString("vi-VN")
-    },
-    { 
-      field: "price", headerName: t("assets.columns.price"), width: 150, type: "number",
-      renderCell: (params) => <span className="font-semibold text-blue-600">${params.value}</span>
-    },
-    {
-      field: "actions", headerName: t("assets.columns.actions"), width: 100, sortable: false, filterable: false,
-      renderCell: (params) => (
-        <button onClick={() => handleDelete(params.row.assetId)} className="mt-3 p-1.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-lg transition-colors shadow-sm">
-          <Trash2 className="w-4 h-4" />
-        </button>
-      )
-    }
-  ];
-
-  if (isLoading) return <div className="py-4 text-center text-gray-500 font-medium">Loading...</div>;
-  if (isError) return <div className="text-center text-red-500 py-4 font-semibold mt-5">Error!</div>;
+  if (isLoading) return <div className="py-10 text-center text-gray-500 font-bold text-lg animate-pulse">Đang tải dữ liệu Tài Sản...</div>;
+  if (isError || !assets) return <div className="text-center text-red-500 py-10 font-bold bg-red-50 rounded-2xl mt-5">Lỗi kết nối máy chủ! Vui lòng thử lại sau.</div>;
 
   return (
     <div className="flex flex-col w-full pb-10 relative">
       <Header 
-        name={t("assets.title")} 
-        subtitle={t("assets.subtitle")}
+        name="Quản lý Tài Sản & Trang Thiết Bị" 
+        subtitle="Quản lý vòng đời, khấu hao, bảo trì và định vị tài sản của chi nhánh"
         icon={Briefcase}
         action={
-          <button onClick={() => setIsModalOpen(true)} className="flex items-center bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md hover:shadow-lg transition-all active:scale-95">
-            <PlusCircleIcon className="w-5 h-5 mr-2" /> {t("assets.createBtn")}
-          </button>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => openModal("CREATE")} 
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-all active:scale-95"
+            >
+              <PlusCircleIcon className="w-5 h-5" /> Đề Xuất Mua Mới
+            </button>
+          </div>
         }
       />
 
-      <div className="mt-2 mb-6 flex items-center border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 shadow-sm w-full md:w-1/2 focus-within:border-blue-500 overflow-hidden">
-        <Search className="w-5 h-5 text-gray-400 ml-4 mr-2" />
-        <input
-          type="text" placeholder={t("assets.searchPlaceholder")}
-          value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full py-3 px-2 bg-transparent focus:outline-none dark:text-white text-gray-800 font-medium"
-        />
-      </div>
-
-      <div className="bg-white dark:bg-gray-800 shadow-xl rounded-2xl overflow-hidden border border-gray-100 dark:border-gray-700 h-[65vh]">
-        <DataGrid
-          rows={filteredAssets} columns={columns} getRowId={(row) => row.assetId}
-          disableRowSelectionOnClick slots={{ noRowsOverlay: CustomNoRowsOverlay }}
-          className="!border-none !text-gray-700 dark:!text-gray-200"
-          sx={{
-            "& .MuiDataGrid-cell": { borderBottom: "1px solid rgba(229, 231, 235, 0.4)", display: "flex", alignItems: "center" },
-            "& .MuiDataGrid-columnHeaders": { backgroundColor: "rgba(243, 244, 246, 0.8)", borderBottom: "1px solid rgba(229, 231, 235, 0.5)", fontWeight: "bold" },
-          }}
-        />
-      </div>
-
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 transition-all">
-          <div className="relative w-full max-w-lg bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-              <h2 className="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                <Briefcase className="w-5 h-5 text-blue-600" /> {t("assets.modal.title")}
-              </h2>
-              <button onClick={() => setIsModalOpen(false)} className="p-2 text-gray-400 hover:text-gray-600 bg-white dark:bg-gray-700 rounded-full shadow-sm transition-all"><X className="w-5 h-5" /></button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">{t("assets.modal.name")} <span className="text-red-500">*</span></label>
-                <input type="text" name="name" value={formData.name} onChange={handleChange} className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 outline-none" required />
-              </div>
-              
-              <div className="flex gap-4">
-                <div className="w-1/2">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">{t("assets.modal.category")}</label>
-                  <select name="category" value={formData.category} onChange={handleChange} className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 outline-none">
-                    <option value="Thiết bị điện tử">{t("assets.options.electronics")}</option>
-                    <option value="Nội thất">{t("assets.options.furniture")}</option>
-                    <option value="Phương tiện">{t("assets.options.vehicles")}</option>
-                    <option value="Máy móc công nghiệp">{t("assets.options.machinery")}</option>
-                  </select>
-                </div>
-                <div className="w-1/2">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">{t("assets.modal.status")}</label>
-                  <select name="status" value={formData.status} onChange={handleChange} className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 outline-none">
-                    <option value="Sẵn sàng">{t("assets.options.ready")}</option>
-                    <option value="Đang sử dụng">{t("assets.options.inUse")}</option>
-                    <option value="Đang bảo trì">{t("assets.options.maintenance")}</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex gap-4">
-                <div className="w-1/2">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">{t("assets.modal.purchaseDate")} <span className="text-red-500">*</span></label>
-                  <input type="date" name="purchaseDate" value={formData.purchaseDate} onChange={handleChange} className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 outline-none" required />
-                </div>
-                <div className="w-1/2">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">{t("assets.modal.price")} <span className="text-red-500">*</span></label>
-                  <input type="number" name="price" value={formData.price} onChange={handleChange} className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 outline-none" required min="0" />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">{t("assets.modal.assignedTo")}</label>
-                <input type="text" name="assignedTo" value={formData.assignedTo} onChange={handleChange} placeholder={t("assets.modal.assignedToPlaceholder")} className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 outline-none" />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-700 mt-6">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-200 rounded-xl transition-colors">{t("assets.modal.cancel")}</button>
-                <button type="submit" disabled={isCreating} className="px-6 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-all flex items-center gap-2">
-                  <Save className="w-4 h-4" /> {t("assets.modal.save")}
-                </button>
-              </div>
-            </form>
+      {/* KHU VỰC BỘ LỌC ĐA NĂNG */}
+      <div className="mt-2 mb-6 flex flex-col gap-3">
+        <div className="flex items-center gap-3 w-full lg:w-3/4">
+          <div className="flex-1 flex items-center border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 transition-colors shadow-sm focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 overflow-hidden">
+            <Search className="w-5 h-5 text-gray-400 ml-4 mr-2" />
+            <input 
+              className="w-full py-3 px-2 bg-transparent focus:outline-none dark:text-white" 
+              placeholder="Tìm theo Tên, ID, Người mượn, Vị trí..." 
+              value={searchTerm} 
+              onChange={(e) => setSearchTerm(e.target.value)} 
+            />
+            {searchTerm && (
+              <button onClick={() => setSearchTerm("")} className="mr-3 text-gray-400 hover:text-red-500 transition-colors">
+                <XCircle className="w-5 h-5" />
+              </button>
+            )}
           </div>
+          <button 
+            onClick={() => setShowFilters(!showFilters)} 
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-all shadow-sm border ${showFilters ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+          >
+            <SlidersHorizontal className="w-5 h-5" /> Bộ lọc
+          </button>
         </div>
-      )}
+
+        {/* BẢNG MỞ RỘNG BỘ LỌC NÂNG CAO */}
+        {showFilters && (
+          <div className="w-full lg:w-3/4 p-5 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 shadow-sm animate-in slide-in-from-top-2 fade-in duration-200">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Loại Tài Sản</label>
+                <select 
+                  value={filterCategory} 
+                  onChange={(e) => setFilterCategory(e.target.value)} 
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                >
+                  <option value="ALL">-- Tất cả danh mục --</option>
+                  {uniqueCategories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Tình trạng vật lý</label>
+                <select 
+                  value={filterStatus} 
+                  onChange={(e) => setFilterStatus(e.target.value)} 
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                >
+                  <option value="ALL">-- Tất cả trạng thái --</option>
+                  <option value="Sẵn sàng">Sẵn sàng (Kho)</option>
+                  <option value="Đang sử dụng">Đang sử dụng</option>
+                  <option value="Đang bảo trì">Đang bảo trì / Sửa chữa</option>
+                  <option value="Hỏng hóc">Hỏng / Chờ thanh lý</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5"/> Lịch bảo trì</label>
+                <select 
+                  value={filterMaintenance} 
+                  onChange={(e) => setFilterMaintenance(e.target.value)} 
+                  className={`w-full px-4 py-2.5 bg-gray-50 border rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer ${filterMaintenance === 'OVERDUE' ? 'border-red-300 text-red-700 bg-red-50' : 'border-gray-200'}`}
+                >
+                  <option value="ALL">-- Tất cả --</option>
+                  <option value="OVERDUE">⚠️ Đã quá hạn bảo trì</option>
+                  <option value="OK">✅ Đang hoạt động tốt</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-between items-center mt-5 pt-4 border-t border-gray-100">
+              <span className="text-sm font-medium text-gray-500">
+                Tìm thấy: <strong className="text-blue-600 text-lg">{filteredAssets.length}</strong> tài sản phù hợp
+              </span>
+              <button onClick={resetFilters} className="text-sm font-bold text-red-500 hover:text-red-600 transition-colors bg-red-50 hover:bg-red-100 px-4 py-2 rounded-xl">
+                Xóa bộ lọc
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* DANH SÁCH TÀI SẢN */}
+      <div className="flex flex-col gap-4">
+        {filteredAssets.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-2xl border border-dashed border-gray-300 shadow-sm">
+            <Briefcase className="w-16 h-16 mb-4 text-gray-300" />
+            <span className="text-lg font-bold text-gray-600">Không tìm thấy tài sản nào phù hợp!</span>
+            <p className="text-sm mt-1 text-gray-400">Hãy thử thay đổi từ khóa tìm kiếm (Tên, Người mượn, Phòng ban) hoặc xóa bộ lọc.</p>
+            <button onClick={resetFilters} className="mt-5 px-5 py-2.5 bg-blue-50 text-blue-600 font-bold rounded-xl hover:bg-blue-100 transition-colors">
+              Xóa bộ lọc ngay
+            </button>
+          </div>
+        ) : (
+          filteredAssets.map((asset) => (
+            <AssetCard 
+              key={asset.assetId} 
+              asset={asset} 
+              onOpenModal={openModal}
+              onDelete={handleDelete}
+            />
+          ))
+        )}
+      </div>
+
+      {/* RENDER CÁC MODAL */}
+      <CreateAssetModal 
+        isOpen={activeModal === "CREATE"} 
+        onClose={closeModal} 
+        onCreate={handleCreate} 
+        isSubmitting={isCreating} 
+      />
+
+      <EditAssetModal 
+        isOpen={activeModal === "EDIT"} 
+        onClose={closeModal} 
+        asset={selectedAsset}
+        onEdit={handleEdit} 
+        isSubmitting={isUpdating}
+      />
+
+      <AssetQRCodeModal 
+        isOpen={activeModal === "QR"} 
+        onClose={closeModal} 
+        asset={selectedAsset} 
+      />
+
+      {/* MODAL MỚI ĐƯỢC THÊM VÀO */}
+      <AssetHistoryModal 
+        isOpen={activeModal === "HISTORY"} 
+        onClose={closeModal} 
+        asset={selectedAsset} 
+      />
+      
     </div>
   );
 };

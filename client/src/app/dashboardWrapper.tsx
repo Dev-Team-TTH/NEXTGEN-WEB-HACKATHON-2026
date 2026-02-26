@@ -1,16 +1,20 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import Navbar from "@/app/(components)/Navbar";
 import Sidebar from "@/app/(components)/Sidebar";
 import StoreProvider, { useAppSelector } from "@/app/redux";
 import "@/i18n";
+import SplashScreen from "@/app/(components)/SplashScreen";
 
 const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
   const isSidebarCollapsed = useAppSelector(
     (state) => state.global.isSidebarCollapsed
   );
   const isDarkMode = useAppSelector((state) => state.global.isDarkMode);
+
+  // STATE QUẢN LÝ HIỂN THỊ SPLASH SCREEN
+  const [showSplash, setShowSplash] = useState(true);
 
   // Xử lý chuyển đổi chế độ Sáng / Tối an toàn, không bị kẹt class
   useEffect(() => {
@@ -29,6 +33,9 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
     // - Cắt bỏ thanh cuộn thừa (overflow-hidden) để tránh trang web bị giật nảy.
     <div className={`${isDarkMode ? "dark bg-gray-900" : "light bg-gray-50"} flex h-screen w-full overflow-hidden text-gray-900 transition-colors duration-300`}>
       
+      {/* HIỂN THỊ SPLASH SCREEN THƯƠNG HIỆU TTH TEAM */}
+      {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
+
       {/* 2. SIDEBAR CỦA HỆ THỐNG */}
       <Sidebar />
 

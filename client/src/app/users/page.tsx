@@ -51,13 +51,6 @@ const Users = () => {
         </span>
       )
     },
-    { 
-      field: "warehouseId", headerName: "Chi nhánh / Kho", width: 200,
-      renderCell: (params) => {
-        if (!params.value) return <span className="text-gray-400 italic">Tổng Công ty</span>;
-        return <span className="font-semibold text-indigo-700">{params.row.warehouse?.name || "Đã phân kho"}</span>;
-      }
-    },
     {
       field: "actions", headerName: "Thao tác", width: 120, sortable: false,
       renderCell: (params) => (

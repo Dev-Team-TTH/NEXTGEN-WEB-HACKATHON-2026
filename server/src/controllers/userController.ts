@@ -8,7 +8,7 @@ const prisma = new PrismaClient();
 // 1. ĐĂNG KÝ TÀI KHOẢN MỚI
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, email, password, phone, address, role, warehouseId } = req.body;
+    const { name, email, password, phone, address, role} = req.body;
 
     // Kiểm tra xem email đã bị trùng chưa
     const existingUser = await prisma.users.findUnique({ where: { email } });
@@ -30,7 +30,6 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         phone,
         address,
         role: role || "STAFF",
-        warehouseId: warehouseId || null,
       },
     });
 
@@ -64,7 +63,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     // Tạo Token (Cái này Frontend sẽ lưu vào Cookie hoặc LocalStorage)
     const token = jwt.sign(
-      { userId: user.userId, role: user.role, warehouseId: user.warehouseId },
+      { userId: user.userId, role: user.role},
       process.env.JWT_SECRET || "nextgen_hackathon_super_secret_key_2026",
       { expiresIn: "1d" } // Token có hạn dùng 1 ngày
     );
@@ -86,7 +85,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 export const getUsers = async (req: Request, res: Response): Promise<void> => {
   try {
     const users = await prisma.users.findMany({
-      include: { warehouse: true } // Lấy kèm thông tin Kho làm việc
+
     });
     
     // Ẩn toàn bộ mật khẩu trước khi trả về mảng danh sách
@@ -104,7 +103,7 @@ export const getUsers = async (req: Request, res: Response): Promise<void> => {
 export const updateUser = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { name, phone, address, role, warehouseId } = req.body;
+    const { name, phone, address, role} = req.body;
 
     const updatedUser = await prisma.users.update({
       where: { userId: id },
@@ -113,7 +112,6 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
         phone,
         address,
         role,
-        warehouseId: warehouseId || null,
       },
     });
 

@@ -18,9 +18,6 @@ model Users {
   
   // Phân quyền và Nơi làm việc
   role        String  @default("STAFF") // Các role: "ADMIN" (Tổng công ty), "MANAGER" (Quản lý kho), "STAFF" (Thủ kho)
-  warehouseId String? // ID của Kho mà nhân viên này trực thuộc (ADMIN có thể để trống)
-  
-  warehouse   Warehouse? @relation(fields: [warehouseId], references: [warehouseId], onDelete: SetNull)
 }
 
 model Products {
@@ -41,6 +38,7 @@ model Products {
   description    String?
   reorderPoint   Int      @default(10)
   reorderUnit    String?
+  maxStock       Int?
   
   hasVariants    Boolean  @default(false)
   hasBatches     Boolean  @default(false)
@@ -48,7 +46,7 @@ model Products {
   Variants              ProductVariant[]
   Batches               ProductBatch[] // Vẫn giữ để tra cứu nhanh toàn bộ lô của SP
   InventoryTransactions InventoryTransaction[]
-  WarehouseStocks       WarehouseStock[]
+  MasterDataRequests    MasterDataRequest[]
 }
 
 model ProductVariant {
@@ -70,14 +68,14 @@ model ProductBatch {
   batchNumber    String   
   
   productId      String
-  variantId      String   // BẮT BUỘC: Lô này phải thuộc về 1 biến thể cụ thể (VD: Lô của Milo 150ML)
+  variantId     String?
   
   manufactureDate DateTime? 
   expiryDate      DateTime  
   stockQuantity   Int      @default(0) 
 
   product        Products @relation(fields: [productId], references: [productId], onDelete: Cascade)
-  variant        ProductVariant @relation(fields: [variantId], references: [variantId], onDelete: Cascade)
+  variant       ProductVariant? @relation(fields: [variantId], references: [variantId], onDelete: Cascade)
   
   Transactions   InventoryTransaction[]
 
@@ -87,9 +85,6 @@ model ProductBatch {
 // CẬP NHẬT BẢNG THỂ KHO (TRANSACTIONS) ĐỂ GẮN VỚI LÔ/BIẾN THỂ
 model InventoryTransaction {
   transactionId  String   @id @default(uuid())
-  
-  // THÊM DÒNG NÀY: Giao dịch này xảy ra ở kho nào?
-  warehouseId    String
   
   productId      String
   variantId      String?
@@ -110,40 +105,9 @@ model InventoryTransaction {
   approvedAt     DateTime?
 
   // Khóa ngoại
-  warehouse      Warehouse @relation(fields: [warehouseId], references: [warehouseId], onDelete: Cascade)
   product        Products @relation(fields: [productId], references: [productId], onDelete: Cascade)
   variant        ProductVariant? @relation(fields: [variantId], references: [variantId], onDelete: Cascade)
   batch          ProductBatch? @relation(fields: [batchId], references: [batchId], onDelete: Cascade)
-}
-
-model Warehouse {
-  warehouseId   String   @id @default(uuid())
-  name          String   
-  address       String?
-  
-  users         Users[]
-  transactions  InventoryTransaction[]
-  stocks        WarehouseStock[] 
-  assets        Assets[] // <-- THÊM DÒNG NÀY (Để 1 Chi nhánh có thể có nhiều Tài sản)
-}
-
-// --- BẢNG MỚI: TỒN KHO CHI TIẾT THEO TỪNG KHO ---
-model WarehouseStock {
-  id            String   @id @default(uuid())
-  
-  warehouseId   String
-  productId     String
-  variantId     String?
-  batchId       String?  
-  
-  quantity      Int      @default(0) // Số lượng thực tế tại KHO NÀY
-
-  // Khóa ngoại
-  warehouse     Warehouse @relation(fields: [warehouseId], references: [warehouseId], onDelete: Cascade)
-  product       Products  @relation(fields: [productId], references: [productId], onDelete: Cascade)
-  
-  // Ràng buộc: Mỗi sản phẩm/biến thể/lô chỉ có 1 dòng duy nhất trong 1 kho
-  @@unique([warehouseId, productId, variantId, batchId]) 
 }
 
 // Giữ lại chi phí để làm báo cáo Dashboard (VD: Chi phí bảo trì tài sản, phí vận chuyển)
@@ -173,17 +137,85 @@ model ExpenseByCategory {
 model Assets {
   assetId        String   @id @default(uuid())
   name           String
-  category       String   // VD: Máy móc, Nội thất, Điện tử...
-  
+  category       String
+  status         String
+  assignedTo     String?
   purchaseDate   DateTime
   purchasePrice  Float
-  currentValue   Float    // Giá trị hiện tại (sau khấu hao)
-  
-  status         String   @default("ACTIVE") // ACTIVE, MAINTENANCE, BROKEN, DISPOSED
-  location       String?  // Vị trí cụ thể trong chi nhánh (VD: Phòng họp A, Khu sản xuất 1)
-  assignedTo     String?  // Có thể lưu userId của người đang giữ tài sản này
-  
-  // THÊM 2 DÒNG NÀY ĐỂ GẮN TÀI SẢN VÀO CHI NHÁNH
-  warehouseId    String?  // Nếu rỗng nghĩa là tài sản thuộc Tổng công ty chưa phân bổ
-  warehouse      Warehouse? @relation(fields: [warehouseId], references: [warehouseId], onDelete: SetNull)
+  currentValue   Float
+  location       String?
+
+  imageUrl       String?  // <-- THÊM DÒNG NÀY
+
+  depreciationMonths Int?      @default(0)
+  maintenanceCycle   Int?      @default(0) // Chu kỳ bảo trì: Bao nhiêu tháng 1 lần?
+  lastMaintenance    DateTime? // Ngày bảo trì gần nhất
+  nextMaintenance    DateTime? // Hạn bảo trì tiếp theo (Hệ thống tự tính)
+
+  AssetRequests  AssetRequest[]
+  AssetHistories AssetHistory[]
+}
+
+// --- BẢNG YÊU CẦU TÀI SẢN (ENTERPRISE WMS) ---
+model AssetRequest {
+  requestId      String   @id @default(uuid())
+  assetId        String?  // Có thể Null nếu là phiếu MUA MỚI tài sản
+  requestType    String   // "CREATE" (Mua mới), "UPDATE" (Sửa/Bàn giao), "DELETE" (Thanh lý)
+  requestedBy    String?  @default("NhanVien_01")
+  timestamp      DateTime @default(now())
+  status         String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  approvedBy     String?
+  approvedAt     DateTime?
+
+  // Lưu các thông tin tài sản muốn tạo/sửa
+  name           String?
+  category       String?
+  assetStatus    String?  // Tình trạng tài sản (Sẵn sàng, Đang sử dụng...)
+  assignedTo     String?
+  purchaseDate   DateTime?
+  purchasePrice  Float?
+  currentValue   Float?
+  location       String?
+  imageUrl       String?
+
+  depreciationMonths Int?
+  maintenanceCycle   Int?
+  lastMaintenance    DateTime?
+  nextMaintenance    DateTime?
+
+  asset          Assets?  @relation(fields: [assetId], references: [assetId], onDelete: Cascade)
+}
+
+model AssetHistory {
+  historyId    String   @id @default(uuid())
+  assetId      String
+  actionType   String   // Các loại: CREATED, HANDOVER (Bàn giao), MAINTENANCE (Bảo trì), BROKEN (Hỏng), UPDATED
+  description  String   // Mô tả chi tiết (VD: "Bàn giao cho Nguyễn Văn A")
+  changedBy    String?  @default("System") // Người thực hiện duyệt / thao tác
+  timestamp    DateTime @default(now())
+
+  asset        Assets   @relation(fields: [assetId], references: [assetId], onDelete: Cascade)
+}
+
+// --- BẢNG MỚI (MÔ HÌNH ENTERPRISE): YÊU CẦU ĐỔI MASTER DATA ---
+model MasterDataRequest {
+  requestId        String   @id @default(uuid())
+  productId        String
+  requestedBy      String?  @default("NhanVien_01")
+  timestamp        DateTime @default(now())
+  status           String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  approvedBy       String?
+  approvedAt       DateTime?
+
+  // Lưu trữ các dữ liệu mới mà nhân viên muốn đổi
+  newName          String?
+  newPrice         Float?
+  newPurchasePrice Float?
+  newCategory      String?
+  newDescription   String?
+  newStatus        String?
+  newImageUrl      String?
+  newReorderPoint  Int?
+
+  product          Products @relation(fields: [productId], references: [productId], onDelete: Cascade)
 }

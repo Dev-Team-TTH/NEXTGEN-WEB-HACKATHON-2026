@@ -1,12 +1,10 @@
 "use client";
-import { useGetWarehousesQuery } from "@/state/api";
 import React, { useState, FormEvent } from "react";
 import { X, UserPlus, Mail, Phone, MapPin, Shield, Building2, Key } from "lucide-react";
 
 const CreateUserModal = ({ isOpen, onClose, onCreate, isLoading }: any) => {
-  const { data: warehouses } = useGetWarehousesQuery();
   const [formData, setFormData] = useState({
-    name: "", email: "", password: "Welcome@123", phone: "", address: "", role: "STAFF", warehouseId: ""
+    name: "", email: "", password: "Welcome@123", phone: "", address: "", role: "STAFF"
   });
 
   if (!isOpen) return null;
@@ -84,21 +82,6 @@ const CreateUserModal = ({ isOpen, onClose, onCreate, isLoading }: any) => {
                     <option value="ADMIN">ADMIN - Tổng công ty</option>
                     <option value="MANAGER">MANAGER - Quản lý Chi nhánh</option>
                     <option value="STAFF">STAFF - Thủ kho</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className={labelClass}>Kho trực thuộc</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><Building2 className="h-4 w-4 text-gray-400" /></div>
-                  <select name="warehouseId" value={formData.warehouseId} onChange={handleChange} className={`${inputClass} cursor-pointer`}>
-                    <option value="">-- Thuộc Tổng công ty (Không gán) --</option>
-                    {warehouses?.map((wh) => (
-                      <option key={wh.warehouseId} value={wh.warehouseId}>
-                        {wh.name} {wh.address ? `(${wh.address})` : ""}
-                      </option>
-                    ))}
                   </select>
                 </div>
               </div>
