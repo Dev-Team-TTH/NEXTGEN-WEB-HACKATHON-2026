@@ -182,6 +182,16 @@ export interface InventoryTransactionResponse {
   pagination: PaginationMeta;
 }
 
+export interface AssetHistory {
+  id: string;
+  assetId: string;
+  actionDate: string;   // Ngày thực hiện
+  actionType: string;   // CREATE, UPDATE, ASSIGN, MAINTENANCE, BROKEN
+  title: string;        // Tiêu đề ngắn gọn
+  description: string;  // Chi tiết thay đổi
+  performedBy: string;  // Tên người thực hiện
+}
+
 export const api = createApi({
   baseQuery: fetchBaseQuery({ baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL }),
   reducerPath: "api",
@@ -332,6 +342,7 @@ export const api = createApi({
       }),
       providesTags: ["Assets"],
     }),
+    
     
     createAsset: build.mutation<Asset, NewAsset>({
       query: (newAsset) => ({

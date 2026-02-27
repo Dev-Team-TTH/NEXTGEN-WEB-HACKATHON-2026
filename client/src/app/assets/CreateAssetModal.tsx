@@ -163,22 +163,29 @@ const CreateAssetModal = ({ isOpen, onClose, onCreate, isSubmitting = false }: C
               <input type="number" min="0" name="price" value={formData.price} onChange={handleChange} className={inputClass} required placeholder="0.00" disabled={isSubmitting} />
             </div>
 
-            {/* KHU VỰC KHẤU HAO & BẢO TRÌ */}
-            <div className="md:col-span-2 grid grid-cols-2 gap-5 p-5 bg-orange-50 border border-orange-200 rounded-xl shadow-sm">
+            {/* KHU VỰC KHẤU HAO & BẢO TRÌ (ĐÃ NÂNG CẤP UI CHUẨN UX) */}
+            <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-5 p-5 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/50 rounded-xl shadow-sm">
               <div>
-                <label className="block text-sm font-bold text-orange-800 mb-1.5 flex items-center gap-1.5">
-                  <Activity className="w-4 h-4"/> TG Khấu hao (Tháng)
+                <label className="block text-xs font-bold text-orange-800 dark:text-orange-300 uppercase mb-2 flex items-center gap-1.5">
+                  <Activity className="w-4 h-4"/> TG Khấu hao
                 </label>
-                <input type="number" min="0" name="depreciationMonths" value={formData.depreciationMonths} onChange={handleChange} className="w-full px-4 py-2.5 rounded-xl border border-orange-300 focus:ring-2 focus:ring-orange-500 outline-none font-medium bg-white" placeholder="VD: 24" disabled={isSubmitting} />
+                <div className="relative">
+                  <input type="number" min="0" name="depreciationMonths" value={formData.depreciationMonths} onChange={handleChange} className="w-full px-4 py-2.5 pr-16 rounded-xl border border-orange-300 dark:border-orange-700 focus:ring-2 focus:ring-orange-500 outline-none font-medium bg-white dark:bg-gray-800 dark:text-white transition-all" placeholder="VD: 24" disabled={isSubmitting} />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400">Tháng</span>
+                </div>
               </div>
               <div>
-                <label className="block text-sm font-bold text-orange-800 mb-1.5 flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4"/> Chu kỳ bảo trì (Tháng)
+                <label className="block text-xs font-bold text-orange-800 dark:text-orange-300 uppercase mb-2 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4"/> Chu kỳ bảo trì
                 </label>
-                <input type="number" min="0" name="maintenanceCycle" value={formData.maintenanceCycle} onChange={handleChange} className="w-full px-4 py-2.5 rounded-xl border border-orange-300 focus:ring-2 focus:ring-orange-500 outline-none font-medium bg-white" placeholder="VD: 6 (để 0 nếu ko cần)" disabled={isSubmitting} />
+                <div className="relative">
+                  <input type="number" min="0" name="maintenanceCycle" value={formData.maintenanceCycle} onChange={handleChange} className="w-full px-4 py-2.5 pr-16 rounded-xl border border-orange-300 dark:border-orange-700 focus:ring-2 focus:ring-orange-500 outline-none font-medium bg-white dark:bg-gray-800 dark:text-white transition-all" placeholder="VD: 6" disabled={isSubmitting} />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400">Tháng</span>
+                </div>
+                <p className="text-[10px] text-orange-600/80 mt-1.5 font-bold italic">* Nhập 0 nếu không yêu cầu bảo trì định kỳ.</p>
               </div>
             </div>
-
+            
             {/* THÔNG TIN BÀN GIAO */}
             <div className="md:col-span-2 p-5 bg-gray-50 border border-gray-200 rounded-xl space-y-4 mt-2">
               <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Thông tin Bàn giao (Tùy chọn)</h4>

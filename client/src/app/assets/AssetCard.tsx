@@ -2,7 +2,8 @@ import React from "react";
 import { Asset } from "@/state/api";
 import { 
   Briefcase, Edit, Trash2, QrCode, Tag, 
-  MapPin, User, Calendar, ShieldCheck, ShieldAlert, AlertTriangle, Activity, History
+  MapPin, User, Calendar, ShieldCheck, ShieldAlert, AlertTriangle, Activity, History,
+  CheckCircle2
 } from "lucide-react";
 
 type AssetCardProps = {
@@ -78,10 +79,35 @@ const AssetCard = ({ asset, onOpenModal, onDelete }: AssetCardProps) => {
             {asset.location && <span className="flex items-center gap-1.5"><MapPin className="w-4 h-4 text-red-500"/> Đặt tại: <strong>{asset.location}</strong></span>}
             
             {asset.nextMaintenance && (
-              <span className={`flex items-center gap-1.5 font-bold ${asset.isMaintenanceOverdue ? 'text-red-600' : 'text-orange-600'}`}>
-                <AlertTriangle className={`w-4 h-4 ${asset.isMaintenanceOverdue ? 'animate-bounce' : ''}`}/> 
-                Bảo trì: {new Date(asset.nextMaintenance).toLocaleDateString("vi-VN")}
-              </span>
+              <div className={`col-span-1 md:col-span-2 mt-1.5 flex items-center justify-between p-2.5 rounded-lg border shadow-sm ${asset.isMaintenanceOverdue ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400' : 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 text-orange-700 dark:text-orange-400'}`}>
+                <span className="flex items-center gap-1.5 font-bold text-[11px] uppercase tracking-wider">
+                  <AlertTriangle className={`w-4 h-4 ${asset.isMaintenanceOverdue ? 'animate-bounce' : ''}`}/> 
+                  Hạn bảo trì:
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-black text-sm">
+                    {new Date(asset.nextMaintenance).toLocaleDateString("vi-VN")}
+                  </span>
+                  
+                  {/* NÚT HOÀN TẤT BẢO TRÌ (MỚI THÊM) */}
+                  <button 
+                    title="Xác nhận đã bảo trì xong"
+                    onClick={(e) => {
+                      e.stopPropagation(); // Tránh bấm nhầm mở thẻ
+                      // Gọi API Cập nhật trạng thái thông qua hàm onOpenModal (Dùng Form Edit tạm)
+                      // hoặc gọi thẳng hàm Toast thông báo
+                      alert("Tính năng: Sẽ gọi API để cộng thêm " + asset.maintenanceCycle + " tháng vào chu kỳ bảo trì.");
+                    }}
+                    className={`p-1.5 rounded-md shadow-sm border transition-all active:scale-95 ${
+                      asset.isMaintenanceOverdue 
+                        ? 'bg-red-100 border-red-300 hover:bg-red-500 hover:text-white text-red-700' 
+                        : 'bg-orange-100 border-orange-300 hover:bg-orange-500 hover:text-white text-orange-700'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>
