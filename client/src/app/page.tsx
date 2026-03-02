@@ -1,5 +1,6 @@
-import Dashboard from "@/app/dashboard/page";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <Dashboard />;
+  // Tự động chuyển hướng root (/) sang (/dashboard)
+  redirect("/dashboard"); 
 }

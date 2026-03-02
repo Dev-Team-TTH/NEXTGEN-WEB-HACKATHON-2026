@@ -1,50 +1,44 @@
-"use client"; // Thêm dòng này để chạy được i18n
+"use client";
 
-import Image from "next/image";
 import React from "react";
-import { useTranslation } from "react-i18next"; // Import máy dịch
+import Image from "next/image";
 
-const Loading = () => {
-  const { t } = useTranslation();
-
+// ==========================================
+// COMPONENT LOADING CHUẨN DOANH NGHIỆP
+// Tự động hiển thị khi Next.js App Router đang phân tích & kết xuất một trang nặng
+// ==========================================
+export default function Loading() {
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900 w-full z-50 transition-colors">
-      {/* HIỆU ỨNG NHỊP ĐẬP (PULSE) CHO LOGO */}
-      <div className="relative animate-pulse flex flex-col items-center">
-        <div className="p-4 bg-white dark:bg-gray-800 rounded-3xl shadow-xl mb-6">
-          <Image
-            src="/logo.png"
-            alt="Team TTH Logo"
-            width={80}
-            height={80}
-            className="rounded-2xl"
-          />
-        </div>
-        <h1 className="text-4xl font-extrabold text-blue-600 dark:text-blue-400 tracking-wider">
-          TEAM TTH
-        </h1>
-        <p className="text-gray-500 dark:text-gray-400 font-medium mt-3 text-lg">
-          {t("splash.loading")} {/* <--- GẮN CHỮ DỊCH VÀO ĐÂY */}
-        </p>
+    <div className="flex flex-col items-center justify-center min-h-[60vh] w-full bg-transparent">
+      
+      {/* 1. Logo Thương Hiệu Nhấp Nháy (MỚI ĐƯỢC NÂNG CẤP) */}
+      <div className="relative w-24 h-24 mb-6 animate-pulse flex items-center justify-center">
+        <Image 
+          src="/logo.png" 
+          alt="TTH Logo" 
+          fill
+          sizes="96px"
+          style={{ objectFit: "contain" }}
+          priority // Ưu tiên tải hình ảnh này ngay lập tức vì nó nằm ở màn hình chờ
+        />
       </div>
 
-      {/* HIỆU ỨNG DẤU CHẤM NHẢY (BOUNCE) */}
-      <div className="mt-10 flex gap-3">
-        <div 
-          className="w-4 h-4 bg-blue-600 dark:bg-blue-400 rounded-full animate-bounce" 
-          style={{ animationDelay: "0s" }}
-        ></div>
-        <div 
-          className="w-4 h-4 bg-blue-600 dark:bg-blue-400 rounded-full animate-bounce" 
-          style={{ animationDelay: "0.2s" }}
-        ></div>
-        <div 
-          className="w-4 h-4 bg-blue-600 dark:bg-blue-400 rounded-full animate-bounce" 
-          style={{ animationDelay: "0.4s" }}
-        ></div>
+      {/* 2. Vòng tròn xoay động học (Spinner) */}
+      <div className="relative flex items-center justify-center w-14 h-14">
+        <div className="absolute inset-0 border-4 border-gray-200 dark:border-gray-700 rounded-full"></div>
+        <div className="absolute inset-0 border-4 border-blue-600 dark:border-blue-500 rounded-full border-t-transparent animate-spin"></div>
       </div>
+      
+      {/* 3. Dòng chữ trạng thái nhấp nháy */}
+      <h3 className="mt-4 text-lg font-semibold text-gray-700 dark:text-gray-300 animate-pulse">
+        Đang tải dữ liệu...
+      </h3>
+      
+      {/* 4. Khẩu hiệu hệ thống */}
+      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+        Vui lòng đợi trong giây lát
+      </p>
+
     </div>
   );
-};
-
-export default Loading;
+}

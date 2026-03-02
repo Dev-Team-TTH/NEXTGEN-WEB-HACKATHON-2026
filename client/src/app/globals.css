@@ -1,32 +1,190 @@
+/* ==========================================
+   1. TÍCH HỢP TAILWIND CSS
+   ========================================== */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
+/* ==========================================
+   2. BASE STYLES & THEME TRANSITIONS
+   Nền móng hệ thống & Chuyển đổi Dark Mode mượt mà
+   ========================================== */
+@layer base {
+  html,
+  body {
+    @apply antialiased w-full h-full m-0 p-0 text-gray-900 bg-gray-50;
+    /* Ngăn chặn rác highlight xanh khi người dùng tap nhanh trên mobile */
+    -webkit-tap-highlight-color: transparent;
+  }
 
-html,
-body,
-#root,
-.app {
-  height: 100%;
-  width: 100%;
-  @apply text-sm;
-  @apply bg-gray-500;
-  @apply text-gray-900;
-}
+  /* Kích hoạt chuyển đổi mượt mà (Smooth Transition) khi bấm đổi Theme */
+  body {
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
 
-@media (min-width: 768px) {
-  .custom-grid-rows {
-    grid-template-rows: repeat(8, 20vh);
+  /* Đồng bộ gốc khi next-themes kích hoạt class "dark" trên thẻ <html> */
+  html.dark body {
+    @apply text-white bg-gray-900;
+  }
+
+  /* Loại bỏ viền xanh mặc định của trình duyệt trên các input/button, 
+     thay bằng hiệu ứng ring của Tailwind cho đồng bộ */
+  input:focus,
+  textarea:focus,
+  select:focus,
+  button:focus {
+    @apply outline-none ring-0;
   }
 }
 
-@media (min-width: 1280px) {
-  .custom-grid-rows {
-    grid-template-rows: repeat(8, 7.5vh);
+/* ==========================================
+   3. CUSTOM SCROLLBAR & SAFE AREA (THIẾT BỊ DI ĐỘNG)
+   ========================================== */
+@layer utilities {
+  /* Tùy chỉnh thanh cuộn cho Chrome, Edge, Safari */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 rounded-full transition-colors duration-200;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400;
+  }
+
+  /* Dark mode cho thanh cuộn */
+  html.dark ::-webkit-scrollbar-thumb {
+    @apply bg-gray-700;
+  }
+
+  html.dark ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-600;
+  }
+
+  /* Tiện ích ẩn thanh cuộn nhưng vẫn cuộn được (Dành cho Sidebar/Bảng) */
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
+  }
+
+  /* Hiệu ứng kính mờ (Glassmorphism) cực đẹp cho Modal / Dropdown */
+  .glass {
+    @apply bg-white/70 backdrop-blur-md border border-white/20 shadow-lg dark:bg-gray-900/70 dark:border-gray-700/50;
+  }
+
+  /* 🔥 VÁ LỖ HỔNG IOS/ANDROID: Tương thích vùng an toàn (Tai thỏ & Home Indicator) */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .pl-safe {
+    padding-left: env(safe-area-inset-left);
+  }
+  .pr-safe {
+    padding-right: env(safe-area-inset-right);
+  }
+  .mb-safe {
+    margin-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* ==========================================
+   4. GLOBAL COMPONENTS (TÁI SỬ DỤNG CLASS)
+   Giữ cho HTML React siêu sạch và dễ bảo trì
+   ========================================== */
+@layer components {
+  /* --- NÚT BẤM (BUTTONS) --- */
+  .btn-primary {
+    @apply inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white transition-all duration-200 bg-blue-600 border border-transparent rounded-lg shadow-sm hover:bg-blue-700 hover:shadow focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed dark:focus:ring-offset-gray-900;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-700 transition-all duration-200 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 hover:text-blue-600 hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-700 dark:hover:text-blue-400 dark:hover:border-blue-500 dark:focus:ring-offset-gray-900;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white transition-all duration-200 bg-red-600 border border-transparent rounded-lg shadow-sm hover:bg-red-700 hover:shadow focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed dark:focus:ring-offset-gray-900;
+  }
+
+  /* --- FORM NHẬP LIÊU (INPUTS & SELECTS) --- */
+  .form-input {
+    @apply block w-full px-4 py-2.5 text-sm text-gray-900 bg-white border border-gray-300 rounded-lg transition-all duration-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-800/50 disabled:cursor-not-allowed;
+  }
+
+  .form-label {
+    @apply block mb-1.5 text-sm font-medium text-gray-700 dark:text-gray-300;
+  }
+
+  /* --- BẢNG DỮ LIỆU (DATA TABLES) --- */
+  .table-container {
+    @apply w-full overflow-x-auto rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800;
+  }
+
+  .table-header {
+    @apply bg-gray-50 dark:bg-gray-900/50 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider px-6 py-4 border-b border-gray-200 dark:border-gray-700;
+  }
+
+  .table-row {
+    @apply border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50/80 dark:hover:bg-gray-700/50 transition-colors duration-150 bg-white dark:bg-gray-800;
+  }
+
+  .table-cell {
+    @apply px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200;
+  }
+
+  /* --- THẺ NHÃN (BADGES) --- */
+  .badge-success {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 border border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800/50;
+  }
+  
+  .badge-warning {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 border border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800/50;
+  }
+  
+  .badge-danger {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800/50;
+  }
+}
+
+/* ==========================================
+   5. BỘ TIỆN ÍCH IN ẤN (PRINT MEDIA QUERIES)
+   Dành riêng cho Kế toán & Quản lý kho in Phiếu/Báo cáo
+   ========================================== */
+@media print {
+  /* Ẩn tất cả Sidebar, Navbar, TopLoader, Toast khi người dùng bấm Ctrl + P */
+  .no-print,
+  nav,
+  aside,
+  #nprogress,
+  [data-toaster] {
+    display: none !important;
+  }
+
+  /* Ép nền trắng, chữ đen tuyệt đối khi in ấn để tiết kiệm mực */
+  html, body, .print-container {
+    background-color: white !important;
+    color: black !important;
+  }
+
+  /* Tránh việc bị cắt làm đôi bảng dữ liệu giữa 2 trang giấy A4 */
+  table, tr, td, th {
+    page-break-inside: avoid;
+  }
+  
+  /* Căn lề chuẩn cho trang giấy A4 */
+  @page {
+    margin: 1.5cm;
   }
 }

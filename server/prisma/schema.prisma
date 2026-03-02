@@ -7,215 +7,1024 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Users {
-  userId      String  @id @default(uuid()) // Tự động sinh mã ID cho user mới
-  name        String  // Họ và tên
-  email       String  @unique // Bắt buộc ĐỘC NHẤT để làm tài khoản đăng nhập
-  password    String  // Mật khẩu (Sẽ được mã hóa bcrypt ở Backend)
-  
-  phone       String? // Số điện thoại liên hệ
-  address     String? // Địa chỉ sinh sống
-  
-  // Phân quyền và Nơi làm việc
-  role        String  @default("STAFF") // Các role: "ADMIN" (Tổng công ty), "MANAGER" (Quản lý kho), "STAFF" (Thủ kho)
+// ==========================================
+// 1. ENUMS (Chuẩn IFRS & WMS)
+// ==========================================
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  LOCKED
+  SUSPENDED
 }
 
-model Products {
-  productId      String   @id
-  name           String
-  price          Float
-  rating         Float?
-  stockQuantity  Int      @default(0) // Sẽ chỉ thay đổi khi phiếu ĐÃ ĐƯỢC DUYỆT
-  
-  baseUnit       String   @default("Cái")
-  largeUnit      String?
-  conversionRate Int      @default(1)
-  imageUrl       String?
+enum ApprovalStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
 
-  purchasePrice  Float?   @default(0)
-  status         String   @default("ACTIVE")
-  category       String?
-  description    String?
-  reorderPoint   Int      @default(10)
-  reorderUnit    String?
-  maxStock       Int?
+enum TransactionType {
+  PURCHASE_ORDER    // PO (Đơn đặt hàng mua)
+  SALES_ORDER       // SO (Đơn đặt hàng bán)
+  PURCHASE_RECEIPT  // Phiếu Nhập kho
+  SALES_ISSUE       // Phiếu Xuất kho
+  INTERNAL_TRANSFER // Chuyển kho nội bộ
+  ADJUSTMENT        // Kiểm kê/Điều chỉnh
+  RETURN            // Trả hàng
+}
+
+enum TransactionStatus {
+  DRAFT
+  PENDING_APPROVAL
+  COMPLETED
+  CANCELLED
+  REJECTED          // ĐÃ THÊM: Trạng thái từ chối
+}
+
+enum PaymentStatus {
+  UNPAID    
+  PARTIAL   
+  PAID      
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CREDIT_CARD
+  CLEARING 
+}
+
+enum PostingStatus {
+  DRAFT
+  POSTED
+  REVERSED
+}
+
+enum AssetStatus {
+  AVAILABLE      
+  IN_USE         
+  IN_MAINTENANCE 
+  BROKEN         
+  LIQUIDATED     
+  LOST           
+}
+
+enum MaintenanceType {
+  PREVENTIVE 
+  CORRECTIVE 
+  UPGRADE    
+}
+
+enum DepreciationMethod {
+  STRAIGHT_LINE      
+  DECLINING_BALANCE  
+}
+
+enum ActionType {
+  CREATE
+  UPDATE
+  DELETE
+  APPROVE
+  REJECT
+  ASSIGN
+  RETURN
+  SUBMIT            // ĐÃ THÊM: Dùng khi trình duyệt
+  CANCEL            // ĐÃ THÊM: Dùng khi thu hồi
+}
+
+enum MovementDirection {
+  IN
+  OUT
+}
+
+enum CostingMethod {
+  STANDARD          
+  FIFO              
+  MOVING_AVERAGE    
+}
+
+// ==========================================
+// 2. TÀI CHÍNH KẾ TOÁN VĨ MÔ (IFRS, TAX, MULTI-CURRENCY)
+// ==========================================
+model Currency {
+  currencyCode  String   @id 
+  name          String
+  symbol        String?
+  exchangeRates ExchangeRate[]
+  documents     Document[]
+  priceLists    PriceList[]
+}
+
+model ExchangeRate {
+  rateId       String   @id @default(uuid())
+  currencyCode String
+  rate         Decimal  @db.Decimal(18, 6) 
+  validFrom    DateTime
+  validTo      DateTime?
+  currency     Currency @relation(fields: [currencyCode], references: [currencyCode], onDelete: Restrict)
+
+  @@index([currencyCode, validFrom])
+}
+
+model FiscalYear {
+  fiscalYearId String   @id @default(uuid())
+  year         Int      @unique
+  startDate    DateTime
+  endDate      DateTime
+  isClosed     Boolean  @default(false) 
+  periods      FiscalPeriod[]
+}
+
+model FiscalPeriod {
+  periodId     String   @id @default(uuid())
+  fiscalYearId String
+  periodNumber Int      
+  startDate    DateTime
+  endDate      DateTime
+  isClosed     Boolean  @default(false)
+
+  fiscalYear   FiscalYear @relation(fields: [fiscalYearId], references: [fiscalYearId], onDelete: Restrict)
+  
+  depreciations AssetDepreciationHistory[]
+  documents     Document[]
+  journals      JournalEntry[]
+
+  @@unique([fiscalYearId, periodNumber])
+}
+
+model TaxCode {
+  taxId        String   @id @default(uuid())
+  code         String   @unique 
+  name         String
+  rate         Decimal  @db.Decimal(5, 2) 
+  description  String?
+  documents    DocumentTax[]
+}
+
+// ==========================================
+// 3. SECURITY, RBAC & AUDIT TOÀN HỆ THỐNG
+// ==========================================
+model Users {
+  userId              String    @id @default(uuid())
+  email               String    @unique
+  passwordHash        String
+  fullName            String
+  phone               String?
+  status              UserStatus @default(ACTIVE)
+  
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  twoFactorEnabled    Boolean   @default(false)
+  twoFactorSecret     String?
+  passwordChangedAt   DateTime  @default(now())
+  lastLoginAt         DateTime?
+  isDeleted           Boolean   @default(false)
+  
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  departmentId        String?
+  department          Department? @relation(fields: [departmentId], references: [departmentId], onDelete: SetNull)
+  
+  roles               UserRole[]
+  refreshTokens       RefreshToken[]
+  loginHistories      LoginHistory[]
+  auditLogs           SystemAuditLog[]
+
+  createdDocuments    Document[]             @relation("DocCreatedBy")
+  approvedDocuments   Document[]             @relation("DocApprovedBy")
+  assignedAssets      AssetAssignmentHistory[] @relation("AssetAssignedTo")
+  returnedAssets      AssetAssignmentHistory[] @relation("AssetReturnedBy")
+  createdApprovals    ApprovalRequest[]      @relation("ApprovalRequester")
+  actionedApprovals   ApprovalLog[]          @relation("ApprovalActioner")
+  journalEntries      JournalEntry[]         @relation("JournalCreatedBy")
+  paymentsProcessed   PaymentTransaction[]   @relation("PaymentProcessedBy")
+
+  @@index([email])
+  @@index([departmentId])
+  @@index([status])
+}
+
+model Role {
+  roleId      String         @id @default(uuid())
+  roleName    String         @unique 
+  description String?
+  isDeleted   Boolean        @default(false)
+  
+  permissions RolePermission[]
+  users       UserRole[]
+  approvalSteps ApprovalStep[] 
+}
+
+model Permission {
+  permissionId String         @id @default(uuid())
+  code         String         @unique 
+  module       String         
+  roles        RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [roleId], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [permissionId], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   Users @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  role   Role  @relation(fields: [roleId], references: [roleId], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      Users    @relation(fields: [userId], references: [userId], onDelete: Cascade)
+}
+
+model LoginHistory {
+  id        String   @id @default(uuid())
+  userId    String
+  ipAddress String?
+  userAgent String?
+  status    String   
+  timestamp DateTime @default(now())
+  user      Users    @relation(fields: [userId], references: [userId], onDelete: Cascade)
+}
+
+model SystemAuditLog {
+  logId       String     @id @default(uuid())
+  tableName   String     
+  recordId    String     
+  action      ActionType 
+  oldValues   Json?
+  newValues   Json?      
+  userId      String?
+  ipAddress   String?
+  timestamp   DateTime   @default(now())
+
+  user        Users?     @relation(fields: [userId], references: [userId], onDelete: SetNull)
+
+  @@index([tableName, recordId])
+  @@index([timestamp])
+  @@index([userId])
+}
+
+// ==========================================
+// 4. ORGANIZATION & BUDGET CONTROL
+// ==========================================
+model Company {
+  companyId   String       @id @default(uuid())
+  code        String       @unique
+  name        String
+  taxCode     String?
+  address     String?
+  isDeleted   Boolean      @default(false)
+  branches    Branch[]
+}
+
+model Branch {
+  branchId    String       @id @default(uuid())
+  companyId   String
+  code        String       @unique
+  name        String
+  isDeleted   Boolean      @default(false)
+  company     Company      @relation(fields: [companyId], references: [companyId], onDelete: Restrict)
+  
+  departments Department[]
+  warehouses  Warehouse[]
+  documents   Document[]
+  journals    JournalEntry[]
+  workflows   ApprovalWorkflow[]
+  
+  inventoryTxs InventoryTransaction[]
+}
+
+model Department {
+  departmentId String      @id @default(uuid())
+  branchId     String
+  code         String      @unique
+  name         String
+  isDeleted    Boolean     @default(false)
+  branch       Branch      @relation(fields: [branchId], references: [branchId], onDelete: Restrict)
+  users        Users[]
+  assets       Assets[]
+}
+
+model CostCenter {
+  costCenterId String      @id @default(uuid())
+  code         String      @unique
+  name         String
+  description  String?
+  isDeleted    Boolean     @default(false)
+  assets       Assets[]
+  journalLines JournalLine[]
+  budgets      Budget[]
+}
+
+model Budget {
+  budgetId         String      @id @default(uuid())
+  costCenterId     String
+  year             Int
+  totalAmount      Decimal     @db.Decimal(18, 2)
+  usedAmount       Decimal     @db.Decimal(18, 2) @default(0.00)
+  encumberedAmount Decimal     @db.Decimal(18, 2) @default(0.00) 
+  
+  version          Int         @default(1) 
+  
+  costCenter   CostCenter  @relation(fields: [costCenterId], references: [costCenterId], onDelete: Restrict)
+
+  @@unique([costCenterId, year])
+}
+
+// ==========================================
+// 5. MASTER DATA, ĐỐI TÁC & BẢNG GIÁ (PRICE LIST)
+// ==========================================
+model PriceList {
+  priceListId  String   @id @default(uuid())
+  code         String   @unique
+  name         String
+  currencyCode String
+  isActive     Boolean  @default(true)
+  isDeleted    Boolean  @default(false)
+  
+  currency     Currency @relation(fields: [currencyCode], references: [currencyCode], onDelete: Restrict)
+  
+  items        PriceListItem[]
+  customers    Customer[]
+  suppliers    Supplier[]
+}
+
+model PriceListItem {
+  itemId       String   @id @default(uuid())
+  priceListId  String
+  productId    String
+  
+  variantId    String?  
+  
+  price        Decimal  @db.Decimal(18, 2)
+  minQuantity  Int      @default(1) 
+  validFrom    DateTime?
+  validTo      DateTime?
+  
+  priceList    PriceList       @relation(fields: [priceListId], references: [priceListId], onDelete: Cascade)
+  product      Products        @relation(fields: [productId], references: [productId], onDelete: Restrict)
+  variant      ProductVariant? @relation(fields: [variantId], references: [variantId], onDelete: Restrict)
+
+  @@index([priceListId, productId])
+}
+
+model UnitOfMeasure {
+  uomId     String     @id @default(uuid())
+  code      String     @unique 
+  name      String
+  isDeleted Boolean    @default(false)
+  
+  products  Products[]
+  assets    Assets[]
+  
+  conversionsFrom ProductUomConversion[] @relation("FromUOM")
+  conversionsTo   ProductUomConversion[] @relation("ToUOM")
+}
+
+model ProductCategory {
+  categoryId  String     @id @default(uuid())
+  code        String     @unique
+  name        String
+  parentId    String?
+  isDeleted   Boolean    @default(false)
+  
+  inventoryAccountId String? 
+  cogsAccountId      String?
+  incomeAccountId    String? 
+
+  inventoryAccount   Account? @relation("InventoryAccount", fields: [inventoryAccountId], references: [accountId], onDelete: Restrict)
+  cogsAccount        Account? @relation("CogsAccount", fields: [cogsAccountId], references: [accountId], onDelete: Restrict)
+  incomeAccount      Account? @relation("IncomeAccount", fields: [incomeAccountId], references: [accountId], onDelete: Restrict)
+
+  products    Products[]
+}
+
+model Supplier {
+  supplierId  String     @id @default(uuid())
+  code        String     @unique
+  name        String
+  taxCode     String?
+  email       String?
+  phone       String?
+  address     String?
+  priceListId String?    
+  isDeleted   Boolean    @default(false)
+  
+  priceList   PriceList? @relation(fields: [priceListId], references: [priceListId], onDelete: Restrict)
+
+  products    Products[]
+  assets      Assets[]
+  maintenances AssetMaintenance[]
+  documents   Document[]
+}
+
+model Customer {
+  customerId  String     @id @default(uuid())
+  code        String     @unique
+  name        String
+  taxCode     String?
+  email       String?
+  phone       String?
+  address     String?
+  priceListId String?    
+  isDeleted   Boolean    @default(false)
+  
+  priceList   PriceList? @relation(fields: [priceListId], references: [priceListId], onDelete: Restrict)
+  
+  documents   Document[]
+}
+
+model Warehouse {
+  warehouseId String             @id @default(uuid())
+  branchId    String
+  code        String             @unique
+  name        String
+  isDeleted   Boolean            @default(false)
+  branch      Branch             @relation(fields: [branchId], references: [branchId], onDelete: Restrict)
+  bins        BinLocation[]
+  balances    InventoryBalance[]
+  
+  fromTransactions InventoryTransaction[] @relation("TxFromWarehouse")
+  toTransactions   InventoryTransaction[] @relation("TxToWarehouse")
+}
+
+model BinLocation {
+  binId       String             @id @default(uuid())
+  warehouseId String
+  code        String             
+  name        String?
+  isDeleted   Boolean            @default(false)
+  warehouse   Warehouse          @relation(fields: [warehouseId], references: [warehouseId], onDelete: Restrict)
+  balances    InventoryBalance[]
+  
+  fromTransactions InventoryTransaction[] @relation("TxFromBin")
+  toTransactions   InventoryTransaction[] @relation("TxToBin")
+
+  @@unique([warehouseId, code])
+}
+
+// ==========================================
+// 6. INVENTORY & PRODUCTS 
+// ==========================================
+model Products {
+  productId      String   @id @default(uuid())
+  productCode    String   @unique
+  name           String
+  barcode        String?  @unique
+  imageUrl       String?
+  price          Decimal  @db.Decimal(18, 2) 
+  purchasePrice  Decimal? @db.Decimal(18, 2) @default(0.00)
+  
+  costingMethod  CostingMethod @default(MOVING_AVERAGE)
+  standardCost   Decimal       @db.Decimal(18, 2) @default(0.00)
+  
+  uomId          String    
+  categoryId     String
+  supplierId     String?
+  reorderPoint   Int      @default(0)
   
   hasVariants    Boolean  @default(false)
   hasBatches     Boolean  @default(false)
+  
+  status         UserStatus @default(ACTIVE)
+  isDeleted      Boolean    @default(false) 
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  Variants              ProductVariant[]
-  Batches               ProductBatch[] // Vẫn giữ để tra cứu nhanh toàn bộ lô của SP
-  InventoryTransactions InventoryTransaction[]
-  MasterDataRequests    MasterDataRequest[]
+  uom            UnitOfMeasure    @relation(fields: [uomId], references: [uomId], onDelete: Restrict)
+  category       ProductCategory  @relation(fields: [categoryId], references: [categoryId], onDelete: Restrict)
+  supplier       Supplier?        @relation(fields: [supplierId], references: [supplierId], onDelete: Restrict)
+
+  variants       ProductVariant[]
+  batches        ProductBatch[]
+  balances       InventoryBalance[]
+  transactions   InventoryTransaction[]
+  priceListItems PriceListItem[]
+  uomConversions ProductUomConversion[]
+
+  @@index([categoryId])
+  @@index([supplierId])
+  @@index([isDeleted])
+}
+
+model ProductUomConversion {
+  conversionId   String   @id @default(uuid())
+  productId      String
+  fromUomId      String   
+  toUomId        String   
+  
+  conversionFactor Decimal @db.Decimal(18, 6) 
+  
+  product        Products      @relation(fields: [productId], references: [productId], onDelete: Cascade)
+  fromUom        UnitOfMeasure @relation("FromUOM", fields: [fromUomId], references: [uomId], onDelete: Restrict)
+  toUom          UnitOfMeasure @relation("ToUOM", fields: [toUomId], references: [uomId], onDelete: Restrict)
+
+  @@unique([productId, fromUomId, toUomId])
 }
 
 model ProductVariant {
   variantId      String   @id @default(uuid())
   productId      String
-  sku            String   @unique 
+  sku            String   @unique
   attributes     String   
-  additionalPrice Float   @default(0) 
-  stockQuantity  Int      @default(0) 
+  additionalPrice Decimal @db.Decimal(18, 2) @default(0.00)
+  isDeleted      Boolean  @default(false)
 
-  product        Products @relation(fields: [productId], references: [productId], onDelete: Cascade)
-  
-  Batches        ProductBatch[] // MỐI QUAN HỆ CỐT LÕI: 1 Biến thể có nhiều Lô
-  Transactions   InventoryTransaction[]
+  product        Products @relation(fields: [productId], references: [productId], onDelete: Restrict)
+  batches        ProductBatch[]
+  balances       InventoryBalance[]
+  transactions   InventoryTransaction[]
+  priceListItems PriceListItem[]
+
+  @@index([productId])
 }
 
 model ProductBatch {
-  batchId        String   @id @default(uuid())
-  batchNumber    String   
+  batchId         String   @id @default(uuid())
+  batchNumber     String  
+  productId       String
+  variantId       String?   
   
-  productId      String
-  variantId     String?
-  
-  manufactureDate DateTime? 
-  expiryDate      DateTime  
-  stockQuantity   Int      @default(0) 
+  manufactureDate DateTime?
+  expiryDate      DateTime?
+  product         Products        @relation(fields: [productId], references: [productId], onDelete: Restrict)
+  variant         ProductVariant? @relation(fields: [variantId], references: [variantId], onDelete: Restrict)
+  balances        InventoryBalance[]
+  transactions    InventoryTransaction[]
 
-  product        Products @relation(fields: [productId], references: [productId], onDelete: Cascade)
-  variant       ProductVariant? @relation(fields: [variantId], references: [variantId], onDelete: Cascade)
-  
-  Transactions   InventoryTransaction[]
-
-  @@unique([variantId, batchNumber]) // RÀNG BUỘC: Mỗi biến thể chỉ có 1 số lô duy nhất (Dùng để Gộp Lô)
+  @@unique([productId, variantId, batchNumber])
+  @@index([expiryDate])
 }
 
-// CẬP NHẬT BẢNG THỂ KHO (TRANSACTIONS) ĐỂ GẮN VỚI LÔ/BIẾN THỂ
+model InventoryBalance {
+  balanceId   String   @id @default(uuid())
+  warehouseId String
+  productId   String
+  
+  binId       String?
+  variantId   String?   
+  batchId     String?
+  quantity    Int      @default(0) 
+  lockedQty   Int      @default(0) 
+  
+  totalValue  Decimal  @db.Decimal(18, 2) @default(0.00)
+  avgCost     Decimal  @db.Decimal(18, 2) @default(0.00)
+  
+  warehouse   Warehouse       @relation(fields: [warehouseId], references: [warehouseId], onDelete: Restrict)
+  bin         BinLocation?    @relation(fields: [binId], references: [binId], onDelete: Restrict)
+  product     Products        @relation(fields: [productId], references: [productId], onDelete: Restrict)
+  variant     ProductVariant? @relation(fields: [variantId], references: [variantId], onDelete: Restrict)
+  batch       ProductBatch?   @relation(fields: [batchId], references: [batchId], onDelete: Restrict)
+
+  @@unique([warehouseId, binId, productId, variantId, batchId])
+  @@index([warehouseId, productId, variantId]) 
+  @@index([productId])
+}
+
+// ==========================================
+// 7. TRANSACTIONS, AP/AR & STOCK LEDGER
+// ==========================================
+model Document {
+  documentId      String             @id @default(uuid())
+  documentNumber  String             @unique 
+  branchId        String             
+  fiscalPeriodId  String?
+  type            TransactionType
+  status          TransactionStatus  @default(DRAFT)
+  referenceDoc    String?
+  note            String?
+  
+  supplierId      String?
+  customerId      String?
+  
+  currencyCode    String             @default("VND") 
+  exchangeRate    Decimal            @db.Decimal(18, 6) @default(1.0)
+  totalAmount     Decimal            @db.Decimal(18, 2) @default(0.00)
+  
+  paymentStatus   PaymentStatus      @default(UNPAID)
+  paidAmount      Decimal            @db.Decimal(18, 2) @default(0.00)
+  
+  isLocked        Boolean            @default(false)
+  documentSnapshot Json?
+  createdById     String
+  approvedById    String?
+  createdAt       DateTime           @default(now())
+  approvedAt      DateTime?
+  supplier        Supplier?          @relation(fields: [supplierId], references: [supplierId], onDelete: Restrict)
+  customer        Customer?          @relation(fields: [customerId], references: [customerId], onDelete: Restrict)
+  
+  branch          Branch             @relation(fields: [branchId], references: [branchId], onDelete: Restrict)
+  fiscalPeriod    FiscalPeriod?      @relation(fields: [fiscalPeriodId], references: [periodId], onDelete: Restrict)
+  currency        Currency           @relation(fields: [currencyCode], references: [currencyCode], onDelete: Restrict)
+  createdBy       Users              @relation("DocCreatedBy", fields: [createdById], references: [userId], onDelete: Restrict)
+  approvedBy      Users?             @relation("DocApprovedBy", fields: [approvedById], references: [userId], onDelete: SetNull)
+  
+  transactions    InventoryTransaction[]
+  taxes           DocumentTax[]
+  landedCosts     LandedCost[]
+  approvalRequest ApprovalRequest?
+  journalEntries  JournalEntry[]     
+  payments        PaymentTransaction[]
+
+  @@index([branchId])
+  @@index([type, status])
+  @@index([paymentStatus])
+  @@index([createdAt])
+  @@index([supplierId])
+  @@index([customerId])
+}
+
+model PaymentTransaction {
+  paymentId     String        @id @default(uuid())
+  documentId    String
+  journalEntryId String?
+  amount        Decimal       @db.Decimal(18, 2)
+  paymentDate   DateTime      @default(now())
+  paymentMethod PaymentMethod @default(CASH)
+  reference     String?
+  note          String?
+  processedById String
+  
+  document      Document      @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+  journalEntry  JournalEntry? @relation(fields: [journalEntryId], references: [journalId], onDelete: SetNull)
+  processedBy   Users         @relation("PaymentProcessedBy", fields: [processedById], references: [userId], onDelete: Restrict)
+
+  @@index([documentId])
+  @@index([paymentDate])
+}
+
+model DocumentTax {
+  docTaxId     String   @id @default(uuid())
+  documentId   String
+  taxId        String
+  taxAmount    Decimal  @db.Decimal(18, 2)
+
+  document     Document @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+  tax          TaxCode  @relation(fields: [taxId], references: [taxId], onDelete: Restrict)
+}
+
+model LandedCost {
+  landedCostId  String   @id @default(uuid())
+  documentId    String
+  description   String   
+  amount        Decimal  @db.Decimal(18, 2)
+  isAllocated   Boolean  @default(false)
+
+  document      Document @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+}
+
 model InventoryTransaction {
   transactionId  String   @id @default(uuid())
+  documentId     String
+  branchId       String   
+  journalEntryId String?
+  movementDirection MovementDirection 
   
+  fromWarehouseId String?
+  toWarehouseId   String?
+  fromBinId       String?
+  toBinId         String?  
+  variantId       String?
+  batchId         String?
   productId      String
-  variantId      String?
-  batchId        String?  
   
-  newBatchNumber String?
-  expiryDate     DateTime?
-  location       String?  
-
+  quantity       Int      
+  quantityBefore Int      @default(0) 
+  quantityAfter  Int      @default(0) 
+  unitCost       Decimal  @db.Decimal(18, 2) 
+  movingAvgCost  Decimal  @db.Decimal(18, 2) @default(0.00) 
+  totalCost      Decimal  @db.Decimal(18, 2)
+  
   timestamp      DateTime @default(now())
-  type           String   // IN / OUT / TRANSFER (Luân chuyển)
-  quantity       Int
-  note           String?
 
-  status         String   @default("PENDING") 
-  createdBy      String?
-  approvedBy     String?
-  approvedAt     DateTime?
+  document       Document        @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+  branch         Branch          @relation(fields: [branchId], references: [branchId], onDelete: Restrict)
+  journalEntry   JournalEntry?   @relation(fields: [journalEntryId], references: [journalId], onDelete: SetNull)
+  
+  fromWarehouse  Warehouse?      @relation("TxFromWarehouse", fields: [fromWarehouseId], references: [warehouseId], onDelete: Restrict)
+  toWarehouse    Warehouse?      @relation("TxToWarehouse", fields: [toWarehouseId], references: [warehouseId], onDelete: Restrict)
+  fromBin        BinLocation?    @relation("TxFromBin", fields: [fromBinId], references: [binId], onDelete: Restrict)
+  toBin          BinLocation?    @relation("TxToBin", fields: [toBinId], references: [binId], onDelete: Restrict)
+  
+  product        Products        @relation(fields: [productId], references: [productId], onDelete: Restrict)
+  variant        ProductVariant? @relation(fields: [variantId], references: [variantId], onDelete: Restrict)
+  batch          ProductBatch?   @relation(fields: [batchId], references: [batchId], onDelete: Restrict)
 
-  // Khóa ngoại
-  product        Products @relation(fields: [productId], references: [productId], onDelete: Cascade)
-  variant        ProductVariant? @relation(fields: [variantId], references: [variantId], onDelete: Cascade)
-  batch          ProductBatch? @relation(fields: [batchId], references: [batchId], onDelete: Cascade)
+  @@index([documentId])
+  @@index([branchId, timestamp]) 
+  @@index([productId, timestamp]) 
 }
 
-// Giữ lại chi phí để làm báo cáo Dashboard (VD: Chi phí bảo trì tài sản, phí vận chuyển)
-model Expenses {
-  expenseId String   @id
-  category  String
-  amount    Float
-  timestamp DateTime
-}
+// ==========================================
+// 8. ASSET MANAGEMENT 
+// ==========================================
+model AssetCategory {
+  categoryId  String     @id @default(uuid())
+  code        String     @unique
+  name        String
+  depreciationRate Decimal? @db.Decimal(5, 2) 
+  isDeleted   Boolean    @default(false)
+  
+  fixedAssetAccountId        String?
+  depreciationAccountId      String? 
+  accumDepreciationAccountId String? 
 
-model ExpenseSummary {
-  expenseSummaryId  String              @id
-  totalExpenses     Float
-  date              DateTime
-  ExpenseByCategory ExpenseByCategory[]
-}
+  fixedAssetAccount        Account? @relation("FixedAssetAccount", fields: [fixedAssetAccountId], references: [accountId], onDelete: Restrict)
+  depreciationAccount      Account? @relation("DepreciationAccount", fields: [depreciationAccountId], references: [accountId], onDelete: Restrict)
+  accumDepreciationAccount Account? @relation("AccumDeprAccount", fields: [accumDepreciationAccountId], references: [accountId], onDelete: Restrict)
 
-model ExpenseByCategory {
-  expenseByCategoryId String         @id
-  expenseSummaryId    String
-  category            String
-  amount              BigInt
-  date                DateTime
-  expenseSummary      ExpenseSummary @relation(fields: [expenseSummaryId], references: [expenseSummaryId])
+  assets      Assets[]
 }
 
 model Assets {
   assetId        String   @id @default(uuid())
-  name           String
-  category       String
-  status         String
-  assignedTo     String?
+  assetCode      String   @unique 
+  name           String   
+  barcode        String?  @unique 
+  serialNumber   String?  @unique 
+  imageUrl       String?
+  status         AssetStatus @default(AVAILABLE)
+  isDeleted      Boolean     @default(false)
+  
   purchaseDate   DateTime
-  purchasePrice  Float
-  currentValue   Float
-  location       String?
+  purchasePrice  Decimal  @db.Decimal(18, 2)
+  currentValue   Decimal  @db.Decimal(18, 2)
+  salvageValue   Decimal  @db.Decimal(18, 2) @default(0.00) 
+  
+  depreciationMethod DepreciationMethod?
+  depreciationMonths Int? @default(0)
+  
+  maintenanceCycleMonths Int? 
+  nextMaintenanceDate    DateTime?
+  categoryId     String
+  uomId          String?
+  departmentId   String?     
+  costCenterId   String?     
+  supplierId     String?
+  category       AssetCategory  @relation(fields: [categoryId], references: [categoryId], onDelete: Restrict)
+  uom            UnitOfMeasure? @relation(fields: [uomId], references: [uomId], onDelete: Restrict)
+  department     Department?    @relation(fields: [departmentId], references: [departmentId], onDelete: Restrict)
+  costCenter     CostCenter?    @relation(fields: [costCenterId], references: [costCenterId], onDelete: Restrict)
+  supplier       Supplier?      @relation(fields: [supplierId], references: [supplierId], onDelete: Restrict)
 
-  imageUrl       String?  // <-- THÊM DÒNG NÀY
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  depreciationMonths Int?      @default(0)
-  maintenanceCycle   Int?      @default(0) // Chu kỳ bảo trì: Bao nhiêu tháng 1 lần?
-  lastMaintenance    DateTime? // Ngày bảo trì gần nhất
-  nextMaintenance    DateTime? // Hạn bảo trì tiếp theo (Hệ thống tự tính)
+  assignments    AssetAssignmentHistory[]
+  maintenances   AssetMaintenance[]
+  depreciations  AssetDepreciationHistory[]
+  revaluations   AssetRevaluation[]
+  liquidation    AssetLiquidation?
+  histories      AssetHistory[]
 
-  AssetRequests  AssetRequest[]
-  AssetHistories AssetHistory[]
+  @@index([categoryId])
+  @@index([departmentId])
+  @@index([status])
+  @@index([nextMaintenanceDate])
 }
 
-// --- BẢNG YÊU CẦU TÀI SẢN (ENTERPRISE WMS) ---
-model AssetRequest {
-  requestId      String   @id @default(uuid())
-  assetId        String?  // Có thể Null nếu là phiếu MUA MỚI tài sản
-  requestType    String   // "CREATE" (Mua mới), "UPDATE" (Sửa/Bàn giao), "DELETE" (Thanh lý)
-  requestedBy    String?  @default("NhanVien_01")
-  timestamp      DateTime @default(now())
-  status         String   @default("PENDING") // PENDING, APPROVED, REJECTED
-  approvedBy     String?
-  approvedAt     DateTime?
+model AssetAssignmentHistory {
+  assignmentId String    @id @default(uuid())
+  assetId      String
+  assignedToId String    
+  assignedById String
+  assignedAt   DateTime  @default(now())
+  returnedAt   DateTime?
+  returnedById String?
+  conditionOut String?   
+  conditionIn  String?   
+  note         String?
+  asset        Assets    @relation(fields: [assetId], references: [assetId], onDelete: Cascade)
+  assignedTo   Users     @relation("AssetAssignedTo", fields: [assignedToId], references: [userId], onDelete: Restrict)
+  returnedBy   Users?    @relation("AssetReturnedBy", fields: [returnedById], references: [userId], onDelete: Restrict)
 
-  // Lưu các thông tin tài sản muốn tạo/sửa
-  name           String?
-  category       String?
-  assetStatus    String?  // Tình trạng tài sản (Sẵn sàng, Đang sử dụng...)
-  assignedTo     String?
-  purchaseDate   DateTime?
-  purchasePrice  Float?
-  currentValue   Float?
-  location       String?
-  imageUrl       String?
+  @@index([assetId])
+  @@index([assignedToId])
+}
 
-  depreciationMonths Int?
-  maintenanceCycle   Int?
-  lastMaintenance    DateTime?
-  nextMaintenance    DateTime?
+model AssetMaintenance {
+  maintenanceId   String   @id @default(uuid())
+  assetId         String
+  type            MaintenanceType
+  description     String
+  vendorId        String?
+  cost            Decimal  @db.Decimal(18, 2) @default(0.00)
+  startDate       DateTime
+  completedDate   DateTime?
+  nextDueDate     DateTime? 
 
-  asset          Assets?  @relation(fields: [assetId], references: [assetId], onDelete: Cascade)
+  asset           Assets    @relation(fields: [assetId], references: [assetId], onDelete: Cascade)
+  vendor          Supplier? @relation(fields: [vendorId], references: [supplierId], onDelete: Restrict)
+
+  @@index([assetId])
+}
+
+model AssetDepreciationHistory {
+  historyId       String   @id @default(uuid())
+  assetId         String
+  fiscalPeriodId  String   
+  journalEntryId  String?
+  depreciationAmt Decimal  @db.Decimal(18, 2) 
+  accumulatedAmt  Decimal  @db.Decimal(18, 2) 
+  remainingValue  Decimal  @db.Decimal(18, 2) 
+  calculatedAt    DateTime @default(now())
+
+  asset           Assets       @relation(fields: [assetId], references: [assetId], onDelete: Cascade)
+  fiscalPeriod    FiscalPeriod @relation(fields: [fiscalPeriodId], references: [periodId], onDelete: Restrict)
+  journalEntry    JournalEntry? @relation(fields: [journalEntryId], references: [journalId], onDelete: SetNull)
+
+  @@unique([assetId, fiscalPeriodId]) 
+}
+
+model AssetRevaluation {
+  revaluationId String   @id @default(uuid())
+  assetId       String
+  date          DateTime
+  oldValue      Decimal  @db.Decimal(18, 2)
+  newValue      Decimal  @db.Decimal(18, 2)
+  reason        String
+  recordedAt    DateTime @default(now())
+
+  asset         Assets   @relation(fields: [assetId], references: [assetId], onDelete: Cascade)
+}
+
+model AssetLiquidation {
+  liquidationId   String   @id @default(uuid())
+  assetId         String   @unique
+  liquidationDate DateTime
+  reason          String
+  salePrice       Decimal  @db.Decimal(18, 2) @default(0.00)
+  buyerName       String?
+  profitLoss      Decimal  @db.Decimal(18, 2) 
+  createdAt       DateTime @default(now())
+
+  asset           Assets   @relation(fields: [assetId], references: [assetId], onDelete: Restrict)
 }
 
 model AssetHistory {
-  historyId    String   @id @default(uuid())
+  historyId    String     @id @default(uuid())
   assetId      String
-  actionType   String   // Các loại: CREATED, HANDOVER (Bàn giao), MAINTENANCE (Bảo trì), BROKEN (Hỏng), UPDATED
-  description  String   // Mô tả chi tiết (VD: "Bàn giao cho Nguyễn Văn A")
-  changedBy    String?  @default("System") // Người thực hiện duyệt / thao tác
-  timestamp    DateTime @default(now())
+  actionType   ActionType 
+  description  String  
+  snapshotData Json?
+  changedById  String
+  timestamp    DateTime   @default(now())
 
-  asset        Assets   @relation(fields: [assetId], references: [assetId], onDelete: Cascade)
+  asset        Assets     @relation(fields: [assetId], references: [assetId], onDelete: Cascade)
+
+  @@index([assetId])
+  @@index([timestamp])
 }
 
-// --- BẢNG MỚI (MÔ HÌNH ENTERPRISE): YÊU CẦU ĐỔI MASTER DATA ---
-model MasterDataRequest {
-  requestId        String   @id @default(uuid())
-  productId        String
-  requestedBy      String?  @default("NhanVien_01")
-  timestamp        DateTime @default(now())
-  status           String   @default("PENDING") // PENDING, APPROVED, REJECTED
-  approvedBy       String?
-  approvedAt       DateTime?
+// ==========================================
+// 9. APPROVAL WORKFLOW 
+// ==========================================
+model ApprovalWorkflow {
+  workflowId   String   @id @default(uuid())
+  branchId     String?
+  module       String   
+  name         String
+  isActive     Boolean  @default(true)     // ĐÃ THÊM: Trạng thái kích hoạt Workflow
+  steps        ApprovalStep[]
+  requests     ApprovalRequest[] 
+  
+  branch       Branch?           @relation(fields: [branchId], references: [branchId], onDelete: Restrict)
 
-  // Lưu trữ các dữ liệu mới mà nhân viên muốn đổi
-  newName          String?
-  newPrice         Float?
-  newPurchasePrice Float?
-  newCategory      String?
-  newDescription   String?
-  newStatus        String?
-  newImageUrl      String?
-  newReorderPoint  Int?
+  @@index([branchId, module])
+}
 
-  product          Products @relation(fields: [productId], references: [productId], onDelete: Cascade)
+model ApprovalStep {
+  stepId       String   @id @default(uuid())
+  workflowId   String
+  stepOrder    Int      
+  roleId       String   
+  
+  workflow     ApprovalWorkflow @relation(fields: [workflowId], references: [workflowId], onDelete: Cascade)
+  role         Role             @relation(fields: [roleId], references: [roleId], onDelete: Restrict)
+
+  @@unique([workflowId, stepOrder])
+}
+
+model ApprovalRequest {
+  requestId    String         @id @default(uuid())
+  workflowId   String?
+  documentId   String?        @unique 
+  requesterId  String
+  status       ApprovalStatus @default(PENDING)
+  currentStep  Int            @default(1)
+  
+  requestSnapshot Json?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  document     Document?        @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+  workflow     ApprovalWorkflow? @relation(fields: [workflowId], references: [workflowId], onDelete: Restrict) 
+  requester    Users            @relation("ApprovalRequester", fields: [requesterId], references: [userId], onDelete: Restrict)
+  logs         ApprovalLog[]
+
+  @@index([status])
+}
+
+model ApprovalLog {
+  logId        String         @id @default(uuid())
+  requestId    String
+  actionerId   String
+  action       ActionType     
+  comments     String?        
+  stepOrder    Int
+  createdAt    DateTime       @default(now())
+
+  request      ApprovalRequest @relation(fields: [requestId], references: [requestId], onDelete: Cascade)
+  actioner     Users           @relation("ApprovalActioner", fields: [actionerId], references: [userId], onDelete: Restrict)
+
+  @@index([requestId])
+}
+
+// ==========================================
+// 10. ACCOUNTING CORE 
+// ==========================================
+model Account {
+  accountId   String   @id @default(uuid())
+  accountCode String   @unique 
+  name        String
+  type        String   
+  isActive    Boolean  @default(true)
+  lines       JournalLine[]
+  
+  productCategoriesInventory ProductCategory[] @relation("InventoryAccount")
+  productCategoriesCogs      ProductCategory[] @relation("CogsAccount")
+  productCategoriesIncome    ProductCategory[] @relation("IncomeAccount")
+
+  assetCategoriesFixed       AssetCategory[] @relation("FixedAssetAccount")
+  assetCategoriesDepr        AssetCategory[] @relation("DepreciationAccount")
+  assetCategoriesAccum       AssetCategory[] @relation("AccumDeprAccount")
+}
+
+model JournalEntry {
+  journalId       String   @id @default(uuid())
+  branchId        String   
+  fiscalPeriodId  String   
+  documentId      String?
+  entryDate       DateTime
+  reference       String?
+  description     String
+  
+  postingStatus   PostingStatus @default(DRAFT)
+  reversalEntryId String?       @unique 
+  
+  createdById     String
+  createdAt       DateTime @default(now())
+
+  branch          Branch        @relation(fields: [branchId], references: [branchId], onDelete: Restrict)
+  fiscalPeriod    FiscalPeriod  @relation(fields: [fiscalPeriodId], references: [periodId], onDelete: Restrict)
+  document        Document?     @relation(fields: [documentId], references: [documentId], onDelete: Restrict)
+  createdBy       Users         @relation("JournalCreatedBy", fields: [createdById], references: [userId], onDelete: Restrict)
+  
+  reversalEntry   JournalEntry? @relation("Reversal", fields: [reversalEntryId], references: [journalId], onDelete: Restrict)
+  reversedBy      JournalEntry? @relation("Reversal")
+  
+  lines           JournalLine[]
+  inventoryTx     InventoryTransaction[]
+  depreciations   AssetDepreciationHistory[]
+  payments        PaymentTransaction[] 
+
+  @@index([branchId, entryDate])
+  @@index([postingStatus])
+}
+
+model JournalLine {
+  lineId       String   @id @default(uuid())
+  journalId    String
+  accountId    String
+  costCenterId String?
+  
+  debit        Decimal  @db.Decimal(18, 2) @default(0.00) 
+  credit       Decimal  @db.Decimal(18, 2) @default(0.00) 
+  
+  description  String?
+
+  journal      JournalEntry  @relation(fields: [journalId], references: [journalId], onDelete: Cascade)
+  account      Account       @relation(fields: [accountId], references: [accountId], onDelete: Restrict)
+  costCenter   CostCenter?   @relation(fields: [costCenterId], references: [costCenterId], onDelete: Restrict)
+
+  @@index([journalId])
+  @@index([accountId])
 }

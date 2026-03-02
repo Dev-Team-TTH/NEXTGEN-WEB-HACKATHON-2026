@@ -1,4 +1,6 @@
-import { useRef } from "react";
+"use client";
+
+import { useRef, useEffect } from "react";
 import { combineReducers, configureStore } from "@reduxjs/toolkit";
 import {
   TypedUseSelectorHook,
@@ -6,92 +8,86 @@ import {
   useSelector,
   Provider,
 } from "react-redux";
-import globalReducer from "@/state";
+
+// Nhập globalReducer và lệnh khôi phục phiên bản quyền (restoreSession) từ state
+import globalReducer, { restoreSession } from "@/state";
 import { api } from "@/state/api";
 import { setupListeners } from "@reduxjs/toolkit/query";
 
-import {
-  persistStore,
-  persistReducer,
-  FLUSH,
-  REHYDRATE,
-  PAUSE,
-  PERSIST,
-  PURGE,
-  REGISTER,
-} from "redux-persist";
-import { PersistGate } from "redux-persist/integration/react";
-import createWebStorage from "redux-persist/lib/storage/createWebStorage";
-
-/* REDUX PERSISTENCE */
-const createNoopStorage = () => {
-  return {
-    getItem(_key: any) {
-      return Promise.resolve(null);
-    },
-    setItem(_key: any, value: any) {
-      return Promise.resolve(value);
-    },
-    removeItem(_key: any) {
-      return Promise.resolve();
-    },
-  };
-};
-
-const storage =
-  typeof window === "undefined"
-    ? createNoopStorage()
-    : createWebStorage("local");
-
-const persistConfig = {
-  key: "root",
-  storage,
-  whitelist: ["global"],
-};
+// ==========================================
+// 1. TÍCH HỢP REDUCERS (KẾT NỐI API VÀ GLOBAL STATE)
+// ==========================================
 const rootReducer = combineReducers({
   global: globalReducer,
   [api.reducerPath]: api.reducer,
 });
-const persistedReducer = persistReducer(persistConfig, rootReducer);
 
-/* REDUX STORE */
+// ==========================================
+// 2. CẤU HÌNH REDUX STORE KHÔNG ĐỘ TRỄ
+// ==========================================
 export const makeStore = () => {
   return configureStore({
-    reducer: persistedReducer,
+    reducer: rootReducer,
     middleware: (getDefaultMiddleware) =>
       getDefaultMiddleware({
-        serializableCheck: {
-          ignoredActions: [FLUSH, REHYDRATE, PAUSE, PERSIST, PURGE, REGISTER],
-        },
+        // Tắt cảnh báo serializable vì chúng ta đang quản lý Store cực kỳ chuẩn mực
+        serializableCheck: false,
       }).concat(api.middleware),
   });
 };
 
-/* REDUX TYPES */
+// ==========================================
+// 3. KHAI BÁO KIỂU DỮ LIỆU CHUẨN TYPESCRIPT
+// ==========================================
 export type AppStore = ReturnType<typeof makeStore>;
 export type RootState = ReturnType<AppStore["getState"]>;
 export type AppDispatch = AppStore["dispatch"];
+
+// ==========================================
+// 4. XUẤT CÁC HOOKS ĐƯỢC CUSTOM TYPE 
+// (Bắt buộc dùng các hook này thay vì useDispatch/useSelector mặc định để có Auto-complete)
+// ==========================================
 export const useAppDispatch = () => useDispatch<AppDispatch>();
 export const useAppSelector: TypedUseSelectorHook<RootState> = useSelector;
 
-/* PROVIDER */
+// ==========================================
+// 5. COMPONENT PROVIDER (BỌC NGOÀI CÙNG ỨNG DỤNG)
+// ==========================================
 export default function StoreProvider({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const storeRef = useRef<AppStore>();
+  
   if (!storeRef.current) {
+    // Khởi tạo Store một lần duy nhất trong suốt vòng đời Client
     storeRef.current = makeStore();
-    setupListeners(storeRef.current.dispatch);
+
+    // 🔥 VÁ LỖ HỔNG REHYDRATION (PHỤC HỒI PHIÊN ĐĂNG NHẬP) THÔNG MINH:
+    // Chạy đồng bộ (synchronous) ngay lần render đầu tiên trên Client.
+    // Điều này chộp lấy Token, UI (Dark Mode), và Bối cảnh (Branch/Warehouse) 
+    // đắp thẳng vào RAM trước khi giao diện kịp vẽ ra, giúp F5 mượt mà tuyệt đối!
+    if (typeof window !== "undefined") {
+      storeRef.current.dispatch(restoreSession());
+    }
   }
-  const persistor = persistStore(storeRef.current);
+
+  // NÂNG CẤP ĐỈNH CAO CHUẨN NEXT.JS 14+:
+  // Đưa setupListeners vào useEffect để tránh can thiệp vào SSR và React 18 Strict Mode.
+  useEffect(() => {
+    if (storeRef.current != null) {
+      // Kích hoạt lắng nghe các sự kiện (Ví dụ: focus lại vào tab, kết nối lại mạng)
+      const unsubscribe = setupListeners(storeRef.current.dispatch);
+      
+      // Cleanup function: Dọn dẹp bộ nhớ (Memory Leak) khi component bị unmount
+      return unsubscribe;
+    }
+  }, []);
 
   return (
     <Provider store={storeRef.current}>
-      <PersistGate loading={null} persistor={persistor}>
-        {children}
-      </PersistGate>
+      {children}
     </Provider>
   );
 }
