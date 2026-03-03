@@ -1,93 +1,127 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import React, { useRef } from "react";
+import { Provider } from "react-redux";
 import { combineReducers, configureStore } from "@reduxjs/toolkit";
-import {
-  TypedUseSelectorHook,
-  useDispatch,
-  useSelector,
-  Provider,
-} from "react-redux";
-
-// Nhập globalReducer và lệnh khôi phục phiên bản quyền (restoreSession) từ state
-import globalReducer, { restoreSession } from "@/state";
-import { api } from "@/state/api";
 import { setupListeners } from "@reduxjs/toolkit/query";
+import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
+
+// --- REDUX PERSIST ---
+import {
+  persistStore,
+  persistReducer,
+  FLUSH,
+  REHYDRATE,
+  PAUSE,
+  PERSIST,
+  PURGE,
+  REGISTER,
+} from "redux-persist";
+import { PersistGate } from "redux-persist/integration/react";
+import createWebStorage from "redux-persist/lib/storage/createWebStorage";
+
+// --- IMPORT STATE & API ---
+import globalReducer from "@/state";
+import { api } from "@/state/api";
 
 // ==========================================
-// 1. TÍCH HỢP REDUCERS (KẾT NỐI API VÀ GLOBAL STATE)
+// 1. GIẢI PHÁP SSR-SAFE CHO REDUX PERSIST
 // ==========================================
+// Khắc phục triệt để lỗi "localStorage is not defined" khi Next.js render trên Server
+const createNoopStorage = () => {
+  return {
+    getItem(_key: string) {
+      return Promise.resolve(null);
+    },
+    setItem(_key: string, value: any) {
+      return Promise.resolve(value);
+    },
+    removeItem(_key: string) {
+      return Promise.resolve();
+    },
+  };
+};
+
+// Nếu đang ở trình duyệt (Client) -> Dùng localStorage thật.
+// Nếu đang ở máy chủ (Server) -> Dùng bộ nhớ ảo (NoopStorage).
+const storage =
+  typeof window !== "undefined"
+    ? createWebStorage("local")
+    : createNoopStorage();
+
+// ==========================================
+// 2. CẤU HÌNH ROOT REDUCER & PERSIST
+// ==========================================
+const persistConfig = {
+  key: "root",
+  version: 1,
+  storage,
+  // Chỉ lưu trữ những Slice cần thiết xuống ổ cứng (Theme, Auth, Sidebar state)
+  // Tuyệt đối KHÔNG đưa 'api' vào whitelist để tránh phình to dung lượng ổ cứng
+  whitelist: ["global"], 
+};
+
 const rootReducer = combineReducers({
   global: globalReducer,
   [api.reducerPath]: api.reducer,
 });
 
+const persistedReducer = persistReducer(persistConfig, rootReducer);
+
 // ==========================================
-// 2. CẤU HÌNH REDUX STORE KHÔNG ĐỘ TRỄ
+// 3. KHỞI TẠO STORE & MIDDLEWARE CHUẨN ENTERPRISE
 // ==========================================
 export const makeStore = () => {
   return configureStore({
-    reducer: rootReducer,
+    reducer: persistedReducer,
     middleware: (getDefaultMiddleware) =>
       getDefaultMiddleware({
-        // Tắt cảnh báo serializable vì chúng ta đang quản lý Store cực kỳ chuẩn mực
-        serializableCheck: false,
-      }).concat(api.middleware),
+        // Tắt cảnh báo Serializable cho các action của Redux Persist
+        serializableCheck: {
+          ignoredActions: [FLUSH, REHYDRATE, PAUSE, PERSIST, PURGE, REGISTER],
+        },
+      }).concat(api.middleware), // Gắn Middleware của RTK Query (Caching, Invalidation, Polling)
   });
 };
 
-// ==========================================
-// 3. KHAI BÁO KIỂU DỮ LIỆU CHUẨN TYPESCRIPT
-// ==========================================
+// Định nghĩa các Type cốt lõi
 export type AppStore = ReturnType<typeof makeStore>;
 export type RootState = ReturnType<AppStore["getState"]>;
 export type AppDispatch = AppStore["dispatch"];
 
 // ==========================================
-// 4. XUẤT CÁC HOOKS ĐƯỢC CUSTOM TYPE 
-// (Bắt buộc dùng các hook này thay vì useDispatch/useSelector mặc định để có Auto-complete)
+// 4. XUẤT HOOKS ĐƯỢC ĐỊNH KIỂU SẴN (TYPED HOOKS)
+// Sử dụng những hooks này thay vì useDispatch/useSelector gốc để TypeScript hỗ trợ auto-complete
 // ==========================================
-export const useAppDispatch = () => useDispatch<AppDispatch>();
+export const useAppDispatch = () => useDispatch<AppStore["dispatch"]>();
 export const useAppSelector: TypedUseSelectorHook<RootState> = useSelector;
 
 // ==========================================
-// 5. COMPONENT PROVIDER (BỌC NGOÀI CÙNG ỨNG DỤNG)
+// 5. REDUX PROVIDER WRAPPER
 // ==========================================
 export default function StoreProvider({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // Sử dụng useRef để đảm bảo Store chỉ được tạo ĐÚNG 1 LẦN duy nhất trên mỗi phiên người dùng
   const storeRef = useRef<AppStore>();
   
   if (!storeRef.current) {
-    // Khởi tạo Store một lần duy nhất trong suốt vòng đời Client
     storeRef.current = makeStore();
-
-    // 🔥 VÁ LỖ HỔNG REHYDRATION (PHỤC HỒI PHIÊN ĐĂNG NHẬP) THÔNG MINH:
-    // Chạy đồng bộ (synchronous) ngay lần render đầu tiên trên Client.
-    // Điều này chộp lấy Token, UI (Dark Mode), và Bối cảnh (Branch/Warehouse) 
-    // đắp thẳng vào RAM trước khi giao diện kịp vẽ ra, giúp F5 mượt mà tuyệt đối!
-    if (typeof window !== "undefined") {
-      storeRef.current.dispatch(restoreSession());
-    }
+    // Bật các tính năng lắng nghe nâng cao của RTK Query (như refetchOnFocus, refetchOnReconnect)
+    setupListeners(storeRef.current.dispatch);
   }
 
-  // NÂNG CẤP ĐỈNH CAO CHUẨN NEXT.JS 14+:
-  // Đưa setupListeners vào useEffect để tránh can thiệp vào SSR và React 18 Strict Mode.
-  useEffect(() => {
-    if (storeRef.current != null) {
-      // Kích hoạt lắng nghe các sự kiện (Ví dụ: focus lại vào tab, kết nối lại mạng)
-      const unsubscribe = setupListeners(storeRef.current.dispatch);
-      
-      // Cleanup function: Dọn dẹp bộ nhớ (Memory Leak) khi component bị unmount
-      return unsubscribe;
-    }
-  }, []);
+  // Khởi tạo Persistor để điều khiển quá trình rehydrate
+  const persistor = persistStore(storeRef.current);
 
   return (
     <Provider store={storeRef.current}>
-      {children}
+      {/* PersistGate: Hoãn việc render UI cho đến khi lấy xong dữ liệu từ localStorage dập vào RAM */}
+      <PersistGate loading={null} persistor={persistor}>
+        {children}
+      </PersistGate>
     </Provider>
   );
 }

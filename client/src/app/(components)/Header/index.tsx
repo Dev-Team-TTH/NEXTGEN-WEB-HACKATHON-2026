@@ -1,46 +1,48 @@
+"use client";
+
 import React from "react";
-import { LucideIcon } from "lucide-react";
+import { motion } from "framer-motion";
 
-type HeaderProps = {
-  name: string;
-  subtitle?: string; // Tiêu đề phụ (Không bắt buộc)
-  icon?: LucideIcon; // Icon minh họa (Không bắt buộc)
-  action?: React.ReactNode; // Nút bấm bên phải (Không bắt buộc)
-};
+// ==========================================
+// ĐỊNH NGHĨA KIỂU DỮ LIỆU PROPS
+// ==========================================
+interface HeaderProps {
+  title: string;                 // Tiêu đề chính của trang (Bắt buộc)
+  subtitle?: string;             // Phụ đề giải thích nhỏ bên dưới
+  rightNode?: React.ReactNode;   // Không gian bên phải để nhúng các nút bấm (Ví dụ: "Tạo mới")
+}
 
-const Header = ({ name, subtitle, icon: Icon, action }: HeaderProps) => {
+// ==========================================
+// COMPONENT: TIÊU ĐỀ TRANG (PAGE HEADER)
+// Tuân thủ Adaptive (Tự gập xuống dòng trên Mobile)
+// ==========================================
+export default function Header({ title, subtitle, rightNode }: HeaderProps) {
   return (
-    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-7 gap-4">
-      {/* KHU VỰC BÊN TRÁI: ICON & TIÊU ĐỀ */}
-      <div className="flex items-center gap-4">
-        {/* Nếu truyền icon vào thì mới hiển thị */}
-        {Icon && (
-          <div className="p-3 bg-blue-100 rounded-xl shadow-sm">
-            <Icon className="w-7 h-7 text-blue-600" />
-          </div>
+    <motion.div 
+      // Hiệu ứng xuất hiện: Trượt nhẹ từ trên xuống và rõ dần
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
+      className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 sm:mb-8"
+    >
+      {/* Khối Văn bản (Typography) */}
+      <div className="flex flex-col gap-1">
+        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+          {title}
+        </h1>
+        {subtitle && (
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+            {subtitle}
+          </p>
         )}
-        
-        <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-gray-800 tracking-tight">
-            {name}
-          </h1>
-          {/* Nếu truyền subtitle vào thì mới hiển thị */}
-          {subtitle && (
-            <p className="text-sm md:text-base text-gray-500 mt-1 font-medium">
-              {subtitle}
-            </p>
-          )}
-        </div>
       </div>
 
-      {/* KHU VỰC BÊN PHẢI: NÚT BẤM HOẶC CÔNG CỤ TÌM KIẾM */}
-      {action && (
-        <div className="w-full sm:w-auto">
-          {action}
+      {/* Khối Nút Bấm / Hành động (Call-to-Action Slot) */}
+      {rightNode && (
+        <div className="w-full sm:w-auto flex items-center justify-start sm:justify-end gap-3">
+          {rightNode}
         </div>
       )}
-    </div>
+    </motion.div>
   );
-};
-
-export default Header;
+}

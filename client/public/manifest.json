@@ -1,0 +1,21 @@
+{
+  "name": "TTH ERP Enterprise",
+  "short_name": "TTH ERP",
+  "description": "Hệ thống Quản trị Doanh nghiệp toàn diện",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#0B0F19",
+  "theme_color": "#3b82f6",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

@@ -1,226 +1,331 @@
 "use client";
 
-import React, { useState, ChangeEvent, FormEvent } from "react";
+import React, { useState, useEffect } from "react";
+import { motion, AnimatePresence, Variants } from "framer-motion";
 import { 
-  X, Save, Briefcase, Tag, DollarSign, Calendar, MapPin, 
-  User, ShieldCheck, Image as ImageIcon, AlertCircle, Loader2, Activity 
+  X, Laptop, Loader2, CheckCircle2, 
+  Tag, DollarSign, Settings2, Building, AlertCircle
 } from "lucide-react";
+import { toast } from "react-hot-toast";
 
-type CreateAssetModalProps = {
+// --- REDUX & API ---
+import { 
+  useCreateAssetMutation, 
+  useGetAssetCategoriesQuery,
+  useGetDepartmentsQuery
+} from "@/state/api";
+
+// ==========================================
+// COMPONENT: MODAL TẠO MỚI TÀI SẢN
+// ==========================================
+interface CreateAssetModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (data: any) => void;
-  isSubmitting?: boolean;
-};
+}
 
-const CreateAssetModal = ({ isOpen, onClose, onCreate, isSubmitting = false }: CreateAssetModalProps) => {
+export default function CreateAssetModal({ isOpen, onClose }: CreateAssetModalProps) {
+  // --- API HOOKS ---
+  const { data: categories, isLoading: loadingCategories } = useGetAssetCategoriesQuery();
+  const { data: departments, isLoading: loadingDepartments } = useGetDepartmentsQuery({});
+  const [createAsset, { isLoading: isSubmitting }] = useCreateAssetMutation();
+
+  // --- LOCAL STATE (FORM DATA) ---
   const [formData, setFormData] = useState({
-    name: "", 
-    category: "Thiết bị điện tử", 
-    status: "Sẵn sàng", 
-    assignedTo: "", 
-    location: "", 
-    purchaseDate: "", 
-    price: "", 
-    imageUrl: "",
-    depreciationMonths: "24", // Mặc định khấu hao 2 năm
-    maintenanceCycle: "6"     // Mặc định bảo trì 6 tháng/lần
+    assetCode: "",
+    name: "",
+    categoryId: "",
+    departmentId: "", 
+    purchasePrice: "",
+    depreciationMethod: "STRAIGHT_LINE",
+    depreciationMonths: "", 
+    maintenanceCycleMonths: "", 
   });
-  
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
-  if (!isOpen) return null;
+  // Reset form khi mở modal
+  useEffect(() => {
+    if (isOpen) {
+      setFormData({
+        assetCode: "",
+        name: "",
+        categoryId: "",
+        departmentId: "",
+        purchasePrice: "",
+        depreciationMethod: "STRAIGHT_LINE",
+        depreciationMonths: "",
+        maintenanceCycleMonths: "",
+      });
+    }
+  }, [isOpen]);
 
-  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  // --- HANDLERS ---
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleImageChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string);
-        setFormData({ ...formData, imageUrl: reader.result as string });
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validate cơ bản
+    if (!formData.name || !formData.assetCode || !formData.categoryId || !formData.purchasePrice) {
+      toast.error("Vui lòng điền đầy đủ các thông tin bắt buộc (*)");
+      return;
+    }
+
+    try {
+      // ✅ CÁCH FIX TYPE SCRIPT THẦN THÁNH: Conditional Object Spreading
+      // Tuyệt đối không dùng 'delete'. Nếu có dữ liệu thì chèn key đó vào, không thì bỏ qua.
+      const payload = {
+        assetCode: formData.assetCode,
+        name: formData.name,
+        categoryId: formData.categoryId,
+        purchasePrice: Number(formData.purchasePrice),
+        currentValue: Number(formData.purchasePrice), // Lúc mới mua, Giá trị còn lại = Nguyên giá
+        depreciationMethod: formData.depreciationMethod,
+        status: "ACTIVE", // Mặc định trạng thái Sẵn sàng sử dụng
+        
+        // Các trường tùy chọn (Optional)
+        ...(formData.departmentId ? { departmentId: formData.departmentId } : {}),
+        ...(formData.depreciationMethod !== "NONE" && formData.depreciationMonths ? { depreciationMonths: Number(formData.depreciationMonths) } : {}),
+        ...(formData.maintenanceCycleMonths ? { maintenanceCycleMonths: Number(formData.maintenanceCycleMonths) } : {})
       };
-      reader.readAsDataURL(file);
+
+      await createAsset(payload).unwrap();
+      
+      toast.success("Đã ghi nhận Tài sản mới vào hệ thống!");
+      onClose(); 
+    } catch (error: any) {
+      console.error("Lỗi tạo tài sản:", error);
+      toast.error(error?.data?.message || "Đã xảy ra lỗi khi tạo tài sản!");
     }
   };
 
-  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    onCreate({ 
-      ...formData, 
-      price: Number(formData.price),
-      depreciationMonths: Number(formData.depreciationMonths),
-      maintenanceCycle: Number(formData.maintenanceCycle)
-    });
+  // --- ANIMATION CONFIG ---
+  const backdropVariants: Variants = {
+    hidden: { opacity: 0 },
+    visible: { opacity: 1 }
   };
 
-  const inputClass = "w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-500 outline-none font-medium bg-gray-50 disabled:bg-gray-100 disabled:text-gray-500";
+  const modalVariants: Variants = {
+    hidden: { opacity: 0, scale: 0.95, y: 20 },
+    visible: { opacity: 1, scale: 1, y: 0, transition: { type: "spring" as const, stiffness: 300, damping: 25 } },
+    exit: { opacity: 0, scale: 0.95, y: 20, transition: { duration: 0.2 } }
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 transition-all overflow-y-auto">
-      <div className="relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl overflow-hidden my-auto flex flex-col max-h-[90vh]">
-        
-        {/* LỚP PHỦ ĐÓNG BĂNG UI KHI ĐANG SUBMIT TẠO PHIẾU */}
-        {isSubmitting && (
-          <div className="absolute inset-0 z-50 bg-white/60 backdrop-blur-[2px] flex flex-col items-center justify-center rounded-2xl">
-            <Loader2 className="w-10 h-10 text-emerald-600 animate-spin mb-3" />
-            <p className="font-bold text-emerald-800 text-lg shadow-sm">Đang gửi yêu cầu phê duyệt...</p>
-            <p className="text-sm text-emerald-600 mt-1">Vui lòng chờ trong giây lát</p>
-          </div>
-        )}
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          variants={backdropVariants}
+          initial="hidden"
+          animate="visible"
+          exit="hidden"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm"
+        >
+          {/* Khóa click ra ngoài khi đang submit API */}
+          <div className="absolute inset-0" onClick={!isSubmitting ? onClose : undefined} />
 
-        {/* HEADER */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-emerald-50 sticky top-0 z-10">
-          <h2 className="text-xl font-bold flex items-center gap-2 text-emerald-800">
-            <Briefcase className="w-6 h-6" /> Đề Xuất Mua Tài Sản Mới
-          </h2>
-          <button type="button" onClick={onClose} disabled={isSubmitting} className="p-2 text-gray-400 hover:bg-white rounded-full disabled:opacity-50">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* BODY FORM */}
-        <form id="createAssetForm" onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto">
-          
-          {/* CẢNH BÁO ENTERPRISE */}
-          <div className="flex items-start gap-3 bg-blue-50 p-4 rounded-xl border border-blue-200">
-            <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-blue-800 leading-relaxed">
-              <strong>Mô hình Enterprise:</strong> Đề xuất của bạn sẽ tạo thành một <b>Phiếu Yêu Cầu Mua Tài Sản</b> và gửi lên cấp Quản lý phê duyệt. Giá trị tài sản sẽ được <b>khấu hao tự động</b>.
-            </p>
-          </div>
-
-          {/* KHU VỰC HÌNH ẢNH */}
-          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-            <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2 mb-4">
-              <ImageIcon className="w-4 h-4 text-pink-500" /> Hình ảnh minh họa
-            </h3>
-            <div className="flex flex-col sm:flex-row items-center gap-5">
-              {imagePreview ? (
-                <div className="relative group flex-shrink-0">
-                  <img src={imagePreview} alt="Preview" className="rounded-xl object-cover h-28 w-28 shadow-sm border border-gray-200" />
-                  <button type="button" onClick={() => { setImagePreview(null); setFormData({ ...formData, imageUrl: "" }); }} disabled={isSubmitting} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 shadow-md hover:scale-110 transition-transform disabled:opacity-50">
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ) : (
-                <div className="h-28 w-28 bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center flex-shrink-0">
-                  <ImageIcon className="w-8 h-8 text-gray-300" />
-                </div>
-              )}
-              <div className="w-full">
-                <input type="file" accept="image/jpeg, image/png, image/webp" onChange={handleImageChange} disabled={isSubmitting} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" />
-                <p className="text-xs text-gray-400 mt-2">Dung lượng tối đa 10MB. Định dạng: JPG, PNG, WEBP.</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
-                <Briefcase className="w-4 h-4 text-gray-400"/> Tên tài sản <span className="text-red-500">*</span>
-              </label>
-              <input type="text" name="name" value={formData.name} onChange={handleChange} className={inputClass} required placeholder="VD: Laptop Dell XPS 15..." disabled={isSubmitting} />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
-                <Tag className="w-4 h-4 text-gray-400"/> Phân loại
-              </label>
-              <select name="category" value={formData.category} onChange={handleChange} className={`${inputClass} cursor-pointer`} disabled={isSubmitting}>
-                <option value="Thiết bị điện tử">Thiết bị điện tử (IT)</option>
-                <option value="Nội thất">Nội thất văn phòng</option>
-                <option value="Phương tiện">Phương tiện vận tải</option>
-                <option value="Máy móc công nghiệp">Máy móc / Công cụ</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-gray-400"/> Trạng thái ban đầu
-              </label>
-              <select name="status" value={formData.status} onChange={handleChange} className={`${inputClass} cursor-pointer`} disabled={isSubmitting}>
-                <option value="Sẵn sàng">Kho (Sẵn sàng)</option>
-                <option value="Đang sử dụng">Bàn giao ngay (Đang sử dụng)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
-                <Calendar className="w-4 h-4 text-gray-400"/> Ngày mua <span className="text-red-500">*</span>
-              </label>
-              <input type="date" name="purchaseDate" value={formData.purchaseDate} onChange={handleChange} className={inputClass} required disabled={isSubmitting} />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
-                <DollarSign className="w-4 h-4 text-gray-400"/> Nguyên giá (Giá mua) <span className="text-red-500">*</span>
-              </label>
-              <input type="number" min="0" name="price" value={formData.price} onChange={handleChange} className={inputClass} required placeholder="0.00" disabled={isSubmitting} />
-            </div>
-
-            {/* KHU VỰC KHẤU HAO & BẢO TRÌ (ĐÃ NÂNG CẤP UI CHUẨN UX) */}
-            <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-5 p-5 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/50 rounded-xl shadow-sm">
-              <div>
-                <label className="block text-xs font-bold text-orange-800 dark:text-orange-300 uppercase mb-2 flex items-center gap-1.5">
-                  <Activity className="w-4 h-4"/> TG Khấu hao
-                </label>
-                <div className="relative">
-                  <input type="number" min="0" name="depreciationMonths" value={formData.depreciationMonths} onChange={handleChange} className="w-full px-4 py-2.5 pr-16 rounded-xl border border-orange-300 dark:border-orange-700 focus:ring-2 focus:ring-orange-500 outline-none font-medium bg-white dark:bg-gray-800 dark:text-white transition-all" placeholder="VD: 24" disabled={isSubmitting} />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400">Tháng</span>
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-orange-800 dark:text-orange-300 uppercase mb-2 flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4"/> Chu kỳ bảo trì
-                </label>
-                <div className="relative">
-                  <input type="number" min="0" name="maintenanceCycle" value={formData.maintenanceCycle} onChange={handleChange} className="w-full px-4 py-2.5 pr-16 rounded-xl border border-orange-300 dark:border-orange-700 focus:ring-2 focus:ring-orange-500 outline-none font-medium bg-white dark:bg-gray-800 dark:text-white transition-all" placeholder="VD: 6" disabled={isSubmitting} />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400">Tháng</span>
-                </div>
-                <p className="text-[10px] text-orange-600/80 mt-1.5 font-bold italic">* Nhập 0 nếu không yêu cầu bảo trì định kỳ.</p>
-              </div>
-            </div>
-            
-            {/* THÔNG TIN BÀN GIAO */}
-            <div className="md:col-span-2 p-5 bg-gray-50 border border-gray-200 rounded-xl space-y-4 mt-2">
-              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Thông tin Bàn giao (Tùy chọn)</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
-                    <User className="w-3.5 h-3.5 text-blue-500"/> Giao cho ai?
-                  </label>
-                  <input type="text" name="assignedTo" value={formData.assignedTo} onChange={handleChange} className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none bg-white disabled:bg-gray-100 disabled:text-gray-500" placeholder="VD: Nguyễn Văn A" disabled={isSubmitting} />
+          <motion.div
+            variants={modalVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            className="relative w-full max-w-3xl glass-panel rounded-3xl shadow-2xl border border-white/20 overflow-hidden z-10 flex flex-col max-h-[95vh] sm:max-h-[90vh]"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-200 dark:border-white/10 bg-white/50 dark:bg-black/20 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center">
+                  <Laptop className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-red-500"/> Vị trí đặt / Phòng ban
-                  </label>
-                  <input type="text" name="location" value={formData.location} onChange={handleChange} className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none bg-white disabled:bg-gray-100 disabled:text-gray-500" placeholder="VD: Phòng Kế Toán" disabled={isSubmitting} />
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white leading-tight">Thêm Tài sản Mới</h2>
+                  <p className="text-xs text-slate-500 font-medium">Đăng ký thiết bị, máy móc vào sổ tài sản công ty</p>
                 </div>
               </div>
+              <button 
+                onClick={onClose} 
+                disabled={isSubmitting} 
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors disabled:opacity-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-          </div>
-        </form>
+            {/* Body Form */}
+            <div className="p-6 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-700">
+              <form id="create-asset-form" onSubmit={handleSubmit} className="flex flex-col gap-8">
+                
+                {/* 1. THÔNG TIN CƠ BẢN */}
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <Tag className="w-4 h-4 text-blue-500" /> Thông tin Định danh
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Tên tài sản <span className="text-rose-500">*</span></label>
+                      <input 
+                        type="text" 
+                        name="name" 
+                        value={formData.name} 
+                        onChange={handleChange} 
+                        placeholder="VD: Máy in Canon 2900" 
+                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 dark:text-white" 
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Mã tài sản (Mã dán thẻ) <span className="text-rose-500">*</span></label>
+                      <input 
+                        type="text" 
+                        name="assetCode" 
+                        value={formData.assetCode} 
+                        onChange={handleChange} 
+                        placeholder="VD: TS-VP-001" 
+                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 dark:text-white uppercase" 
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Nhóm / Phân loại <span className="text-rose-500">*</span></label>
+                      <select 
+                        name="categoryId" 
+                        value={formData.categoryId} 
+                        onChange={handleChange} 
+                        disabled={loadingCategories} 
+                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 dark:text-white disabled:opacity-50"
+                      >
+                        <option value="">-- Chọn phân loại --</option>
+                        {categories?.map(c => <option key={c.categoryId} value={c.categoryId}>{c.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                        <Building className="w-4 h-4 text-slate-400" /> Vị trí / Phòng ban (Tùy chọn)
+                      </label>
+                      <select 
+                        name="departmentId" 
+                        value={formData.departmentId} 
+                        onChange={handleChange} 
+                        disabled={loadingDepartments} 
+                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 dark:text-white disabled:opacity-50"
+                      >
+                        <option value="">-- Kho lưu trữ chung --</option>
+                        {departments?.map(d => <option key={d.departmentId} value={d.departmentId}>{d.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
 
-        {/* FOOTER */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100 bg-white sticky bottom-0 z-10">
-          <button type="button" onClick={onClose} disabled={isSubmitting} className="px-6 py-2.5 font-bold text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-            Hủy bỏ
-          </button>
-          <button type="submit" form="createAssetForm" disabled={isSubmitting} className="px-6 py-2.5 font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md transition-transform active:scale-95 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-            <Save className="w-4 h-4" /> Gửi Yêu Cầu Mua
-          </button>
-        </div>
+                {/* 2. THÔNG TIN TÀI CHÍNH & KHẤU HAO */}
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-emerald-500" /> Tài chính & Khấu hao
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Nguyên giá (VND) <span className="text-rose-500">*</span></label>
+                      <input 
+                        type="number" 
+                        name="purchasePrice" 
+                        value={formData.purchasePrice} 
+                        onChange={handleChange} 
+                        placeholder="VD: 35000000" 
+                        min="0"
+                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white" 
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Phương pháp Khấu hao</label>
+                      <select 
+                        name="depreciationMethod" 
+                        value={formData.depreciationMethod} 
+                        onChange={handleChange} 
+                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white"
+                      >
+                        <option value="STRAIGHT_LINE">Đường thẳng (Straight Line)</option>
+                        <option value="REDUCING_BALANCE">Số dư giảm dần (Reducing Balance)</option>
+                        <option value="NONE">Không khấu hao</option>
+                      </select>
+                    </div>
 
-      </div>
-    </div>
+                    {/* Hiệu ứng ẩn hiện ô nhập Tháng Khấu Hao */}
+                    <AnimatePresence>
+                      {formData.depreciationMethod !== "NONE" && (
+                        <motion.div 
+                          initial={{ opacity: 0, height: 0 }} 
+                          animate={{ opacity: 1, height: 'auto' }} 
+                          exit={{ opacity: 0, height: 0 }}
+                          className="space-y-1.5 overflow-hidden sm:col-span-2"
+                        >
+                          <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Thời gian Khấu hao (Tháng) <span className="text-rose-500">*</span></label>
+                          <input 
+                            type="number" 
+                            name="depreciationMonths" 
+                            value={formData.depreciationMonths} 
+                            onChange={handleChange} 
+                            placeholder="VD: 36 (Tương đương 3 năm)" 
+                            min="1"
+                            className="w-full md:w-1/2 px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white" 
+                          />
+                          <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
+                            <AlertCircle className="w-3 h-3 text-emerald-500" /> Hệ thống sẽ tự động trừ dần giá trị vào mỗi kỳ chạy lệnh Khấu hao.
+                          </p>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+
+                {/* 3. BẢO TRÌ */}
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <Settings2 className="w-4 h-4 text-amber-500" /> Lịch Bảo trì
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Chu kỳ Bảo trì (Tháng)</label>
+                      <input 
+                        type="number" 
+                        name="maintenanceCycleMonths" 
+                        value={formData.maintenanceCycleMonths} 
+                        onChange={handleChange} 
+                        placeholder="VD: 6 (Bảo trì 6 tháng/lần)" 
+                        min="1"
+                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-900 dark:text-white" 
+                      />
+                    </div>
+                  </div>
+                </div>
+
+              </form>
+            </div>
+
+            {/* Footer Actions */}
+            <div className="px-6 py-4 border-t border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/40 flex justify-end gap-3 shrink-0">
+              <button 
+                type="button" 
+                onClick={onClose} 
+                disabled={isSubmitting} 
+                className="px-5 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors disabled:opacity-50"
+              >
+                Hủy bỏ
+              </button>
+              <button 
+                type="submit" 
+                form="create-asset-form" 
+                disabled={isSubmitting} 
+                className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-blue-500/30 transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
+              >
+                {isSubmitting ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Đang lưu...</>
+                ) : (
+                  <><CheckCircle2 className="w-4 h-4" /> Ghi nhận Tài sản</>
+                )}
+              </button>
+            </div>
+
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
-};
-
-export default CreateAssetModal;
+}

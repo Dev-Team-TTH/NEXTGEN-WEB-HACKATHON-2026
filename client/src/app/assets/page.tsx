@@ -1,290 +1,471 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
+import { motion, AnimatePresence, Variants } from "framer-motion";
+import { useTranslation } from "react-i18next";
+import { 
+  MonitorSmartphone, Plus, Calculator, AlertOctagon, 
+  RefreshCcw, Wrench, ArrowRightLeft, Trash2, CheckCircle2, 
+  Ban, ShieldAlert, Laptop, Building, Activity, Search, 
+  Filter, Crown, TrendingDown, PackageOpen, LayoutGrid, Zap
+} from "lucide-react";
+import dayjs from "dayjs";
+import 'dayjs/locale/vi';
+import { toast } from "react-hot-toast";
+
+// --- REDUX & API ---
 import { 
   useGetAssetsQuery, 
-  useCreateAssetMutation, 
-  useUpdateAssetMutation,
-  useDeleteAssetMutation,
-  Asset
+  useDeleteAssetMutation, 
+  useLogAssetMaintenanceMutation,
+  useGetAssetCategoriesQuery,
+  useGetDepartmentsQuery,
+  Asset 
 } from "@/state/api";
+
+// --- COMPONENTS GIAO DIỆN LÕI ---
 import Header from "@/app/(components)/Header";
-import AssetCard from "./AssetCard";
+import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
+
+// --- SUB-MODALS NGHIỆP VỤ ---
 import CreateAssetModal from "./CreateAssetModal";
-import EditAssetModal from "./EditAssetModal";
-import AssetQRCodeModal from "./AssetQRCodeModal";
-import AssetHistoryModal from "./AssetHistoryModal";
+import RunDepreciationModal from "./RunDepreciationModal";
+import HandoverModal from "./HandoverModal";
+import LiquidateModal from "./LiquidateModal";
+import AdvancedAssetOperationsModal from "./AdvancedAssetOperationsModal";
 
-import { 
-  Briefcase, 
-  PlusCircleIcon, 
-  Search, 
-  SlidersHorizontal, 
-  XCircle,
-  AlertTriangle
-} from "lucide-react";
-import { toast } from "react-toastify";
+dayjs.locale('vi');
 
-const AssetsPage = () => {
-  // --- STATE MODAL & DỮ LIỆU ---
-  const [activeModal, setActiveModal] = useState<"CREATE" | "EDIT" | "QR" | "HISTORY" | null>(null);
-  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+// ==========================================
+// 1. HELPERS & FORMATTERS
+// ==========================================
+const formatVND = (val: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
 
-  // --- STATE BỘ LỌC (ĐÃ ĐƯỢC NÂNG CẤP CHUẨN ASSET) ---
-  const [searchTerm, setSearchTerm] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
-  const [filterCategory, setFilterCategory] = useState("ALL");
-  const [filterStatus, setFilterStatus] = useState("ALL");
-  const [filterMaintenance, setFilterMaintenance] = useState("ALL"); // Lọc theo hạn bảo trì
+const getStatusUI = (status: string) => {
+  switch (status) {
+    case "ACTIVE": return { label: "Sẵn sàng", icon: CheckCircle2, color: "text-emerald-600 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-500/10 dark:border-emerald-500/30" };
+    case "IN_USE": return { label: "Đang mượn", icon: MonitorSmartphone, color: "text-blue-600 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-500/10 dark:border-blue-500/30" };
+    case "MAINTENANCE": return { label: "Bảo trì", icon: Wrench, color: "text-amber-600 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-500/10 dark:border-amber-500/30" };
+    case "LIQUIDATED": return { label: "Đã thanh lý", icon: Ban, color: "text-rose-600 bg-rose-50 border-rose-200 dark:text-rose-400 dark:bg-rose-500/10 dark:border-rose-500/30" };
+    default: return { label: status || "N/A", icon: Activity, color: "text-slate-500 bg-slate-100 border-slate-200 dark:text-slate-400 dark:bg-slate-800 dark:border-slate-700" };
+  }
+};
+
+type TabType = "ALL" | "ACTIVE" | "IN_USE" | "MAINTENANCE" | "LIQUIDATED";
+
+// ==========================================
+// 2. SKELETON LOADING CHUẨN XỊN
+// ==========================================
+const AssetsSkeleton = () => (
+  <div className="flex flex-col gap-6 w-full animate-pulse mt-6">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+      {[1, 2, 3, 4].map(i => <div key={i} className="h-32 rounded-3xl bg-slate-200 dark:bg-slate-800/50"></div>)}
+    </div>
+    <div className="h-16 w-full rounded-2xl bg-slate-200 dark:bg-slate-800/50"></div>
+    <div className="h-[500px] w-full bg-slate-200 dark:bg-slate-800/50 rounded-3xl"></div>
+  </div>
+);
+
+// ==========================================
+// COMPONENT CHÍNH: TRUNG TÂM TÀI SẢN
+// ==========================================
+export default function AssetsPage() {
+  const { t } = useTranslation();
+
+  // --- STATE TABS & BỘ LỌC ---
+  const [activeTab, setActiveTab] = useState<TabType>("ALL");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterCategory, setFilterCategory] = useState("");
+  const [filterDepartment, setFilterDepartment] = useState("");
+
+  // --- STATE MODALS QUẢN LÝ VÒNG ĐỜI ---
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isRunDepreciationOpen, setIsRunDepreciationOpen] = useState(false);
+  const [isAdvancedOpsOpen, setIsAdvancedOpsOpen] = useState(false);
+  const [handoverAssetId, setHandoverAssetId] = useState<string | null>(null);
+  const [liquidateAssetId, setLiquidateAssetId] = useState<string | null>(null);
+
+  // 👉 FETCH DATA TỪ API
+  const { data: rawAssets = [], isLoading: loadingAssets, isError, refetch, isFetching } = useGetAssetsQuery({});
+  const { data: categories = [], isLoading: loadingCats } = useGetAssetCategoriesQuery();
+  const { data: departments = [], isLoading: loadingDepts } = useGetDepartmentsQuery({});
   
-  // --- API HOOKS ---
-  const { data: assets, isLoading, isError } = useGetAssetsQuery();
-  const [createAsset, { isLoading: isCreating }] = useCreateAssetMutation();
-  const [updateAsset, { isLoading: isUpdating }] = useUpdateAssetMutation();
-  const [deleteAsset] = useDeleteAssetMutation();
+  const [deleteAsset, { isLoading: isDeleting }] = useDeleteAssetMutation();
+  const [logMaintenance, { isLoading: isLoggingMaintenance }] = useLogAssetMaintenanceMutation();
 
-  // --- TỰ ĐỘNG TRÍCH XUẤT DANH MỤC ---
-  const uniqueCategories = useMemo(() => {
-    if (!assets) return [];
-    const categories = assets.map(a => a.category).filter(Boolean);
-    return Array.from(new Set(categories));
-  }, [assets]);
+  const isLoading = loadingAssets || loadingCats || loadingDepts;
 
-  // --- LOGIC LỌC TÀI SẢN NÂNG CAO ---
-  const filteredAssets = useMemo(() => {
-    if (!assets) return [];
-    return assets.filter((a) => {
-      // 1. Tìm kiếm đa luồng (Tên, ID, Người giữ, Vị trí)
-      const searchLower = searchTerm.toLowerCase();
-      const matchesSearch = !searchTerm || 
-        a.name.toLowerCase().includes(searchLower) || 
-        a.assetId.toLowerCase().includes(searchLower) ||
-        (a.assignedTo && a.assignedTo.toLowerCase().includes(searchLower)) ||
-        (a.location && a.location.toLowerCase().includes(searchLower));
-
-      // 2. Lọc theo danh mục và trạng thái
-      const matchesCategory = filterCategory === "ALL" || a.category === filterCategory;
-      const matchesStatus = filterStatus === "ALL" || a.status === filterStatus;
+  // --- XỬ LÝ LỌC TRÊN CLIENT (✅ ĐÃ FIX TRIỆT ĐỂ LỖI TYPESCRIPT) ---
+  const assets = useMemo(() => {
+    return rawAssets.filter(asset => {
+      const matchTab = activeTab === "ALL" || asset.status === activeTab;
+      const matchSearch = asset.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          asset.assetCode.toLowerCase().includes(searchQuery.toLowerCase());
       
-      // 3. Lọc theo tình trạng bảo trì
-      const matchesMaintenance = filterMaintenance === "ALL" || 
-        (filterMaintenance === "OVERDUE" && a.isMaintenanceOverdue) ||
-        (filterMaintenance === "OK" && !a.isMaintenanceOverdue);
+      // Ép kiểu (any) để chọc thủng giới hạn của Interface, lấy đúng ID lọc dữ liệu
+      const matchCat = filterCategory === "" || (asset as any).categoryId === filterCategory;
+      const assetDeptId = (asset as any).departmentId || (asset as any).department?.departmentId;
+      const matchDept = filterDepartment === "" || assetDeptId === filterDepartment;
       
-      return matchesSearch && matchesCategory && matchesStatus && matchesMaintenance;
+      return matchTab && matchSearch && matchCat && matchDept;
     });
-  }, [assets, searchTerm, filterCategory, filterStatus, filterMaintenance]);
+  }, [rawAssets, activeTab, searchQuery, filterCategory, filterDepartment]);
 
-  const resetFilters = () => { 
-    setFilterCategory("ALL"); 
-    setFilterStatus("ALL"); 
-    setFilterMaintenance("ALL");
-    setSearchTerm(""); 
-  };
+  // --- TÍNH TOÁN KPI ---
+  const kpis = useMemo(() => {
+    let totalPurchasePrice = 0, totalCurrentValue = 0;
+    let activeCount = 0, inUseCount = 0, maintenanceCount = 0;
 
-  // --- ĐIỀU KHIỂN MODAL ---
-  const openModal = (type: typeof activeModal, asset?: Asset) => { 
-    setSelectedAsset(asset || null); 
-    setActiveModal(type); 
-  };
-  
-  const closeModal = () => { 
-    setActiveModal(null); 
-    setSelectedAsset(null); 
-  };
+    rawAssets.forEach(asset => {
+      if (asset.status !== "LIQUIDATED") {
+        totalPurchasePrice += asset.purchasePrice || 0;
+        totalCurrentValue += asset.currentValue || 0;
+        
+        if (asset.status === "ACTIVE") activeCount++;
+        if (asset.status === "IN_USE") inUseCount++;
+        if (asset.status === "MAINTENANCE") maintenanceCount++;
+      }
+    });
 
-  // --- HÀM XỬ LÝ (HANDLERS) THEO LUỒNG ENTERPRISE ---
-  const handleCreate = async (data: any) => {
+    const activeAssetsTotal = activeCount + inUseCount + maintenanceCount;
+    const utilizationRate = activeAssetsTotal > 0 ? Math.round((inUseCount / activeAssetsTotal) * 100) : 0;
+    const depreciationRate = totalPurchasePrice > 0 ? Math.round(((totalPurchasePrice - totalCurrentValue) / totalPurchasePrice) * 100) : 0;
+
+    return { 
+      totalAssets: activeAssetsTotal,
+      totalPurchasePrice, totalCurrentValue, 
+      utilizationRate, depreciationRate, maintenanceCount 
+    };
+  }, [rawAssets]);
+
+  // --- HANDLERS (Bảo trì nhanh & Xóa) ---
+  const handleQuickMaintenance = async (id: string, name: string) => {
+    const description = window.prompt(`Nhập lý do bảo trì cho thiết bị "${name}":`);
+    if (!description?.trim()) return;
     try {
-      await createAsset({ 
-        ...data, 
-        purchaseDate: new Date(data.purchaseDate).toISOString() 
-      }).unwrap();
-      toast.info("Đã gửi phiếu yêu cầu Mua tài sản! Vui lòng chờ duyệt.", { autoClose: 4000 });
-      closeModal();
-    } catch (e: any) { 
-      toast.error("Lỗi khi tạo yêu cầu!"); 
+      await logMaintenance({ id, data: { maintenanceDate: dayjs().format('YYYY-MM-DD'), description, cost: 0 } }).unwrap();
+      toast.success(`Đã đưa ${name} vào diện bảo trì!`);
+    } catch (err: any) {
+      toast.error(err?.data?.message || "Lỗi ghi nhận bảo trì!");
     }
   };
 
-  const handleEdit = async (id: string, data: any) => {
-    try {
-      await updateAsset({ id, data }).unwrap();
-      toast.info("Đã gửi phiếu yêu cầu Bàn giao / Cập nhật! Vui lòng chờ duyệt.", { autoClose: 4000 });
-      closeModal();
-    } catch (e: any) { 
-      toast.error("Lỗi khi tạo yêu cầu cập nhật!"); 
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (window.confirm("CẢNH BÁO: Bạn đang đề xuất thanh lý tài sản này lên cấp Quản lý. Đồng ý?")) {
-      try { 
-        await deleteAsset(id).unwrap(); 
-        toast.info("Đã gửi đề xuất Thanh lý thành công!", { autoClose: 4000 }); 
-      } 
-      catch (e) { 
-        toast.error("Lỗi khi gửi yêu cầu thanh lý!"); 
+  const handleDelete = async (id: string, name: string) => {
+    if (window.confirm(`XÓA TÀI SẢN "${name}"?\nChỉ xóa được tài sản chưa từng phát sinh khấu hao.`)) {
+      try {
+        await deleteAsset(id).unwrap();
+        toast.success(`Đã xóa tài sản ${name}!`);
+      } catch (err: any) {
+        toast.error("Tài sản đã có lịch sử, không thể xóa cứng! Hãy Thanh lý.");
       }
     }
   };
 
-  if (isLoading) return <div className="py-10 text-center text-gray-500 font-bold text-lg animate-pulse">Đang tải dữ liệu Tài Sản...</div>;
-  if (isError || !assets) return <div className="text-center text-red-500 py-10 font-bold bg-red-50 rounded-2xl mt-5">Lỗi kết nối máy chủ! Vui lòng thử lại sau.</div>;
+  // --- CỘT BẢNG (DATATABLE COLUMNS) ---
+  const columns: ColumnDef<Asset>[] = [
+    {
+      header: "Mã / Tên Tài sản",
+      accessorKey: "name",
+      sortable: true,
+      cell: (row) => (
+        <div className="flex items-center gap-3">
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${row.status === "LIQUIDATED" ? 'bg-slate-100 border-slate-200 dark:bg-slate-800 dark:border-slate-700' : 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 dark:from-blue-900/20 dark:to-indigo-900/20 dark:border-blue-700/50 shadow-sm'}`}>
+            <Laptop className={`w-5 h-5 ${row.status === "LIQUIDATED" ? 'text-slate-400' : 'text-blue-600 dark:text-blue-400'}`} />
+          </div>
+          <div className="flex flex-col max-w-[200px]">
+            <span className={`font-bold truncate ${row.status === "LIQUIDATED" ? 'text-slate-500 line-through' : 'text-slate-900 dark:text-white'}`} title={row.name}>
+              {row.name}
+            </span>
+            <span className="text-[10px] font-mono text-slate-500 mt-0.5 px-1.5 py-0.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded w-fit">
+              {row.assetCode}
+            </span>
+          </div>
+        </div>
+      )
+    },
+    {
+      header: "Phân loại / Vị trí",
+      accessorKey: "categoryId",
+      cell: (row) => (
+        <div className="flex flex-col">
+          <span className="font-semibold text-slate-700 dark:text-slate-300 text-xs flex items-center gap-1">
+            <PackageOpen className="w-3.5 h-3.5 text-indigo-400" /> {(row as any).category?.name || "Chưa phân loại"}
+          </span>
+          <span className="text-[10px] text-slate-500 flex items-center gap-1 mt-1">
+            <Building className="w-3 h-3" /> {(row as any).department?.name || "Kho chung"}
+          </span>
+        </div>
+      )
+    },
+    {
+      header: "Khấu hao (Nguyên giá -> Còn lại)",
+      accessorKey: "purchasePrice",
+      sortable: true,
+      cell: (row) => {
+        const purchase = row.purchasePrice || 0;
+        const current = row.currentValue || 0;
+        const percentRemain = purchase > 0 ? (current / purchase) * 100 : 0;
+        const isLiquidated = row.status === "LIQUIDATED";
+
+        return (
+          <div className="flex flex-col w-40 sm:w-48">
+            <div className="flex justify-between items-end mb-1 text-[11px]">
+              <span className="text-slate-400">Gốc: <span className="font-medium text-slate-600 dark:text-slate-300">{formatVND(purchase)}</span></span>
+              <span className={`font-bold ${isLiquidated ? 'text-slate-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                {formatVND(current)}
+              </span>
+            </div>
+            {/* Thanh Progress Bar Data Viz */}
+            <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner">
+              <motion.div 
+                initial={{ width: 0 }} animate={{ width: `${percentRemain}%` }} transition={{ duration: 1, ease: "easeOut" }}
+                className={`h-full rounded-full ${isLiquidated ? 'bg-slate-400' : percentRemain < 20 ? 'bg-rose-500' : percentRemain < 50 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+              />
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      header: "Trạng thái",
+      accessorKey: "status",
+      cell: (row) => {
+        const { label, icon: Icon, color } = getStatusUI(row.status);
+        return (
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold border ${color}`}>
+            <Icon className="w-3 h-3" /> {label}
+          </span>
+        );
+      }
+    },
+    {
+      header: "Thao tác",
+      accessorKey: "assetId",
+      align: "right",
+      cell: (row) => {
+        const isLiquidated = row.status === "LIQUIDATED";
+        const isMaintenance = row.status === "MAINTENANCE";
+        const isClean = row.purchasePrice === row.currentValue;
+
+        return (
+          <div className="flex items-center justify-end gap-1">
+            {!isLiquidated && !isMaintenance && (
+              <>
+                <button onClick={() => setHandoverAssetId(row.assetId)} title="Luân chuyển (Giao/Thu hồi)" className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 rounded-xl transition-colors">
+                  <ArrowRightLeft className="w-4 h-4" />
+                </button>
+                <button onClick={() => handleQuickMaintenance(row.assetId, row.name)} title="Ghi nhận Hư hỏng" className="p-2 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/20 rounded-xl transition-colors">
+                  <Wrench className="w-4 h-4" />
+                </button>
+                <button onClick={() => setLiquidateAssetId(row.assetId)} title="Thanh lý tài sản" className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/20 rounded-xl transition-colors">
+                  <ShieldAlert className="w-4 h-4" />
+                </button>
+              </>
+            )}
+            <button onClick={() => handleDelete(row.assetId, row.name)} disabled={!isClean || isLiquidated} title="Xóa vĩnh viễn" className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/20 rounded-xl transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        );
+      }
+    }
+  ];
+
+  // --- ANIMATION ---
+  const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
+  const itemVariants: Variants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } };
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[70vh] w-full text-center">
+        <AlertOctagon className="w-16 h-16 text-rose-500 mb-4 animate-pulse" />
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Lỗi kết nối Hệ thống Tài sản</h2>
+        <button onClick={() => refetch()} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg active:scale-95 flex items-center gap-2 mt-4">
+          <RefreshCcw className={`w-5 h-5 ${isFetching ? 'animate-spin' : ''}`} /> Tải lại dữ liệu
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col w-full pb-10 relative">
+    <div className="w-full flex flex-col gap-6 pb-10">
+      
+      {/* 1. HEADER CHUẨN ENTERPRISE */}
       <Header 
-        name="Quản lý Tài Sản & Trang Thiết Bị" 
-        subtitle="Quản lý vòng đời, khấu hao, bảo trì và định vị tài sản của chi nhánh"
-        icon={Briefcase}
-        action={
-          <div className="flex items-center gap-3">
+        title={t("Trung tâm Quản trị Tài sản")} 
+        subtitle={t("Giám sát vòng đời, luân chuyển thiết bị và theo dõi tình trạng khấu hao.")}
+        rightNode={
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
             <button 
-              onClick={() => openModal("CREATE")} 
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-all active:scale-95"
+              onClick={() => setIsAdvancedOpsOpen(true)}
+              className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl shadow-lg shadow-amber-500/30 transition-all active:scale-95 whitespace-nowrap"
             >
-              <PlusCircleIcon className="w-5 h-5" /> Đề Xuất Mua Mới
+              <Crown className="w-5 h-5" />
+              <span className="hidden sm:block text-sm font-bold">Nghiệp vụ Nâng cao</span>
+            </button>
+
+            <button 
+              onClick={() => setIsRunDepreciationOpen(true)}
+              className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700 rounded-xl transition-all shadow-sm active:scale-95 whitespace-nowrap"
+            >
+              <Calculator className="w-5 h-5" />
+              <span className="hidden sm:block text-sm font-bold">Chạy Khấu hao</span>
+            </button>
+
+            <button 
+              onClick={() => setIsCreateModalOpen(true)}
+              className="px-5 py-2.5 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-blue-500/30 transition-all active:scale-95 whitespace-nowrap"
+            >
+              <Plus className="w-5 h-5" />
+              <span className="hidden sm:inline">Thêm Tài sản</span>
             </button>
           </div>
         }
       />
 
-      {/* KHU VỰC BỘ LỌC ĐA NĂNG */}
-      <div className="mt-2 mb-6 flex flex-col gap-3">
-        <div className="flex items-center gap-3 w-full lg:w-3/4">
-          <div className="flex-1 flex items-center border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 transition-colors shadow-sm focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 overflow-hidden">
-            <Search className="w-5 h-5 text-gray-400 ml-4 mr-2" />
-            <input 
-              className="w-full py-3 px-2 bg-transparent focus:outline-none dark:text-white" 
-              placeholder="Tìm theo Tên, ID, Người mượn, Vị trí..." 
-              value={searchTerm} 
-              onChange={(e) => setSearchTerm(e.target.value)} 
-            />
-            {searchTerm && (
-              <button onClick={() => setSearchTerm("")} className="mr-3 text-gray-400 hover:text-red-500 transition-colors">
-                <XCircle className="w-5 h-5" />
-              </button>
+      {isLoading ? <AssetsSkeleton /> : (
+        <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-6 w-full">
+          
+          {/* 2. KHỐI THỐNG KÊ (KPI CARDS) - DATA VIZ */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+            
+            <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-blue-300 transition-colors">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tổng Nguyên Giá Đầu tư</p>
+              <h3 className="text-2xl font-black text-slate-900 dark:text-white truncate">{formatVND(kpis.totalPurchasePrice)}</h3>
+              <p className="text-xs text-blue-600 dark:text-blue-400 font-medium mt-2 flex items-center gap-1">
+                <LayoutGrid className="w-3.5 h-3.5"/> Quản lý {kpis.totalAssets} thiết bị
+              </p>
+            </motion.div>
+            
+            <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-emerald-300 transition-colors">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Giá trị sổ sách hiện tại</p>
+              <h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 truncate">{formatVND(kpis.totalCurrentValue)}</h3>
+              <div className="flex items-center gap-2 mt-2">
+                <div className="flex-1 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                  <motion.div initial={{ width: 0 }} animate={{ width: `${100 - kpis.depreciationRate}%` }} transition={{ duration: 1 }} className="h-full bg-emerald-500 rounded-full" />
+                </div>
+                <span className="text-[10px] font-bold text-slate-400">Hao mòn {kpis.depreciationRate}%</span>
+              </div>
+            </motion.div>
+            
+            <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-indigo-300 transition-colors">
+              <div className="absolute -right-4 -bottom-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform"><TrendingDown className="w-24 h-24 text-indigo-500"/></div>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Hiệu suất sử dụng (Giao việc)</p>
+              <div className="flex items-center gap-2 relative z-10">
+                <h3 className="text-2xl font-black text-indigo-600 dark:text-indigo-400">{kpis.utilizationRate}%</h3>
+                {kpis.utilizationRate > 85 && <Zap className="w-4 h-4 text-amber-500" fill="currentColor" />}
+              </div>
+              <div className="flex items-center gap-2 mt-2 relative z-10">
+                <div className="flex-1 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                  <motion.div initial={{ width: 0 }} animate={{ width: `${kpis.utilizationRate}%` }} transition={{ duration: 1 }} className={`h-full rounded-full ${kpis.utilizationRate > 85 ? 'bg-amber-500' : 'bg-indigo-500'}`} />
+                </div>
+                <span className="text-[10px] font-bold text-slate-400">Lý tưởng {'>'} 85%</span>
+              </div>
+            </motion.div>
+            
+            <motion.div variants={itemVariants} className={`glass p-5 rounded-3xl border shadow-sm flex flex-col justify-center relative overflow-hidden group transition-colors ${kpis.maintenanceCount > 0 ? 'border-amber-200 bg-amber-50/50 dark:border-amber-500/30 dark:bg-amber-900/10' : 'border-slate-200 dark:border-white/10'}`}>
+              <div className="absolute -right-2 -bottom-2 opacity-[0.05] group-hover:scale-110 transition-transform"><Wrench className="w-20 h-20 text-amber-500"/></div>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Thiết bị đang bảo trì</p>
+              <div className="flex items-center gap-3 relative z-10">
+                <h3 className={`text-3xl font-black ${kpis.maintenanceCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
+                  {kpis.maintenanceCount}
+                </h3>
+                {kpis.maintenanceCount > 0 && (
+                  <span className="flex h-3 w-3 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+                  </span>
+                )}
+              </div>
+            </motion.div>
+
+          </div>
+
+          {/* 3. THANH CÔNG CỤ: TÌM KIẾM, LỌC & TABS */}
+          <motion.div variants={itemVariants} className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-3 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm z-10 sticky top-4">
+            
+            {/* Tabs Ngữ cảnh */}
+            <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200/50 dark:border-white/5">
+              {[
+                { id: "ALL", label: "Tất cả" },
+                { id: "ACTIVE", label: "Trong kho" },
+                { id: "IN_USE", label: "Đang cấp phát" },
+                { id: "MAINTENANCE", label: "Nằm viện" },
+                { id: "LIQUIDATED", label: "Thanh lý" }
+              ].map(tab => (
+                <button 
+                  key={tab.id} onClick={() => setActiveTab(tab.id as TabType)} 
+                  className={`relative px-4 py-2 text-xs font-bold rounded-lg transition-colors whitespace-nowrap z-10 ${activeTab === tab.id ? "text-slate-900 dark:text-white" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}
+                >
+                  {activeTab === tab.id && <motion.div layoutId="assetFilterTab" className="absolute inset-0 bg-white dark:bg-slate-700 shadow-sm rounded-lg -z-10 border border-slate-200/50 dark:border-slate-600" />}
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Các bộ lọc Dropdown */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input 
+                  type="text" placeholder="Tìm tên, mã barcode..." 
+                  value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-shadow"
+                />
+              </div>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <select 
+                  value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}
+                  className="flex-1 sm:w-auto px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 outline-none"
+                >
+                  <option value="">Tất cả Nhóm</option>
+                  {categories.map(c => <option key={c.categoryId} value={c.categoryId}>{c.name}</option>)}
+                </select>
+                <select 
+                  value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)}
+                  className="flex-1 sm:w-auto px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 outline-none"
+                >
+                  <option value="">Phòng ban</option>
+                  {departments.map(d => <option key={d.departmentId} value={d.departmentId}>{d.name}</option>)}
+                </select>
+              </div>
+            </div>
+
+          </motion.div>
+
+          {/* 4. BẢNG DỮ LIỆU */}
+          <motion.div variants={itemVariants} className="glass-panel rounded-3xl overflow-hidden shadow-sm border border-slate-200 dark:border-white/10">
+            {assets.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-24 text-slate-400">
+                <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                  <Laptop className="w-10 h-10 opacity-50" />
+                </div>
+                <p className="font-bold text-slate-600 dark:text-slate-300 text-lg">Trống rỗng</p>
+                <p className="text-sm mt-1">Không tìm thấy tài sản nào khớp với bộ lọc.</p>
+              </div>
+            ) : (
+              <DataTable 
+                data={assets} 
+                columns={columns} 
+                searchKey="name" 
+                searchPlaceholder="Lọc nhanh trong bảng..." 
+                itemsPerPage={10} 
+              />
             )}
-          </div>
-          <button 
-            onClick={() => setShowFilters(!showFilters)} 
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-all shadow-sm border ${showFilters ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
-          >
-            <SlidersHorizontal className="w-5 h-5" /> Bộ lọc
-          </button>
-        </div>
+          </motion.div>
 
-        {/* BẢNG MỞ RỘNG BỘ LỌC NÂNG CAO */}
-        {showFilters && (
-          <div className="w-full lg:w-3/4 p-5 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 shadow-sm animate-in slide-in-from-top-2 fade-in duration-200">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Loại Tài Sản</label>
-                <select 
-                  value={filterCategory} 
-                  onChange={(e) => setFilterCategory(e.target.value)} 
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                >
-                  <option value="ALL">-- Tất cả danh mục --</option>
-                  {uniqueCategories.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Tình trạng vật lý</label>
-                <select 
-                  value={filterStatus} 
-                  onChange={(e) => setFilterStatus(e.target.value)} 
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                >
-                  <option value="ALL">-- Tất cả trạng thái --</option>
-                  <option value="Sẵn sàng">Sẵn sàng (Kho)</option>
-                  <option value="Đang sử dụng">Đang sử dụng</option>
-                  <option value="Đang bảo trì">Đang bảo trì / Sửa chữa</option>
-                  <option value="Hỏng hóc">Hỏng / Chờ thanh lý</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5"/> Lịch bảo trì</label>
-                <select 
-                  value={filterMaintenance} 
-                  onChange={(e) => setFilterMaintenance(e.target.value)} 
-                  className={`w-full px-4 py-2.5 bg-gray-50 border rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer ${filterMaintenance === 'OVERDUE' ? 'border-red-300 text-red-700 bg-red-50' : 'border-gray-200'}`}
-                >
-                  <option value="ALL">-- Tất cả --</option>
-                  <option value="OVERDUE">⚠️ Đã quá hạn bảo trì</option>
-                  <option value="OK">✅ Đang hoạt động tốt</option>
-                </select>
-              </div>
-            </div>
-            <div className="flex justify-between items-center mt-5 pt-4 border-t border-gray-100">
-              <span className="text-sm font-medium text-gray-500">
-                Tìm thấy: <strong className="text-blue-600 text-lg">{filteredAssets.length}</strong> tài sản phù hợp
-              </span>
-              <button onClick={resetFilters} className="text-sm font-bold text-red-500 hover:text-red-600 transition-colors bg-red-50 hover:bg-red-100 px-4 py-2 rounded-xl">
-                Xóa bộ lọc
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+        </motion.div>
+      )}
 
-      {/* DANH SÁCH TÀI SẢN */}
-      <div className="flex flex-col gap-4">
-        {filteredAssets.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-2xl border border-dashed border-gray-300 shadow-sm">
-            <Briefcase className="w-16 h-16 mb-4 text-gray-300" />
-            <span className="text-lg font-bold text-gray-600">Không tìm thấy tài sản nào phù hợp!</span>
-            <p className="text-sm mt-1 text-gray-400">Hãy thử thay đổi từ khóa tìm kiếm (Tên, Người mượn, Phòng ban) hoặc xóa bộ lọc.</p>
-            <button onClick={resetFilters} className="mt-5 px-5 py-2.5 bg-blue-50 text-blue-600 font-bold rounded-xl hover:bg-blue-100 transition-colors">
-              Xóa bộ lọc ngay
-            </button>
-          </div>
-        ) : (
-          filteredAssets.map((asset) => (
-            <AssetCard 
-              key={asset.assetId} 
-              asset={asset} 
-              onOpenModal={openModal}
-              onDelete={handleDelete}
-            />
-          ))
-        )}
-      </div>
+      {/* ==========================================
+          5. KHU VỰC TÍCH HỢP CÁC MODALS NGHIỆP VỤ 
+          ========================================== */}
+      <CreateAssetModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} />
+      <RunDepreciationModal isOpen={isRunDepreciationOpen} onClose={() => setIsRunDepreciationOpen(false)} />
+      <HandoverModal assetId={handoverAssetId} isOpen={!!handoverAssetId} onClose={() => setHandoverAssetId(null)} />
+      <LiquidateModal assetId={liquidateAssetId} isOpen={!!liquidateAssetId} onClose={() => setLiquidateAssetId(null)} />
+      <AdvancedAssetOperationsModal isOpen={isAdvancedOpsOpen} onClose={() => setIsAdvancedOpsOpen(false)} />
 
-      {/* RENDER CÁC MODAL */}
-      <CreateAssetModal 
-        isOpen={activeModal === "CREATE"} 
-        onClose={closeModal} 
-        onCreate={handleCreate} 
-        isSubmitting={isCreating} 
-      />
-
-      <EditAssetModal 
-        isOpen={activeModal === "EDIT"} 
-        onClose={closeModal} 
-        asset={selectedAsset}
-        onEdit={handleEdit} 
-        isSubmitting={isUpdating}
-      />
-
-      <AssetQRCodeModal 
-        isOpen={activeModal === "QR"} 
-        onClose={closeModal} 
-        asset={selectedAsset} 
-      />
-
-      {/* MODAL MỚI ĐƯỢC THÊM VÀO */}
-      <AssetHistoryModal 
-        isOpen={activeModal === "HISTORY"} 
-        onClose={closeModal} 
-        asset={selectedAsset} 
-      />
-      
     </div>
   );
-};
-
-export default AssetsPage;
+}
