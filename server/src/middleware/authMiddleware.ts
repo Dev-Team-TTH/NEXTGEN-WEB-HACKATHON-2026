@@ -8,87 +8,114 @@ const JWT_SECRET = process.env.JWT_SECRET || "erp_v7_super_secret_key_access";
 // ==========================================
 // MỞ RỘNG INTERFACE CỦA EXPRESS REQUEST
 // ==========================================
-// Giúp các Controller có thể gọi req.user.userId mà không bị TypeScript báo lỗi
 export interface AuthRequest extends Request {
   user?: {
     userId: string;
     email: string;
   };
+  // ĐÃ THÊM: Lưu sẵn quyền và vai trò vào Request để các hàm sau không cần gọi DB nữa
+  userRoles?: string[];
+  userPermissions?: string[];
 }
 
 // ==========================================
-// CƠ CHẾ CACHE TRÁNH DB BOTTLENECK 🚀
+// CƠ CHẾ CACHE TRÁNH DB BOTTLENECK 🚀 (ĐÃ NÂNG CẤP)
 // ==========================================
-// Lưu trữ trạng thái User tạm thời trên RAM.
-// Giải quyết bài toán: 1 User gọi 10 API cùng lúc sẽ không nã 10 câu query giống nhau vào Database.
-const userStatusCache = new Map<string, { status: string; isDeleted: boolean; exp: number }>();
+// Lưu trữ Trạng thái, Vai trò và Phân quyền trên RAM.
+// Giải quyết bài toán: 10 API gọi cùng lúc chỉ tốn đúng 1 câu Query DB mỗi 60 giây.
+interface CachedUser {
+  status: string;
+  isDeleted: boolean;
+  roles: string[];
+  permissions: string[];
+  exp: number;
+}
+
+const userSecurityCache = new Map<string, CachedUser>();
 const CACHE_TTL = 60 * 1000; // Tuổi thọ bộ đệm: 60 giây (1 phút)
 
 // ==========================================
 // 1. XÁC THỰC NGƯỜI DÙNG (AUTHENTICATE TOKEN)
 // ==========================================
-/**
- * Middleware: Xác thực JWT Access Token & Kiểm tra trạng thái User.
- * Bắt buộc đặt trước mọi Route cần bảo mật.
- */
 export const authenticateToken = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const authHeader = req.headers["authorization"];
-    const token = authHeader && authHeader.split(" ")[1]; // Format yêu cầu: "Bearer <token>"
-
-    if (!token) {
-      res.status(401).json({ message: "Từ chối truy cập! Không tìm thấy Access Token." });
+    
+    // Bắt lỗi vặt: Header không tồn tại hoặc không đúng chuẩn "Bearer <token>"
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      res.status(401).json({ message: "Từ chối truy cập! Access Token bị thiếu hoặc sai định dạng." });
       return;
     }
 
-    // 1. Giải mã Token
-    jwt.verify(token, JWT_SECRET, async (err: any, decoded: any) => {
-      if (err) {
-        res.status(403).json({ message: "Access Token không hợp lệ hoặc đã hết hạn!" });
+    const token = authHeader.split(" ")[1];
+
+    // 1. GIẢI MÃ TOKEN (Dùng hàm đồng bộ để try/catch bắt được lỗi ngay lập tức)
+    let decoded: any;
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch (jwtError: any) {
+      // Bắt chuẩn xác lỗi Hết hạn hoặc Sai chữ ký để trả về 401 (Giúp Redux Client kích hoạt Refresh Token)
+      if (jwtError.name === "TokenExpiredError" || jwtError.name === "JsonWebTokenError") {
+        res.status(401).json({ message: "Access Token không hợp lệ hoặc đã hết hạn!" });
         return;
       }
+      throw jwtError; // Quăng lỗi lạ ra catch tổng
+    }
 
-      const userId = decoded.userId;
-      const now = Date.now();
+    const userId = decoded.userId;
+    const now = Date.now();
 
-      // 2. BẢO MẬT NÂNG CAO & TỐI ƯU HIỆU NĂNG: Kiểm tra trạng thái User
-      // Lấy từ Cache RAM trước để giảm tải Database
-      let cachedUser = userStatusCache.get(userId);
+    // 2. LẤY DATA TỪ CACHE HOẶC DATABASE
+    let cachedData = userSecurityCache.get(userId);
 
-      // Nếu không có Cache hoặc Cache đã quá hạn 1 phút -> Query DB
-      if (!cachedUser || cachedUser.exp < now) {
-        const user = await prisma.users.findUnique({
-          where: { userId },
-          select: { status: true, isDeleted: true } // Chỉ select 2 trường để tối ưu RAM & Tốc độ
-        });
-
-        if (!user) {
-          res.status(401).json({ message: "Tài khoản không tồn tại trên hệ thống!" });
-          return;
+    if (!cachedData || cachedData.exp < now) {
+      // Nâng cấp: Lấy luôn Roles và Permissions trong 1 lần query duy nhất
+      const user = await prisma.users.findUnique({
+        where: { userId },
+        include: {
+          roles: {
+            include: { role: { include: { permissions: { include: { permission: true } } } } }
+          }
         }
+      });
 
-        // Lưu kết quả mới nhất vào Bộ đệm Cache
-        cachedUser = {
-          status: user.status,
-          isDeleted: user.isDeleted,
-          exp: now + CACHE_TTL
-        };
-        userStatusCache.set(userId, cachedUser);
-      }
-
-      // 3. Phân tích kết quả (Từ Cache hoặc DB)
-      if (cachedUser.isDeleted || cachedUser.status !== "ACTIVE") {
-        res.status(403).json({ 
-          message: `Tài khoản của bạn hiện đang ở trạng thái [${cachedUser.status}]. Vui lòng liên hệ Quản trị viên!` 
-        });
+      if (!user) {
+        res.status(401).json({ message: "Tài khoản không tồn tại trên hệ thống!" });
         return;
       }
 
-      // 4. Gắn thông tin User vào Request để Controller phía sau sử dụng
-      req.user = decoded;
-      next();
-    });
+      // Ép phẳng mảng Roles và Permissions
+      const userRoles = user.roles.map(ur => ur.role.roleName);
+      const rawPermissions = user.roles.flatMap(ur => ur.role.permissions.map(rp => rp.permission.code));
+      const uniquePermissions = Array.from(new Set(rawPermissions));
+
+      // Lưu kết quả vào Cache RAM
+      cachedData = {
+        status: user.status,
+        isDeleted: user.isDeleted,
+        roles: userRoles,
+        permissions: uniquePermissions,
+        exp: now + CACHE_TTL
+      };
+      userSecurityCache.set(userId, cachedData);
+    }
+
+    // 3. KIỂM TRA TRẠNG THÁI TÀI KHOẢN (Vẫn giữ 403 Forbidden ở đây vì đây là lỗi Khóa tài khoản)
+    if (cachedData.isDeleted || cachedData.status !== "ACTIVE") {
+      res.status(403).json({ 
+        message: `Tài khoản của bạn hiện đang ở trạng thái [${cachedData.status}]. Vui lòng liên hệ Quản trị viên!` 
+      });
+      return;
+    }
+
+    // 4. GẮN DỮ LIỆU VÀO REQUEST
+    req.user = { userId: decoded.userId, email: decoded.email };
+    req.userRoles = cachedData.roles;             // Truyền Role đi tiếp
+    req.userPermissions = cachedData.permissions; // Truyền Permission đi tiếp
+    
+    next();
   } catch (error: any) {
+    console.error("[Auth Guard Error]:", error);
     res.status(500).json({ message: "Lỗi xác thực hệ thống", error: error.message });
   }
 };
@@ -97,47 +124,20 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
 // 2. PHÂN QUYỀN DỰA TRÊN MÃ QUYỀN (PERMISSION GUARD)
 // ==========================================
 /**
- * Middleware Factory: Cấp quyền truy cập dựa trên Mã Quyền (Permission Code).
- * Cách dùng ở Route: router.post("/products", authenticateToken, requirePermission("CREATE_PRODUCT"), createProduct)
- * @param requiredPermission Mã quyền bắt buộc (Ví dụ: "VIEW_DASHBOARD", "CREATE_DOCUMENT")
+ * Chặn các Request không đủ mã Quyền.
+ * ĐÃ TỐI ƯU: Đọc thẳng từ RAM (req.userPermissions) với tốc độ 0.001ms, KHÔNG GỌI DATABASE NỮA!
  */
 export const requirePermission = (requiredPermission: string) => {
-  return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const userId = req.user?.userId;
-      if (!userId) {
-        res.status(401).json({ message: "Không xác định được danh tính người dùng!" });
-        return;
-      }
-
-      // Truy vấn trực tiếp xem User này có mang Role nào chứa Permission tương ứng không
-      const hasPermission = await prisma.userRole.findFirst({
-        where: {
-          userId: userId,
-          role: {
-            isDeleted: false,
-            permissions: {
-              some: {
-                permission: {
-                  code: requiredPermission
-                }
-              }
-            }
-          }
-        }
+  return (req: AuthRequest, res: Response, next: NextFunction): void => {
+    // Nếu mảng quyền không tồn tại hoặc không chứa mã quyền yêu cầu -> Chặn
+    if (!req.userPermissions || !req.userPermissions.includes(requiredPermission)) {
+      res.status(403).json({ 
+        message: `Lỗi phân quyền: Bạn không có quyền thực hiện thao tác này! (Mã quyền yêu cầu: ${requiredPermission})` 
       });
-
-      if (!hasPermission) {
-        res.status(403).json({ 
-          message: `Lỗi phân quyền: Bạn không có quyền thực hiện thao tác này! (Mã quyền yêu cầu: ${requiredPermission})` 
-        });
-        return;
-      }
-
-      next();
-    } catch (error: any) {
-      res.status(500).json({ message: "Lỗi kiểm tra phân quyền", error: error.message });
+      return;
     }
+    
+    next(); // Có quyền -> Đi tiếp
   };
 };
 
@@ -145,40 +145,19 @@ export const requirePermission = (requiredPermission: string) => {
 // 3. PHÂN QUYỀN DỰA TRÊN VAI TRÒ (ROLE GUARD)
 // ==========================================
 /**
- * Middleware Factory: Cấp quyền truy cập dựa trên Tên Vai Trò (Role Name).
- * Hữu ích cho các route chỉ dành riêng cho Ban Giám Đốc hoặc IT Admin.
- * Cách dùng: router.delete("/users/:id", authenticateToken, requireRole("SYSTEM_ADMIN"), deleteUser)
- * @param requiredRole Tên vai trò bắt buộc (Ví dụ: "SYSTEM_ADMIN", "CHIEF_ACCOUNTANT")
+ * Chặn các Request không đúng Vai trò (VD: Chỉ SYSTEM_ADMIN mới được vào)
+ * ĐÃ TỐI ƯU: Đọc thẳng từ RAM (req.userRoles) cực nhanh.
  */
 export const requireRole = (requiredRole: string) => {
-  return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const userId = req.user?.userId;
-      if (!userId) {
-        res.status(401).json({ message: "Không xác định được danh tính người dùng!" });
-        return;
-      }
-
-      const hasRole = await prisma.userRole.findFirst({
-        where: {
-          userId: userId,
-          role: {
-            roleName: requiredRole,
-            isDeleted: false
-          }
-        }
+  return (req: AuthRequest, res: Response, next: NextFunction): void => {
+    // Nếu mảng vai trò không tồn tại hoặc không chứa vai trò yêu cầu -> Chặn
+    if (!req.userRoles || !req.userRoles.includes(requiredRole)) {
+      res.status(403).json({ 
+        message: `Lỗi truy cập: Chức năng này chỉ dành riêng cho vai trò [${requiredRole}]!` 
       });
-
-      if (!hasRole) {
-        res.status(403).json({ 
-          message: `Lỗi phân quyền: Chức năng này chỉ dành cho vai trò [${requiredRole}]!` 
-        });
-        return;
-      }
-
-      next();
-    } catch (error: any) {
-      res.status(500).json({ message: "Lỗi kiểm tra vai trò", error: error.message });
+      return;
     }
+
+    next();
   };
 };

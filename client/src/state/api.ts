@@ -299,11 +299,27 @@ export interface Currency {
   isActive: boolean;
 }
 
+export interface PriceListItem {
+  itemId?: string;
+  priceListId?: string;
+  productId: string;
+  variantId?: string | null;
+  price: number;
+  minQuantity: number;
+  validFrom?: string | null;
+  validTo?: string | null;
+  // Dữ liệu hiển thị đi kèm (từ populate/include của Prisma)
+  product?: { name: string; productCode: string };
+  variant?: { sku: string; attributes: string };
+}
+
 export interface PriceList {
   priceListId: string;
-  listName: string;
+  code: string;
+  name: string; // Chú ý: Backend dùng 'name' thay vì 'listName'
   currencyCode: string;
   isActive: boolean;
+  items?: PriceListItem[]; // Danh sách sản phẩm thuộc bảng giá này
 }
 
 export interface Budget {
@@ -427,6 +443,14 @@ export interface SystemAuditLog {
   newValue?: string;
   timestamp: string;
   user?: { fullName: string; email: string };
+}
+
+export interface LoginHistoryRecord {
+  id: string;
+  ipAddress?: string;
+  userAgent?: string;
+  status: string;
+  timestamp: string;
 }
 
 // ==========================================
@@ -617,6 +641,10 @@ export const api = createApi({
     refreshToken: build.mutation<any, { refreshToken: string }>({ query: (body) => ({ url: "/auth/refresh-token", method: "POST", body }), invalidatesTags: ["Auth", "Session"] }),
     logout: build.mutation<any, void>({ query: () => ({ url: "/auth/logout", method: "POST" }), invalidatesTags: ["Auth", "Session"] }),
     logoutAllDevices: build.mutation<any, void>({ query: () => ({ url: "/auth/logout-all", method: "POST" }), invalidatesTags: ["Auth", "Session"] }),
+    getMyLoginHistory: build.query<LoginHistoryRecord[], void>({ 
+      query: () => "/auth/login-history", 
+      providesTags: ["Auth", "Security"] 
+    }),
 
     // ------------------------------------------
     // A2. ADVANCED SECURITY & 2FA
@@ -934,6 +962,7 @@ export const {
   useRefreshTokenMutation,
   useLogoutMutation,
   useLogoutAllDevicesMutation,
+  useGetMyLoginHistoryQuery,
 
   // --- A2. Advanced Security ---
   useChangePasswordMutation,

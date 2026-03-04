@@ -445,32 +445,53 @@ export const getCashflowReport = async (req: Request, res: Response): Promise<vo
   try {
     const { branchId, startDate, endDate } = req.query;
     
-    // Tìm các giao dịch liên quan đến Tiền (Mã TK bắt đầu bằng 111, 112)
+    // 1. Khởi tạo điều kiện an toàn cho Journal
+    const journalCondition: any = {
+      postingStatus: "POSTED"
+    };
+
+    if (branchId) {
+      journalCondition.branchId = String(branchId);
+    }
+
+    if (startDate && endDate) {
+      const start = new Date(String(startDate));
+      const end = new Date(String(endDate));
+      
+      // Chống lỗi Invalid Date
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+        journalCondition.entryDate = { gte: start, lte: end };
+      }
+    }
+
+    // 2. Tìm các dòng nhật ký liên quan đến tiền (111: Tiền mặt, 112: Tiền gửi NH)
     const cashLines = await prisma.journalLine.findMany({
       where: {
         account: { accountCode: { startsWith: "11" } },
-        journal: {
-          postingStatus: "POSTED",
-          ...(branchId && { branchId: String(branchId) }),
-          ...(startDate && endDate && {
-            entryDate: { gte: new Date(String(startDate)), lte: new Date(String(endDate)) }
-          })
-        }
+        journal: journalCondition // Đưa điều kiện đã tách gọn vào đây
       },
-      include: { journal: { select: { entryDate: true } } }
+      include: { 
+        journal: { select: { entryDate: true } },
+        account: { select: { accountCode: true, name: true } } // Select thêm để log dễ debug nếu cần
+      }
     });
 
-    // Gom nhóm theo tháng (YYYY-MM)
+    // 3. Gom nhóm theo tháng (YYYY-MM)
     const groupedData: Record<string, { cashIn: number, cashOut: number }> = {};
     
     cashLines.forEach(line => {
+      // Đảm bảo entryDate tồn tại trước khi parse
+      if (!line.journal?.entryDate) return; 
+
       const period = line.journal.entryDate.toISOString().substring(0, 7); // Lấy "YYYY-MM"
       if (!groupedData[period]) groupedData[period] = { cashIn: 0, cashOut: 0 };
       
-      groupedData[period].cashIn += Number(line.debit); // Tiền mặt Nợ là Tăng
-      groupedData[period].cashOut += Number(line.credit); // Tiền mặt Có là Giảm
+      // Nguyên lý kế toán: Tài sản (Tiền) Nợ -> Tăng (Thu vào), Có -> Giảm (Chi ra)
+      groupedData[period].cashIn += Number(line.debit || 0); 
+      groupedData[period].cashOut += Number(line.credit || 0); 
     });
 
+    // 4. Trả kết quả mảng đã sort
     const result = Object.keys(groupedData).map(period => ({
       period,
       cashIn: groupedData[period].cashIn,
@@ -480,6 +501,7 @@ export const getCashflowReport = async (req: Request, res: Response): Promise<vo
 
     res.json(result);
   } catch (error: any) {
+    console.error("[Cashflow Error]:", error); // In lỗi thực tế ra Terminal để debug
     res.status(500).json({ message: "Lỗi tạo Báo cáo Dòng tiền", error: error.message });
   }
 };

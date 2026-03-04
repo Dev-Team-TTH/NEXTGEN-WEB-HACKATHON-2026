@@ -27,14 +27,12 @@ const logLoginHistory = async (userId: string, ipAddress: string = "", userAgent
 };
 
 // ==========================================
-// 1. ĐĂNG NHẬP (LOGIN) - CÓ BRUTE-FORCE PROTECTION & 2FA
+// 1. ĐĂNG NHẬP (LOGIN)
 // ==========================================
 export const login = async (req: Request, res: Response): Promise<void> => {
-  // 💡 NÂNG CẤP: Hỗ trợ linh hoạt cả trường hợp Frontend gửi 'username' thay vì 'email'
   const email = req.body.email || req.body.username; 
   const password = req.body.password;
 
-  // 💡 CHỐT CHẶN BẢO MẬT: Bắt lỗi thiếu Input để tránh sập Prisma (Lỗi 500)
   if (!email || !password) {
     res.status(400).json({ message: "Vui lòng nhập đầy đủ email (hoặc tài khoản) và mật khẩu!" });
     return;
@@ -42,7 +40,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
   try {
     const user = await prisma.users.findUnique({
-      where: { email: String(email) }, // Ép kiểu an toàn sang String
+      where: { email: String(email) },
       include: { roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } } }
     });
 
@@ -52,14 +50,12 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Kiểm tra cơ chế Khóa tạm thời (lockedUntil)
     if (user.lockedUntil && new Date() < user.lockedUntil) {
       const lockMinutes = Math.ceil((user.lockedUntil.getTime() - new Date().getTime()) / 60000);
       res.status(403).json({ message: `Tài khoản đang bị khóa tạm thời. Vui lòng thử lại sau ${lockMinutes} phút.` });
       return;
     }
 
-    // Kiểm tra trạng thái tài khoản
     if (user.status === UserStatus.LOCKED && (!user.lockedUntil || new Date() > user.lockedUntil)) {
       res.status(403).json({ message: "Tài khoản của bạn đã bị khóa bởi Quản trị viên!" });
       return;
@@ -75,7 +71,6 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // So sánh mật khẩu bằng bcrypt
     const isMatch = await comparePassword(String(password), user.passwordHash);
     
     if (!isMatch) {
@@ -83,10 +78,9 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       let newStatus: UserStatus = user.status;
       let newLockedUntil = user.lockedUntil;
 
-      // Khóa tài khoản 15 phút sau 5 lần nhập sai
       if (newFails >= 5) {
         newStatus = UserStatus.LOCKED;
-        newLockedUntil = new Date(new Date().getTime() + 15 * 60000); // +15 phút
+        newLockedUntil = new Date(new Date().getTime() + 15 * 60000);
       }
 
       await prisma.users.update({
@@ -99,17 +93,11 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // NẾU BẬT 2FA -> Chặn lại, yêu cầu OTP
     if (user.twoFactorEnabled) {
-      res.json({
-        message: "Vui lòng nhập mã xác thực 2 bước (2FA).",
-        requires2FA: true,
-        userId: user.userId
-      });
+      res.json({ message: "Vui lòng nhập mã xác thực 2 bước (2FA).", requires2FA: true, userId: user.userId });
       return;
     }
 
-    // ĐĂNG NHẬP THÀNH CÔNG -> Reset số lần sai và mở khóa (nếu có)
     await prisma.users.update({
       where: { userId: user.userId },
       data: { failedLoginAttempts: 0, lockedUntil: null, status: UserStatus.ACTIVE, lastLoginAt: new Date() }
@@ -117,11 +105,9 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     await logLoginHistory(user.userId, req.ip || "", req.headers["user-agent"] || "", "SUCCESS");
 
-    // Lọc mảng Permissions
     const permissions = user.roles.flatMap(ur => ur.role.permissions.map(rp => rp.permission.code));
     const uniquePermissions = Array.from(new Set(permissions));
 
-    // Cấp phát Token
     const accessToken = generateAccessToken(user.userId, user.email);
     const refreshToken = await generateRefreshToken(user.userId);
 
@@ -134,13 +120,13 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       tokens: { accessToken, refreshToken }
     });
   } catch (error: any) {
-    console.error("[🔥 Login System Error]:", error); // Ghi log cụ thể để IT dễ debug
+    console.error("[🔥 Login System Error]:", error);
     res.status(500).json({ message: "Lỗi máy chủ khi xử lý đăng nhập", error: error.message });
   }
 };
 
 // ==========================================
-// 2. XÁC THỰC 2FA LÚC ĐĂNG NHẬP (VERIFY 2FA)
+// 2. XÁC THỰC 2FA LÚC ĐĂNG NHẬP
 // ==========================================
 export const verify2FALogin = async (req: Request, res: Response): Promise<void> => {
   const { userId, token } = req.body;
@@ -156,12 +142,8 @@ export const verify2FALogin = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Kiểm tra mã OTP
     const verified = speakeasy.totp.verify({
-      secret: user.twoFactorSecret,
-      encoding: "base32",
-      token: token,
-      window: 1 // Chấp nhận độ trễ 30s
+      secret: user.twoFactorSecret, encoding: "base32", token: token, window: 1
     });
 
     if (!verified) {
@@ -170,7 +152,6 @@ export const verify2FALogin = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Đăng nhập thành công
     await prisma.users.update({
       where: { userId: user.userId },
       data: { failedLoginAttempts: 0, lockedUntil: null, status: UserStatus.ACTIVE, lastLoginAt: new Date() }
@@ -201,15 +182,15 @@ export const verify2FALogin = async (req: Request, res: Response): Promise<void>
 // 3. ĐĂNG XUẤT (LOGOUT)
 // ==========================================
 export const logout = async (req: Request, res: Response): Promise<void> => {
-  const { refreshToken } = req.body;
-  if (!refreshToken) {
+  const token = req.body.refreshToken || req.body.token;
+  if (!token) {
     res.status(400).json({ message: "Yêu cầu cung cấp Refresh Token để đăng xuất!" });
     return;
   }
 
   try {
     await prisma.refreshToken.updateMany({
-      where: { token: refreshToken },
+      where: { token: token },
       data: { revoked: true }
     });
     res.json({ message: "Đăng xuất thành công!" });
@@ -219,7 +200,7 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
 };
 
 // ==========================================
-// 4. ĐĂNG XUẤT MỌI THIẾT BỊ (LOGOUT ALL)
+// 4. ĐĂNG XUẤT MỌI THIẾT BỊ
 // ==========================================
 export const logoutAllDevices = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -239,47 +220,72 @@ export const logoutAllDevices = async (req: AuthRequest, res: Response): Promise
 };
 
 // ==========================================
-// 5. CẤP LẠI TOKEN (REFRESH TOKEN)
+// 5. CẤP LẠI TOKEN (REFRESH TOKEN) - ĐÃ NÂNG CẤP BẢO MẬT & TỐI ƯU 🚀
 // ==========================================
 export const refreshToken = async (req: Request, res: Response): Promise<void> => {
-  const { token } = req.body;
+  // 1. Đọc linh hoạt (Chống lỗi vặt do lệch Frontend/Backend)
+  const token = req.body.refreshToken || req.body.token;
+
   if (!token) {
     res.status(401).json({ message: "Vui lòng cung cấp Refresh Token!" });
     return;
   }
 
   try {
+    // 2. Tra cứu Token trong cơ sở dữ liệu
     const savedToken = await prisma.refreshToken.findUnique({ where: { token } });
-    if (!savedToken || savedToken.revoked) {
-      res.status(403).json({ message: "Refresh Token không hợp lệ hoặc đã bị thu hồi!" });
+    
+    if (!savedToken) {
+      res.status(403).json({ message: "Refresh Token không tồn tại trong hệ thống!" });
       return;
     }
+
+    if (savedToken.revoked) {
+      res.status(403).json({ message: "Refresh Token đã bị thu hồi! Phiên làm việc không an toàn." });
+      return;
+    }
+
     if (new Date() > savedToken.expiresAt) {
       res.status(403).json({ message: "Refresh Token đã hết hạn! Vui lòng đăng nhập lại." });
       return;
     }
 
-    jwt.verify(token, JWT_REFRESH_SECRET, async (err: any, decoded: any) => {
-      if (err) {
-        res.status(403).json({ message: "Chữ ký Refresh Token không hợp lệ!" });
-        return;
-      }
-      const user = await prisma.users.findUnique({ where: { userId: decoded.userId } });
-      if (!user || user.status !== UserStatus.ACTIVE || user.isDeleted) {
-        res.status(403).json({ message: "Tài khoản không hợp lệ hoặc đã bị khóa/xóa!" });
-        return;
-      }
+    // 3. Giải mã ĐỒNG BỘ để bắt lỗi bằng try/catch (Chống sập Server)
+    let decoded: any;
+    try {
+      decoded = jwt.verify(token, JWT_REFRESH_SECRET);
+    } catch (jwtError: any) {
+      res.status(403).json({ message: "Chữ ký Refresh Token không hợp lệ hoặc đã hết hạn!" });
+      return;
+    }
 
-      const newAccessToken = generateAccessToken(user.userId, user.email);
-      res.json({ accessToken: newAccessToken });
+    // 4. Tối ưu hóa Database: Chỉ lấy các trường cần thiết thay vì toàn bộ Object User
+    const user = await prisma.users.findUnique({ 
+      where: { userId: decoded.userId },
+      select: { userId: true, email: true, status: true, isDeleted: true }
     });
+
+    if (!user || user.isDeleted || user.status !== UserStatus.ACTIVE) {
+      res.status(403).json({ message: "Tài khoản không hợp lệ, bị khóa hoặc đã bị vô hiệu hóa!" });
+      return;
+    }
+
+    // 5. Cấp phát Token mới
+    const newAccessToken = generateAccessToken(user.userId, user.email);
+    
+    res.json({ 
+      message: "Cấp lại Access Token thành công!",
+      accessToken: newAccessToken 
+    });
+
   } catch (error: any) {
-    res.status(500).json({ message: "Lỗi xử lý Refresh Token", error: error.message });
+    console.error("[🔥 Refresh Token Error]:", error);
+    res.status(500).json({ message: "Lỗi máy chủ khi xử lý Refresh Token", error: error.message });
   }
 };
 
 // ==========================================
-// 6. LẤY THÔNG TIN USER HIỆN TẠI (GET ME)
+// 6. LẤY THÔNG TIN USER HIỆN TẠI
 // ==========================================
 export const getCurrentUser = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -310,9 +316,7 @@ export const getCurrentUser = async (req: AuthRequest, res: Response): Promise<v
     const permissions = user.roles.flatMap(ur => ur.role.permissions.map(rp => rp.permission.code));
     const uniquePermissions = Array.from(new Set(permissions));
     
-    // Loại bỏ các trường nhạy cảm trước khi trả về FE
     const { passwordHash, twoFactorSecret, ...safeUser } = user;
-
     res.json({ ...safeUser, permissions: uniquePermissions });
   } catch (error: any) {
     res.status(500).json({ message: "Lỗi lấy thông tin cá nhân", error: error.message });
@@ -320,7 +324,7 @@ export const getCurrentUser = async (req: AuthRequest, res: Response): Promise<v
 };
 
 // ==========================================
-// 7. ĐỔI MẬT KHẨU (CHANGE PASSWORD)
+// 7. ĐỔI MẬT KHẨU
 // ==========================================
 export const changePassword = async (req: AuthRequest, res: Response): Promise<void> => {
   const { oldPassword, newPassword } = req.body;
@@ -346,7 +350,6 @@ export const changePassword = async (req: AuthRequest, res: Response): Promise<v
         data: { passwordHash: hashedNewPassword, passwordChangedAt: new Date() }
       });
 
-      // Tự động thu hồi các token cũ để ép đăng nhập lại trên các thiết bị khác
       await tx.refreshToken.updateMany({
         where: { userId, revoked: false },
         data: { revoked: true }
@@ -354,7 +357,6 @@ export const changePassword = async (req: AuthRequest, res: Response): Promise<v
     });
 
     await logAudit("Users", userId, "UPDATE", null, { action: "CHANGE_PASSWORD" }, userId, req.ip);
-
     res.json({ message: "Đổi mật khẩu thành công! Bạn đã được đăng xuất khỏi các thiết bị khác." });
   } catch (error: any) {
     res.status(500).json({ message: "Lỗi đổi mật khẩu", error: error.message });
@@ -362,7 +364,7 @@ export const changePassword = async (req: AuthRequest, res: Response): Promise<v
 };
 
 // ==========================================
-// 8. CÀI ĐẶT 2FA (GENERATE 2FA SECRET)
+// 8. CÀI ĐẶT 2FA
 // ==========================================
 export const generate2FASecret = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -374,7 +376,6 @@ export const generate2FASecret = async (req: AuthRequest, res: Response): Promis
 
     const secret = speakeasy.generateSecret({ name: `ERP_V7 (${user.email})` });
     
-    // Lưu tạm secret vào database (chưa bật tính năng enable)
     await prisma.users.update({
       where: { userId },
       data: { twoFactorSecret: secret.base32 }
@@ -394,7 +395,7 @@ export const generate2FASecret = async (req: AuthRequest, res: Response): Promis
 };
 
 // ==========================================
-// 9. KÍCH HOẠT 2FA (ENABLE 2FA)
+// 9. KÍCH HOẠT / TẮT 2FA
 // ==========================================
 export const enable2FA = async (req: AuthRequest, res: Response): Promise<void> => {
   const { token } = req.body; 
@@ -410,10 +411,7 @@ export const enable2FA = async (req: AuthRequest, res: Response): Promise<void> 
     }
 
     const verified = speakeasy.totp.verify({
-      secret: user.twoFactorSecret,
-      encoding: "base32",
-      token,
-      window: 1 // Dung sai 30 giây
+      secret: user.twoFactorSecret, encoding: "base32", token, window: 1 
     });
 
     if (!verified) {
@@ -427,15 +425,47 @@ export const enable2FA = async (req: AuthRequest, res: Response): Promise<void> 
     });
 
     await logAudit("Users", userId, "UPDATE", { twoFactorEnabled: false }, { twoFactorEnabled: true }, userId, req.ip);
-
     res.json({ message: "Kích hoạt Xác thực 2 bước (2FA) thành công!" });
   } catch (error: any) {
     res.status(500).json({ message: "Lỗi kích hoạt 2FA", error: error.message });
   }
 };
 
+export const disable2FA = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { token } = req.body; 
+  const userId = req.user?.userId;
+
+  try {
+    if (!userId) throw new Error("Người dùng không xác định");
+
+    const user = await prisma.users.findUnique({ where: { userId } });
+    if (!user || !user.twoFactorSecret) {
+      res.status(400).json({ message: "Chưa khởi tạo Secret 2FA!" });
+      return;
+    }
+
+    const verified = speakeasy.totp.verify({
+      secret: user.twoFactorSecret, encoding: "base32", token, window: 1 
+    });
+
+    if (!verified) {
+      res.status(400).json({ message: "Mã xác thực không hợp lệ. Tắt 2FA thất bại!" });
+      return;
+    }
+
+    await prisma.users.update({
+      where: { userId },
+      data: { twoFactorEnabled: false, twoFactorSecret: null }
+    });
+
+    res.json({ message: "Tắt Xác thực 2 bước (2FA) thành công!" });
+  } catch (error: any) {
+    res.status(500).json({ message: "Lỗi tắt 2FA", error: error.message });
+  }
+};
+
 // ==========================================
-// 10. ADMIN TẠO TÀI KHOẢN MỚI (CREATE USER)
+// 10. TẠO TÀI KHOẢN MỚI
 // ==========================================
 export const createUser = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -457,10 +487,32 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 
     await logAudit("Users", newUser.userId, "CREATE", null, { email, fullName }, actionerId, req.ip);
     
-    // Ẩn dữ liệu nhạy cảm trước khi trả về Frontend
     const { passwordHash, twoFactorSecret, ...safeUser } = newUser;
     res.status(201).json(safeUser);
   } catch (error: any) {
     res.status(400).json({ message: "Lỗi tạo tài khoản nhân viên", error: error.message });
+  }
+};
+
+// ==========================================
+// 11. LẤY LỊCH SỬ ĐĂNG NHẬP 
+// ==========================================
+export const getMyLoginHistory = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      res.status(401).json({ message: "Không xác định được người dùng!" });
+      return;
+    }
+
+    const history = await prisma.loginHistory.findMany({
+      where: { userId },
+      orderBy: { timestamp: 'desc' },
+      take: 10 
+    });
+
+    res.json(history);
+  } catch (error: any) {
+    res.status(500).json({ message: "Lỗi lấy lịch sử đăng nhập", error: error.message });
   }
 };

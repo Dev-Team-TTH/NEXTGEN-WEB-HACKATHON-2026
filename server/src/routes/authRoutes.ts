@@ -9,7 +9,8 @@ import {
   changePassword,
   generate2FASecret,
   enable2FA,
-  createUser
+  createUser,
+  getMyLoginHistory
 } from "../controllers/authController";
 import { authenticateToken } from "../middleware/authMiddleware";
 
@@ -33,6 +34,7 @@ router.get("/me", getCurrentUser);
 router.post("/logout", logout);
 router.post("/logout-all", logoutAllDevices);
 router.post("/change-password", changePassword);
+router.get("/login-history", getMyLoginHistory);
 
 // API cài đặt Bảo mật 2 lớp (2FA)
 router.post("/2fa/generate", generate2FASecret);
