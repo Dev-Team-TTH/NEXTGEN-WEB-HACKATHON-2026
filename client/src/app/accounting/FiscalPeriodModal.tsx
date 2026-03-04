@@ -1,266 +1,346 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import { 
-  X, Lock, Unlock, CalendarDays, Loader2, 
-  AlertOctagon, CheckCircle2, ShieldAlert
+  X, CalendarDays, Lock, Unlock, Plus, AlertTriangle, 
+  Loader2, CheckCircle2, ShieldAlert, CalendarClock,
+  ArrowRight, TrendingUp, History
 } from "lucide-react";
-import { toast } from "react-hot-toast";
 import dayjs from "dayjs";
+import 'dayjs/locale/vi';
+import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
 import { 
   useGetFiscalYearsQuery,
+  useCreateFiscalYearMutation,
+  useCloseFiscalYearMutation,
   useGetFiscalPeriodsQuery,
   useCloseFiscalPeriodMutation,
   useReopenFiscalPeriodMutation,
+  FiscalYear,
   FiscalPeriod
 } from "@/state/api";
 
+dayjs.locale('vi');
+
 // ==========================================
-// COMPONENT: MODAL CHỐT SỔ / KHÓA KỲ KẾ TOÁN
+// 1. HELPERS & FORMATTERS
 // ==========================================
 interface FiscalPeriodModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+// ==========================================
+// COMPONENT CHÍNH: TRẠM KIỂM SOÁT KỲ KẾ TOÁN
+// ==========================================
 export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModalProps) {
+  
   // --- STATE ---
-  const [selectedYearId, setSelectedYearId] = useState<string>("");
+  const [selectedYearId, setSelectedYearId] = useState<string | null>(null);
 
   // --- API HOOKS ---
-  const { data: fiscalYears = [], isLoading: isLoadingYears } = useGetFiscalYearsQuery(undefined, { skip: !isOpen });
+  // Lấy danh sách Năm tài chính
+  const { data: years = [], isLoading: loadingYears } = useGetFiscalYearsQuery(undefined, { skip: !isOpen });
   
-  // Lấy danh sách các kỳ kế toán (tháng/quý) theo năm đã chọn
-  const { data: fiscalPeriods = [], isLoading: isLoadingPeriods, refetch: refetchPeriods } = useGetFiscalPeriodsQuery(
-    { yearId: selectedYearId }, 
-    { skip: !selectedYearId || !isOpen }
-  );
+  // Lấy danh sách Kỳ (Tháng) của Năm đang chọn
+  const { data: periods = [], isLoading: loadingPeriods } = useGetFiscalPeriodsQuery({ yearId: selectedYearId }, { skip: !isOpen || !selectedYearId });
 
-  const [closePeriod, { isLoading: isClosing }] = useCloseFiscalPeriodMutation();
-  const [reopenPeriod, { isLoading: isReopening }] = useReopenFiscalPeriodMutation();
+  // Mutations
+  const [createYear, { isLoading: isCreatingYear }] = useCreateFiscalYearMutation();
+  const [closeYear, { isLoading: isClosingYear }] = useCloseFiscalYearMutation();
+  const [closePeriod, { isLoading: isClosingPeriod }] = useCloseFiscalPeriodMutation();
+  const [reopenPeriod, { isLoading: isReopeningPeriod }] = useReopenFiscalPeriodMutation();
 
-  // Tự động chọn Năm tài chính đầu tiên (năm hiện tại) khi load xong
+  const isProcessing = isCreatingYear || isClosingYear || isClosingPeriod || isReopeningPeriod;
+
+  // Tự động chọn Năm gần nhất khi mở Modal
   useEffect(() => {
-    if (fiscalYears.length > 0 && !selectedYearId) {
-      // Ưu tiên chọn năm đang ACTIVE (mở)
-      const activeYear = fiscalYears.find(y => y.status === "ACTIVE" || !y.isClosed);
-      setSelectedYearId(activeYear ? activeYear.yearId : fiscalYears[0].yearId);
+    if (isOpen && years.length > 0 && !selectedYearId) {
+      // Tìm năm đang ACTIVE hoặc năm mới nhất
+      const activeYear = years.find((y: FiscalYear) => y.status === "ACTIVE" || !y.isClosed);
+      setSelectedYearId(activeYear ? activeYear.yearId : years[0].yearId);
     }
-  }, [fiscalYears, selectedYearId]);
+  }, [isOpen, years, selectedYearId]);
 
-  // Reset khi đóng modal
-  useEffect(() => {
-    if (!isOpen) {
-      setSelectedYearId("");
-    }
-  }, [isOpen]);
+  // --- DATA VIZ: Tính toán Tiến độ Khóa sổ ---
+  const selectedYear = useMemo(() => years.find((y: FiscalYear) => y.yearId === selectedYearId), [years, selectedYearId]);
+  
+  const progress = useMemo(() => {
+    if (!periods.length) return { closed: 0, total: 0, percent: 0 };
+    const closed = periods.filter((p: FiscalPeriod) => p.status === "CLOSED").length;
+    return { 
+      closed, 
+      total: periods.length, 
+      percent: Math.round((closed / periods.length) * 100) 
+    };
+  }, [periods]);
 
   // --- HANDLERS ---
-  const handleToggleLock = async (period: FiscalPeriod) => {
-    const isCurrentlyClosed = period.status === "CLOSED";
-    const actionName = isCurrentlyClosed ? "Mở khóa" : "Khóa sổ";
-    
-    if (window.confirm(`Bạn có chắc chắn muốn ${actionName} kỳ "${period.periodName}"?\n\n${isCurrentlyClosed ? "Cảnh báo: Dữ liệu trong kỳ này sẽ có thể bị thay đổi!" : "Toàn bộ chứng từ và bút toán trong kỳ này sẽ bị đóng băng."}`)) {
+  const handleCreateNextYear = async () => {
+    const nextYearNum = dayjs().year() + 1; // Giả định tạo cho năm sau
+    if (window.confirm(`Hệ thống sẽ tự động khởi tạo Năm Tài Chính ${nextYearNum} cùng 12 kỳ kế toán tương ứng. Xác nhận?`)) {
       try {
-        if (isCurrentlyClosed) {
+        await createYear({
+          yearName: `Năm Tài Chính ${nextYearNum}`,
+          startDate: `${nextYearNum}-01-01`,
+          endDate: `${nextYearNum}-12-31`,
+          status: "ACTIVE"
+        }).unwrap();
+        toast.success(`Đã khởi tạo thành công Năm ${nextYearNum}!`);
+      } catch (err: any) {
+        toast.error(err?.data?.message || "Lỗi khởi tạo năm tài chính!");
+      }
+    }
+  };
+
+  const handleTogglePeriod = async (period: FiscalPeriod) => {
+    const isClosed = period.status === "CLOSED";
+    const action = isClosed ? "MỞ KHÓA (REOPEN)" : "KHÓA SỔ (CLOSE)";
+    const message = isClosed 
+      ? `CẢNH BÁO MỞ KHÓA: Nếu mở lại kỳ "${period.periodName}", kế toán viên có thể sửa đổi bút toán cũ. Điều này có thể làm thay đổi Báo cáo Tài chính.\n\nTiếp tục?`
+      : `KHÓA SỔ KỲ "${period.periodName}": Mọi dữ liệu tài chính trong kỳ này sẽ bị niêm phong vĩnh viễn không thể thay đổi.\n\nTiếp tục?`;
+
+    if (window.confirm(message)) {
+      try {
+        if (isClosed) {
           await reopenPeriod(period.periodId).unwrap();
-          toast.success(`Đã MỞ KHÓA kỳ ${period.periodName}`);
+          toast.success(`Đã MỞ KHÓA kỳ ${period.periodName}.`);
         } else {
           await closePeriod(period.periodId).unwrap();
-          toast.success(`Đã KHÓA SỔ kỳ ${period.periodName}`);
+          toast.success(`Đã KHÓA SỔ kỳ ${period.periodName} an toàn.`);
         }
-        refetchPeriods(); // Cập nhật lại danh sách ngay lập tức
-      } catch (error: any) {
-        toast.error(error?.data?.message || `Lỗi khi ${actionName} kỳ kế toán!`);
+      } catch (err: any) {
+        toast.error(err?.data?.message || `Lỗi khi thực hiện lệnh ${action}!`);
+      }
+    }
+  };
+
+  const handleCloseYear = async () => {
+    if (!selectedYearId || !selectedYear) return;
+    if (progress.closed < progress.total) {
+      toast.error("Phải khóa toàn bộ 12 kỳ (tháng) trước khi Khóa Năm Tài Chính!");
+      return;
+    }
+    if (window.confirm(`BƯỚC NGOẶT: Khóa sổ Toàn bộ Năm "${selectedYear.yearName}"?\nHệ thống sẽ kết chuyển số dư sang năm sau. Hành động này KHÔNG THỂ HOÀN TÁC!`)) {
+      try {
+        await closeYear(selectedYearId).unwrap();
+        toast.success(`Đã khóa sổ vĩnh viễn ${selectedYear.yearName}!`);
+      } catch (err: any) {
+        toast.error(err?.data?.message || "Lỗi khi chạy tiến trình Khóa Năm!");
       }
     }
   };
 
   // --- ANIMATION CONFIG ---
-  const backdropVariants: Variants = {
-    hidden: { opacity: 0 },
-    visible: { opacity: 1 }
-  };
-
+  const backdropVariants: Variants = { hidden: { opacity: 0 }, visible: { opacity: 1 } };
   const modalVariants: Variants = {
-    hidden: { opacity: 0, scale: 0.95, y: 20 },
-    visible: { opacity: 1, scale: 1, y: 0, transition: { type: "spring" as const, stiffness: 300, damping: 25 } },
+    hidden: { opacity: 0, scale: 0.95, y: 30 },
+    visible: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 350, damping: 30 } },
     exit: { opacity: 0, scale: 0.95, y: 20, transition: { duration: 0.2 } }
   };
+  const listVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.05 } } };
+  const itemVariants = { hidden: { opacity: 0, scale: 0.9 }, visible: { opacity: 1, scale: 1 } };
 
   return (
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          variants={backdropVariants}
-          initial="hidden"
-          animate="visible"
-          exit="hidden"
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-slate-900/70 backdrop-blur-md"
+          variants={backdropVariants} initial="hidden" animate="visible" exit="hidden"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-slate-900/80 backdrop-blur-md"
         >
-          {/* Khóa click ra ngoài nếu đang xử lý API */}
-          <div className="absolute inset-0" onClick={!(isClosing || isReopening) ? onClose : undefined} />
+          <div className="absolute inset-0" onClick={!isProcessing ? onClose : undefined} />
 
           <motion.div
-            variants={modalVariants}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            className="relative w-full max-w-4xl glass-panel rounded-3xl shadow-2xl border border-white/20 overflow-hidden z-10 flex flex-col max-h-[90vh]"
+            variants={modalVariants} initial="hidden" animate="visible" exit="exit"
+            className="relative w-full max-w-5xl bg-slate-50 dark:bg-[#0B0F19] rounded-3xl shadow-[0_20px_60px_rgba(0,0,0,0.5)] border border-slate-200 dark:border-white/10 overflow-hidden z-10 flex flex-col md:flex-row h-[85vh]"
           >
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-200 dark:border-white/10 bg-white/50 dark:bg-black/20 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-slate-200 dark:bg-slate-800 flex items-center justify-center">
-                  <ShieldAlert className="w-5 h-5 text-slate-700 dark:text-slate-300" />
+            
+            {/* === CỘT TRÁI: DANH SÁCH NĂM TÀI CHÍNH === */}
+            <div className="w-full md:w-[320px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-white/5 flex flex-col shrink-0 z-20">
+              
+              {/* Header Cột Trái */}
+              <div className="p-6 border-b border-slate-200 dark:border-white/5 bg-gradient-to-b from-indigo-50/50 to-white dark:from-indigo-950/20 dark:to-slate-900">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/50 rounded-xl text-indigo-600 dark:text-indigo-400">
+                    <CalendarDays className="w-5 h-5" />
+                  </div>
+                  <button onClick={onClose} disabled={isProcessing} className="md:hidden p-1.5 text-slate-400 hover:text-rose-500 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900 dark:text-white leading-tight">Chốt sổ / Khóa kỳ Kế toán</h2>
-                  <p className="text-xs text-slate-500 font-medium">Quản lý trạng thái đóng/mở của các kỳ kế toán</p>
-                </div>
+                <h2 className="text-xl font-black text-slate-900 dark:text-white">Niên độ Kế toán</h2>
+                <p className="text-xs font-medium text-slate-500 mt-1">Quản lý các năm tài chính của doanh nghiệp</p>
+                
+                <button 
+                  onClick={handleCreateNextYear} disabled={isProcessing}
+                  className="mt-4 w-full py-2.5 flex items-center justify-center gap-2 bg-slate-100 hover:bg-indigo-50 text-indigo-600 dark:bg-slate-800 dark:hover:bg-indigo-900/30 dark:text-indigo-400 text-sm font-bold rounded-xl transition-colors border border-dashed border-indigo-200 dark:border-indigo-800"
+                >
+                  {isCreatingYear ? <Loader2 className="w-4 h-4 animate-spin"/> : <Plus className="w-4 h-4" />}
+                  Khởi tạo Năm Mới
+                </button>
               </div>
-              <button 
-                onClick={onClose} 
-                disabled={isClosing || isReopening} 
-                className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/20 rounded-full transition-colors disabled:opacity-50"
-              >
-                <X className="w-5 h-5" />
-              </button>
+
+              {/* Danh sách Năm */}
+              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2 scrollbar-thin">
+                {loadingYears ? (
+                  <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-indigo-500" /></div>
+                ) : years.map((year: FiscalYear) => {
+                  const isActive = selectedYearId === year.yearId;
+                  const isClosed = year.isClosed || year.status === "CLOSED";
+                  return (
+                    <div 
+                      key={year.yearId} 
+                      onClick={() => !isProcessing && setSelectedYearId(year.yearId)}
+                      className={`relative p-4 rounded-2xl border-2 transition-all cursor-pointer group ${isActive ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10' : 'border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-indigo-300 dark:hover:border-indigo-700'}`}
+                    >
+                      <div className="flex items-center justify-between mb-2 relative z-10">
+                        <h4 className={`font-bold text-lg ${isActive ? 'text-indigo-700 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                          {year.yearName}
+                        </h4>
+                        {isClosed ? (
+                          <div className="p-1.5 bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 rounded-lg"><Lock className="w-3.5 h-3.5"/></div>
+                        ) : (
+                          <div className="p-1.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg"><Unlock className="w-3.5 h-3.5"/></div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] font-semibold text-slate-500 relative z-10">
+                        <span>{dayjs(year.startDate).format('MM/YYYY')}</span>
+                        <ArrowRight className="w-3 h-3" />
+                        <span>{dayjs(year.endDate).format('MM/YYYY')}</span>
+                      </div>
+
+                      {/* Hiệu ứng Background Active */}
+                      {isActive && <motion.div layoutId="activeYear" className="absolute inset-0 border-2 border-indigo-500 rounded-2xl shadow-[0_0_15px_rgba(99,102,241,0.2)] pointer-events-none" />}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* Body */}
-            <div className="p-6 overflow-y-auto scrollbar-thin flex flex-col gap-6 bg-white/30 dark:bg-black/10">
+            {/* === CỘT PHẢI: QUẢN LÝ KỲ (THÁNG) & DATA VIZ === */}
+            <div className="flex-1 flex flex-col min-w-0 bg-slate-50/50 dark:bg-transparent relative overflow-hidden">
               
-              {/* Lời nhắc nhở rủi ro */}
-              <div className="flex items-start gap-3 p-4 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20">
-                <AlertOctagon className="w-5 h-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
-                <div className="text-sm text-amber-800 dark:text-amber-200">
-                  <p className="font-bold mb-1">Cảnh báo nghiệp vụ:</p>
-                  <p>Việc Khóa kỳ kế toán (Đóng sổ) sẽ ngăn chặn mọi hành vi tạo mới, chỉnh sửa, hoặc đảo bút toán thuộc khoảng thời gian đó. Chỉ những tài khoản có đặc quyền Kế toán trưởng mới có thể thao tác.</p>
+              {/* Header Cột Phải & Nút Close UI */}
+              <div className="hidden md:flex items-center justify-end p-4 absolute top-0 right-0 z-30">
+                 <button onClick={onClose} disabled={isProcessing} className="p-2 text-slate-400 hover:text-rose-500 bg-white/80 hover:bg-rose-50 dark:bg-slate-800/80 dark:hover:bg-rose-900/30 backdrop-blur-sm rounded-xl transition-colors shadow-sm">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {!selectedYearId ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+                  <CalendarDays className="w-16 h-16 mb-4 opacity-20" />
+                  <p className="font-bold">Chọn một Năm tài chính để xem chi tiết.</p>
                 </div>
-              </div>
+              ) : (
+                <div className="flex-1 flex flex-col p-6 sm:p-8 overflow-y-auto scrollbar-thin">
+                  
+                  {/* KHỐI DASHBOARD VIZ CỦA NĂM */}
+                  <div className="mb-8 bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-4">
+                      <div>
+                        <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-1">
+                          Trạng thái {selectedYear?.yearName}
+                        </h3>
+                        <p className="text-sm font-medium text-slate-500 flex items-center gap-1.5">
+                          <ShieldAlert className="w-4 h-4 text-amber-500"/>
+                          Khóa sổ đảm bảo tính toàn vẹn của Báo cáo tài chính.
+                        </p>
+                      </div>
+                      
+                      {/* Nút Khóa Năm Toàn cục */}
+                      <button 
+                        onClick={handleCloseYear}
+                        disabled={isProcessing || selectedYear?.isClosed || selectedYear?.status === "CLOSED" || progress.closed < progress.total}
+                        className={`px-5 py-2.5 font-bold text-sm rounded-xl flex items-center gap-2 transition-all shadow-sm ${selectedYear?.isClosed || selectedYear?.status === "CLOSED" ? 'bg-slate-100 text-slate-400 dark:bg-slate-800 cursor-not-allowed' : progress.closed < progress.total ? 'bg-rose-50 text-rose-300 dark:bg-rose-900/10 cursor-not-allowed border border-rose-100 dark:border-rose-900/50' : 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-500/30 active:scale-95'}`}
+                      >
+                        {isClosingYear ? <Loader2 className="w-4 h-4 animate-spin"/> : <Lock className="w-4 h-4"/>}
+                        {selectedYear?.isClosed || selectedYear?.status === "CLOSED" ? "Năm Đã Khóa Vĩnh Viễn" : "Chốt Sổ Toàn Bộ Năm"}
+                      </button>
+                    </div>
 
-              {/* Bộ chọn Năm Tài Chính */}
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                  <CalendarDays className="w-4 h-4 text-slate-500" /> Chọn Năm Tài Chính
-                </label>
-                {isLoadingYears ? (
-                  <div className="flex items-center gap-2 text-slate-500 text-sm">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Đang tải danh sách năm...
+                    {/* Progress Bar Viz */}
+                    <div>
+                      <div className="flex justify-between text-xs font-bold uppercase tracking-wider mb-2">
+                        <span className="text-slate-500">Tiến trình Khóa sổ</span>
+                        <span className={progress.percent === 100 ? "text-emerald-500" : "text-indigo-500"}>
+                          {progress.closed} / {progress.total} Kỳ ({progress.percent}%)
+                        </span>
+                      </div>
+                      <div className="w-full h-3 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden flex shadow-inner">
+                        <motion.div 
+                          initial={{ width: 0 }} animate={{ width: `${progress.percent}%` }} transition={{ duration: 1, ease: "easeOut" }}
+                          className={`h-full ${progress.percent === 100 ? 'bg-emerald-500' : 'bg-indigo-500'} stripe-pattern`}
+                        />
+                      </div>
+                    </div>
                   </div>
-                ) : (
-                  <select
-                    value={selectedYearId}
-                    onChange={(e) => setSelectedYearId(e.target.value)}
-                    className="w-full md:w-1/3 px-4 py-2.5 bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 dark:text-white"
-                  >
-                    <option value="" disabled>-- Lựa chọn năm --</option>
-                    {fiscalYears.map(year => (
-                      <option key={year.yearId} value={year.yearId}>
-                        {year.yearName} {year.isClosed ? "(Đã khóa toàn bộ)" : "(Đang mở)"}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
 
-              {/* Lưới danh sách Kỳ Kế Toán (Tháng/Quý) */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider">
-                  Danh sách Kỳ Kế Toán
-                </h3>
-                
-                {isLoadingPeriods ? (
-                  <div className="flex flex-col items-center justify-center py-10 opacity-50">
-                    <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-2" />
-                    <p className="text-sm font-medium text-slate-500">Đang tải chi tiết các kỳ...</p>
+                  {/* LƯỚI 12 KỲ KẾ TOÁN (GRID OF PERIODS) */}
+                  <div className="flex items-center gap-2 mb-4">
+                    <CalendarClock className="w-5 h-5 text-indigo-500" />
+                    <h4 className="font-bold text-slate-800 dark:text-white">Chi tiết 12 Kỳ Kế toán (Tháng)</h4>
                   </div>
-                ) : fiscalPeriods.length === 0 ? (
-                  <div className="text-center py-10 text-slate-500 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-dashed border-slate-200 dark:border-white/10">
-                    Không tìm thấy kỳ kế toán nào cho năm này.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                    <AnimatePresence>
-                      {fiscalPeriods.map((period) => {
+
+                  {loadingPeriods ? (
+                    <div className="flex justify-center py-20"><Loader2 className="w-10 h-10 animate-spin text-indigo-500"/></div>
+                  ) : (
+                    <motion.div variants={listVariants} initial="hidden" animate="visible" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {periods.map((period: FiscalPeriod) => {
                         const isClosed = period.status === "CLOSED";
+                        const isYearClosed = selectedYear?.isClosed || selectedYear?.status === "CLOSED";
+
                         return (
                           <motion.div 
-                            key={period.periodId}
-                            layout
-                            initial={{ opacity: 0, scale: 0.9 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.9 }}
-                            className={`p-4 rounded-2xl border flex flex-col gap-4 transition-all duration-300 ${
-                              isClosed 
-                                ? 'bg-slate-100/50 border-slate-200 dark:bg-slate-900/40 dark:border-slate-800 opacity-70 grayscale-[30%]' 
-                                : 'bg-white border-emerald-200 shadow-sm dark:bg-slate-800/80 dark:border-emerald-500/30'
-                            }`}
+                            variants={itemVariants} key={period.periodId} 
+                            className={`p-5 rounded-2xl border transition-all flex flex-col justify-between h-32 relative overflow-hidden group ${isClosed ? 'bg-slate-50 border-slate-200 dark:bg-[#0d1321] dark:border-slate-800' : 'bg-white border-emerald-200 shadow-sm hover:shadow-md dark:bg-slate-800 dark:border-emerald-500/30'}`}
                           >
-                            {/* Thông tin kỳ */}
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <h4 className={`font-bold text-lg ${isClosed ? 'text-slate-600 dark:text-slate-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
-                                  {period.periodName}
-                                </h4>
-                                <p className="text-[10px] font-mono text-slate-500 mt-1 bg-slate-100 dark:bg-slate-900/80 px-1.5 py-0.5 rounded w-fit">
-                                  {dayjs(period.startDate).format('DD/MM/YYYY')} - {dayjs(period.endDate).format('DD/MM/YYYY')}
-                                </p>
-                              </div>
-                              
-                              {/* Badge Trạng thái */}
-                              {isClosed ? (
-                                <span className="p-1.5 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-500">
-                                  <Lock className="w-4 h-4" />
-                                </span>
-                              ) : (
-                                <span className="p-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
-                                  <Unlock className="w-4 h-4" />
-                                </span>
-                              )}
+                            {/* Watermark Icon */}
+                            <div className="absolute -right-4 -bottom-4 opacity-[0.03] dark:opacity-5 pointer-events-none">
+                              {isClosed ? <Lock className="w-24 h-24 text-slate-500"/> : <Unlock className="w-24 h-24 text-emerald-500"/>}
                             </div>
 
-                            {/* Nút Hành động */}
-                            <button
-                              onClick={() => handleToggleLock(period)}
-                              disabled={isClosing || isReopening}
-                              className={`w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 disabled:opacity-50 ${
-                                isClosed
-                                  ? 'bg-slate-200 hover:bg-slate-300 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300'
-                                  : 'bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 dark:border-rose-500/20 dark:text-rose-400'
-                              }`}
-                            >
-                              {(isClosing || isReopening) ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : isClosed ? (
-                                <>Mở khóa kỳ này</>
+                            <div className="flex items-start justify-between relative z-10">
+                              <div>
+                                <h5 className={`font-black text-lg ${isClosed ? 'text-slate-500' : 'text-emerald-700 dark:text-emerald-400'}`}>
+                                  {period.periodName}
+                                </h5>
+                                <p className="text-[10px] font-mono text-slate-400 mt-0.5">
+                                  {dayjs(period.startDate).format('DD/MM')} - {dayjs(period.endDate).format('DD/MM/YYYY')}
+                                </p>
+                              </div>
+                              <div className={`p-2 rounded-xl ${isClosed ? 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400' : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-sm'}`}>
+                                {isClosed ? <Lock className="w-4 h-4"/> : <Unlock className="w-4 h-4"/>}
+                              </div>
+                            </div>
+
+                            {/* Nút Toggle (Chỉ bật khi Năm chưa bị khóa vĩnh viễn) */}
+                            <div className="relative z-10 mt-auto pt-2">
+                              {!isYearClosed ? (
+                                <button 
+                                  onClick={() => handleTogglePeriod(period)} disabled={isProcessing}
+                                  className={`w-full py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 ${isClosed ? 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100 dark:text-indigo-400 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20' : 'text-rose-600 bg-rose-50 hover:bg-rose-100 dark:text-rose-400 dark:bg-rose-500/10 dark:hover:bg-rose-500/20'}`}
+                                >
+                                  {isClosed ? <Unlock className="w-3.5 h-3.5"/> : <Lock className="w-3.5 h-3.5"/>}
+                                  {isClosed ? "Mở khóa kỳ này" : "Khóa sổ kỳ này"}
+                                </button>
                               ) : (
-                                <><Lock className="w-4 h-4" /> Chốt sổ kỳ này</>
+                                <div className="w-full py-2 text-xs font-bold text-center text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-xl">
+                                  Đã niêm phong theo Năm
+                                </div>
                               )}
-                            </button>
+                            </div>
                           </motion.div>
                         );
                       })}
-                    </AnimatePresence>
-                  </div>
-                )}
-              </div>
+                    </motion.div>
+                  )}
 
-            </div>
-
-            {/* Footer */}
-            <div className="px-6 py-4 border-t border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/40 flex justify-end shrink-0">
-              <button 
-                onClick={onClose} 
-                disabled={isClosing || isReopening} 
-                className="px-6 py-2.5 bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-200 dark:hover:bg-white dark:text-slate-900 text-sm font-bold rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50"
-              >
-                Đóng cửa sổ
-              </button>
+                </div>
+              )}
             </div>
 
           </motion.div>
