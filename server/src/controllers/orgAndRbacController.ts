@@ -1,10 +1,8 @@
 import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
 
-const prisma = new PrismaClient();
-
-// Hàm Helper trích xuất userId
+// Hàm Helper trích xuất userId an toàn
 const getUserId = (req: Request) => (req as any).user?.userId || req.body.actionerId || req.body.userId;
 
 // ==========================================
@@ -18,7 +16,6 @@ export const getUsers = async (req: Request, res: Response): Promise<void> => {
         isDeleted: false,
         ...(departmentId && { departmentId: String(departmentId) }),
         ...(status && { status: status as any }),
-        // Lọc theo chi nhánh thông qua phòng ban
         ...(branchId && { department: { branchId: String(branchId) } })
       },
       include: {
@@ -28,7 +25,7 @@ export const getUsers = async (req: Request, res: Response): Promise<void> => {
       orderBy: { createdAt: 'desc' }
     });
 
-    // Ẩn hash mật khẩu và secret 2FA trước khi trả về
+    // Ẩn hash mật khẩu và secret 2FA trước khi trả về cho Frontend
     const safeUsers = users.map(user => {
       const { passwordHash, twoFactorSecret, ...safeData } = user;
       return safeData;
@@ -74,7 +71,6 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
         data: { fullName, phone, departmentId, status }
       });
 
-      // Cập nhật Roles (Xóa cũ, thêm mới)
       if (roleIds && Array.isArray(roleIds)) {
         await tx.userRole.deleteMany({ where: { userId: id } });
         if (roleIds.length > 0) {
@@ -99,13 +95,11 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
   const { id } = req.params;
   const actionerId = getUserId(req);
   try {
-    // Soft Delete chuẩn ERP, đổi status thành INACTIVE để không cho đăng nhập nữa
     await prisma.users.update({
       where: { userId: id },
       data: { isDeleted: true, status: "INACTIVE" }
     });
     
-    // Revoke mọi token đang có của user này
     await prisma.refreshToken.updateMany({
       where: { userId: id, revoked: false },
       data: { revoked: true }
@@ -130,17 +124,9 @@ export const getPermissions = async (req: Request, res: Response): Promise<void>
       ]
     });
     
-    // Gom nhóm permissions theo module để Frontend dễ render Checkbox Tree
-    const groupedPermissions = permissions.reduce((acc: any, curr) => {
-      if (!acc[curr.module]) acc[curr.module] = [];
-      acc[curr.module].push(curr);
-      return acc;
-    }, {});
-
-    res.json({
-      flat: permissions,
-      grouped: groupedPermissions
-    });
+    // [FIX LỖI: rawPermissions.forEach is not a function]
+    // Frontend (RolePermissionModal.tsx) đang đợi 1 Mảng (Array), ta trả về mảng trực tiếp.
+    res.json(permissions);
   } catch (error: any) {
     res.status(500).json({ message: "Lỗi lấy danh sách quyền", error: error.message });
   }
@@ -151,15 +137,36 @@ export const getPermissions = async (req: Request, res: Response): Promise<void>
 // ==========================================
 export const getRoles = async (req: Request, res: Response): Promise<void> => {
   try {
+    // [FIX LỖI TS2353]: Tách query dùng Map-Reduce để tránh lỗi _count khi TypeScript không khớp quan hệ
     const roles = await prisma.role.findMany({
       where: { isDeleted: false },
       include: { 
-        permissions: { include: { permission: true } },
-        _count: { select: { users: true } } // Đếm số lượng user đang mang role này
+        permissions: { include: { permission: true } }
       },
       orderBy: { roleName: 'asc' }
     });
-    res.json(roles);
+
+    const roleIds = roles.map(r => r.roleId);
+
+    // Truy vấn bảng UserRole để lấy tổng số người dùng gán với role
+    let userRoles: any[] = [];
+    if (roleIds.length > 0) {
+      userRoles = await prisma.userRole.findMany({
+        where: { roleId: { in: roleIds } },
+        select: { roleId: true, userId: true }
+      });
+    }
+
+    // Ghép dữ liệu và tái tạo cấu trúc _count cho Frontend
+    const enrichedRoles = roles.map(role => {
+      const count = userRoles.filter(ur => ur.roleId === role.roleId).length;
+      return {
+        ...role,
+        _count: { users: count } 
+      };
+    });
+
+    res.json(enrichedRoles);
   } catch (error: any) {
     res.status(500).json({ message: "Lỗi lấy danh sách Roles", error: error.message });
   }
@@ -225,17 +232,11 @@ export const deleteRole = async (req: Request, res: Response): Promise<void> => 
 
   try {
     await prisma.$transaction(async (tx) => {
-      // BẢO VỆ 1: Không cho xóa Role nếu đang có nhân viên sử dụng
       const usersWithRole = await tx.userRole.findFirst({ where: { roleId: id } });
-      if (usersWithRole) {
-        throw new Error("Không thể xóa Vai trò này vì đang được gán cho nhân viên!");
-      }
+      if (usersWithRole) throw new Error("Không thể xóa Vai trò này vì đang được gán cho nhân viên!");
 
-      // BẢO VỆ 2: Không cho xóa Role nếu đang cấu hình trong Workflow
       const stepWithRole = await tx.approvalStep.findFirst({ where: { roleId: id } });
-      if (stepWithRole) {
-        throw new Error("Không thể xóa Vai trò này vì đang được sử dụng trong Quy trình phê duyệt (Workflow)!");
-      }
+      if (stepWithRole) throw new Error("Không thể xóa Vai trò này vì đang được sử dụng trong Quy trình phê duyệt (Workflow)!");
 
       await tx.role.update({
         where: { roleId: id },
@@ -292,12 +293,29 @@ export const createCostCenter = async (req: Request, res: Response): Promise<voi
 export const getSystemAuditLogs = async (req: Request, res: Response): Promise<void> => {
   try {
     const { limit, sort } = req.query;
+    const takeCount = limit && !isNaN(Number(limit)) ? Number(limit) : 100;
+    const sortOrder = sort === 'asc' ? 'asc' : 'desc';
+
+    // Đọc chính xác trường `timestamp` theo schema.prisma
     const logs = await prisma.systemAuditLog.findMany({
-      take: limit ? Number(limit) : 100,
-      orderBy: { timestamp: sort === 'asc' ? 'asc' : 'desc' },
-      include: { user: { select: { fullName: true, email: true } } }
+      take: takeCount,
+      orderBy: { timestamp: sortOrder },
+      include: {
+        user: { select: { fullName: true, email: true } }
+      }
     });
-    res.json(logs);
+
+    // [FIX LỖI: Cannot read properties of undefined reading 'toLowerCase']
+    // Giao diện (SystemAuditLog.tsx) cần những trường nhất định không được để null/undefined
+    const safeLogs = logs.map(log => ({
+      ...log,
+      tableName: log.tableName || "SYSTEM", 
+      action: log.action || "SYSTEM_EVENT",
+      createdAt: log.timestamp,  // Ánh xạ timestamp thành createdAt phòng khi UI gọi
+      module: log.tableName      // Ánh xạ tableName thành module phòng khi UI gọi
+    }));
+
+    res.json(safeLogs);
   } catch (error: any) {
     res.status(500).json({ message: "Lỗi truy xuất Audit Logs", error: error.message });
   }
@@ -306,15 +324,25 @@ export const getSystemAuditLogs = async (req: Request, res: Response): Promise<v
 export const getAuditLogsByRecord = async (req: Request, res: Response): Promise<void> => {
   try {
     const { tableName, recordId } = req.query;
+    
+    // Đọc chính xác trường `timestamp` theo schema.prisma
     const logs = await prisma.systemAuditLog.findMany({
-      where: {
-        tableName: String(tableName),
-        recordId: String(recordId)
-      },
+      where: { tableName: String(tableName), recordId: String(recordId) },
       orderBy: { timestamp: 'desc' },
-      include: { user: { select: { fullName: true } } }
+      include: {
+        user: { select: { fullName: true } }
+      }
     });
-    res.json(logs);
+
+    const safeLogs = logs.map(log => ({
+      ...log,
+      tableName: log.tableName || "SYSTEM",
+      action: log.action || "SYSTEM_EVENT",
+      createdAt: log.timestamp,
+      module: log.tableName
+    }));
+
+    res.json(safeLogs);
   } catch (error: any) {
     res.status(500).json({ message: "Lỗi truy xuất chi tiết Audit Log", error: error.message });
   }

@@ -1,44 +1,60 @@
-// src/i18n.ts
 "use client";
 
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
+import HttpBackend from "i18next-http-backend"; // THÊM MỚI: Tự động Lazy-load file JSON qua HTTP
 
 // ==========================================
-// AUTO-LOAD LOCALE FILES (Tự động sinh bởi Máy quét)
+// TTH ENTERPRISE i18n CORE (Fully Automated)
+// Kiến trúc Lazy-load: Giảm tải Bundle Size, tự động mapping thư mục
 // ==========================================
-import enTranslation from "../public/locales/en/translation.json";
-import viTranslation from "../public/locales/vi/translation.json";
-
-const resources = {
-  en: { translation: enTranslation },
-  vi: { translation: viTranslation },
-};
 
 i18n
-  // Tự động nhận diện ngôn ngữ trình duyệt của User
+  // 1. Tự động tải file ngôn ngữ từ public/locales/{{lng}}/translation.json (Không cần import thủ công)
+  .use(HttpBackend)
+  // 2. Tự động nhận diện ngôn ngữ trình duyệt hoặc lưu trữ người dùng
   .use(LanguageDetector)
-  // Kết nối với React
+  // 3. Kết nối sâu vào vòng đời React
   .use(initReactI18next)
   .init({
-    resources,
-    fallbackLng: "vi", // Nếu lỗi, mặc định dùng Tiếng Việt
+    // --- CẤU HÌNH TỰ ĐỘNG HÓA ---
+    backend: {
+      // Đường dẫn API gọi tệp JSON ngôn ngữ tương ứng
+      loadPath: "/locales/{{lng}}/translation.json",
+    },
     
-    // Tắt tính năng tách key bằng dấu chấm (.) để hỗ trợ Natural Language Key
+    // Ngôn ngữ dự phòng nếu file ngôn ngữ mục tiêu bị lỗi hoặc không tìm thấy
+    fallbackLng: "vi", 
+    
+    // Khai báo danh sách mã ngôn ngữ hệ thống đang hỗ trợ (Mở rộng thoải mái: "fr", "ja", "ko"...)
+    supportedLngs: ["vi", "en"], 
+
+    // --- CẤU HÌNH NGỮ NGHĨA (NATURAL LANGUAGE) ---
+    // Tắt tính năng tách key bằng dấu chấm (.) để hỗ trợ Natural Language Key nguyên bản
+    // VD: t("Xin chào thế giới") thay vì t("greeting.hello")
     keySeparator: false,
     nsSeparator: false,
 
     interpolation: {
-      escapeValue: false, // React đã tự động chống XSS, không cần bật cái này
+      // React DOM đã tự động chống tấn công XSS (Cross-site scripting), nên tắt escape để tăng tốc độ parse
+      escapeValue: false, 
     },
     
+    // --- CẤU HÌNH NHẬN DIỆN VÀ ĐỒNG BỘ ---
     detection: {
-      // Ưu tiên lưu ngôn ngữ trong localStorage để đồng bộ với state Redux
+      // Ưu tiên đọc từ localStorage trước (để đồng bộ với State Redux), sau đó mới fallback về cài đặt của trình duyệt
       order: ["localStorage", "navigator"],
       caches: ["localStorage"],
       lookupLocalStorage: "app_lang",
     },
+
+    // --- CẤU HÌNH UX / HIỆU NĂNG TẢI ---
+    react: {
+      // Đặt false để ứng dụng tự fallback về tiếng Việt lập tức trong vài mili-giây JSON đang tải
+      // (Ngăn chặn lỗi vỡ UI nếu bạn chưa bọc <Suspense> ở Layout gốc)
+      useSuspense: false, 
+    }
   });
 
 export default i18n;

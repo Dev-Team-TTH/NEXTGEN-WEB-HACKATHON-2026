@@ -48,7 +48,7 @@ export interface ProductBatch {
   batchId: string;
   productId: string;
   batchNumber: string;
-  manufacturingDate?: string;
+  manufactureDate?: string;
   expiryDate?: string;
   isActive: boolean;
   product?: { name: string; productCode: string };
@@ -88,12 +88,47 @@ export interface InventoryTransaction {
   toWarehouse?: { name: string };
 }
 
+export interface AutoPickRequest {
+  warehouseId: string;
+  productId: string;
+  variantId?: string;
+  requiredQuantity: number;
+}
+
+export interface PickItem {
+  balanceId: string;
+  warehouseId: string;
+  productId: string;
+  variantId?: string | null;
+  binId?: string | null;
+  binCode: string;
+  batchId?: string | null;
+  batchNumber?: string | null;
+  expiryDate?: string | null;
+  availableQty: number;
+  quantity: number; // Số lượng hệ thống khuyên lấy ở lô/kệ này
+  unitCost: number;
+}
+
+export interface AutoPickResponse {
+  message: string;
+  isFulfilled: boolean;
+  shortage?: number;
+  totalPicked?: number;
+  picks: PickItem[];
+}
+
 export interface AssetMaintenance {
   maintenanceId: string;
-  maintenanceDate: string;
+  assetId?: string;
+  type: string;                  // [ĐÃ SỬA] PREVENTIVE | CORRECTIVE | UPGRADE
   description: string;
+  vendorId?: string | null;      // [ĐÃ SỬA] Map tới Supplier
   cost: number;
-  performedBy?: string;
+  startDate: string;             // [ĐÃ SỬA] Ngày mang đi bảo trì
+  completedDate?: string | null; // [ĐÃ SỬA] Ngày hoàn tất
+  nextDueDate?: string | null;   // [ĐÃ SỬA] Hạn bảo trì tiếp theo
+  vendor?: { name: string };     // Dữ liệu include từ Prisma
 }
 
 export interface AssetRevaluation {
@@ -119,6 +154,16 @@ export interface Asset {
   categoryId: string;
   category?: { name: string; code: string };
   department?: { name: string };
+}
+
+export interface RunDepreciationRequest {
+  fiscalPeriodId: string; // Kỳ kế toán muốn chạy khấu hao
+  branchId: string;       // Chi nhánh
+  description?: string;   // Diễn giải bút toán (không bắt buộc)
+}
+
+export interface RunDepreciationResponse {
+  message: string;
 }
 
 // Interface JournalLine chuẩn xác 100% để hiển thị Auto-complete Account/CostCenter
@@ -220,7 +265,7 @@ export interface DocumentTx {
   documentSnapshot?: any;
   fiscalPeriodId?: string;
   isLocked: boolean;
-  notes?: string;
+  note?: string;
 }
 
 export interface JournalEntry {
@@ -233,6 +278,23 @@ export interface JournalEntry {
   isPeriodClosed?: boolean; 
   reversalEntryId?: string; 
   isReversed?: boolean;     
+}
+
+export interface ProcessPaymentRequest {
+  amount: number;
+  paymentMethod: string; // "CASH" | "BANK" | ...
+  reference?: string;
+  note?: string;
+  cashAccountId?: string;
+  bankAccountId?: string;
+  branchId?: string;
+  fiscalPeriodId?: string;
+  
+  // Các trường phục vụ hạch toán Chênh lệch tỷ giá (FX)
+  paymentExchangeRate?: number;
+  arApAccountId?: string;
+  fxGainAccountId?: string;
+  fxLossAccountId?: string;
 }
 
 // --- TÀI CHÍNH CHUYÊN SÂU (REPORTS) ---
@@ -435,12 +497,12 @@ export interface LandedCost {
 
 export interface SystemAuditLog {
   logId: string;
-  userId: string;
+  userId?: string; 
   action: string;
-  entityName: string;
-  entityId: string;
-  oldValue?: string;
-  newValue?: string;
+  tableName: string; // Đã đổi từ entityName -> tableName
+  recordId: string;  // Đã đổi từ entityId -> recordId
+  oldValues?: any;   // Đã đổi từ oldValue -> oldValues
+  newValues?: any;   // Đã đổi từ newValue -> newValues
   timestamp: string;
   user?: { fullName: string; email: string };
 }
@@ -697,6 +759,9 @@ export const api = createApi({
     updateProduct: build.mutation<Product, { id: string; data: Partial<Product> }>({ query: ({ id, data }) => ({ url: `/products/${id}`, method: "PUT", body: data }), invalidatesTags: ["Products"] }),
     deleteProduct: build.mutation<void, string>({ query: (id) => ({ url: `/products/${id}`, method: "DELETE" }), invalidatesTags: ["Products"] }),
     getProductVariants: build.query<ProductVariant[], string>({ query: (id) => `/products/${id}/variants`, providesTags: ["ProductVariants"] }),
+    createProductVariant: build.mutation<ProductVariant, Partial<ProductVariant>>({ query: (body) => ({ url: "/products/variants", method: "POST", body }), invalidatesTags: ["ProductVariants", "Products", "Inventory"] }),
+    updateProductVariant: build.mutation<ProductVariant, { variantId: string; data: Partial<ProductVariant> }>({ query: ({ variantId, data }) => ({ url: `/products/variants/${variantId}`, method: "PUT", body: data }), invalidatesTags: ["ProductVariants", "Products", "Inventory"] }),
+    deleteProductVariant: build.mutation<void, string>({ query: (variantId) => ({ url: `/products/variants/${variantId}`, method: "DELETE" }), invalidatesTags: ["ProductVariants", "Products", "Inventory"] }),
     
     getProductBatches: build.query<ProductBatch[], string>({ query: (id) => `/products/${id}/batches`, providesTags: ["ProductBatches"] }),
     createProductBatch: build.mutation<ProductBatch, Partial<ProductBatch>>({ query: (body) => ({ url: "/products/batches", method: "POST", body }), invalidatesTags: ["ProductBatches", "Products"] }),
@@ -721,6 +786,10 @@ export const api = createApi({
     transferStock: build.mutation<any, any>({ 
       query: (body) => ({ url: "/inventory/transfer", method: "POST", body }), 
       invalidatesTags: ["Inventory", "Products", "Transactions"] 
+    }),
+
+    autoPickStock: build.mutation<AutoPickResponse, AutoPickRequest>({
+      query: (body) => ({ url: "/inventory/auto-pick", method: "POST", body })
     }),
 
     // ------------------------------------------
@@ -748,7 +817,11 @@ export const api = createApi({
       invalidatesTags: ["Assets", "Accounting", "Finance", "FinancialReports"] 
     }),
     liquidateAsset: build.mutation<any, { id: string; data: any }>({ query: ({ id, data }) => ({ url: `/assets/${id}/liquidate`, method: "POST", body: data }), invalidatesTags: ["Assets", "Accounting", "Finance", "FinancialReports"] }),
-    runAssetDepreciation: build.mutation<any, any>({ query: (body) => ({ url: `/assets/depreciation/run`, method: "POST", body }), invalidatesTags: ["Assets", "Accounting", "Finance", "FinancialReports"] }),
+    runAssetDepreciation: build.mutation<RunDepreciationResponse, RunDepreciationRequest>({ 
+      query: (body) => ({ url: `/assets/depreciation/run`, method: "POST", body }), 
+      // Chạy xong sẽ tự động refetch lại Tài sản, Sổ cái, Tài chính để báo cáo cập nhật tức thời
+      invalidatesTags: ["Assets", "Accounting", "Finance", "FinancialReports"] 
+    }),
     getAssetHistory: build.query<any, string>({ query: (id) => `/assets/${id}/history`, providesTags: ["Assets"] }),
 
     getAssetRequests: build.query<any[], any>({ query: (params) => ({ url: "/assets/requests/all", params }), providesTags: ["AssetRequests"] }),
@@ -877,7 +950,14 @@ export const api = createApi({
     deleteJournalEntry: build.mutation<void, string>({ query: (id) => ({ url: `/accounting/journal-entries/${id}`, method: "DELETE" }), invalidatesTags: ["Accounting"] }),
     postJournalEntry: build.mutation<any, string>({ query: (id) => ({ url: `/accounting/journal-entries/${id}/post`, method: "POST" }), invalidatesTags: ["Accounting", "Dashboard", "Finance", "FinancialReports"] }),
     reverseJournalEntry: build.mutation<any, { id: string; data: any }>({ query: ({ id, data }) => ({ url: `/accounting/journal-entries/${id}/reverse`, method: "POST", body: data }), invalidatesTags: ["Accounting", "Dashboard", "Finance", "FinancialReports"] }),
-    processPayment: build.mutation<any, { documentId: string; data: any }>({ query: ({ documentId, data }) => ({ url: `/accounting/documents/${documentId}/pay`, method: "POST", body: data }), invalidatesTags: ["Accounting", "Transactions", "Dashboard", "Finance", "FinancialReports"] }),
+    processPayment: build.mutation<any, { documentId: string; data: ProcessPaymentRequest }>({ 
+      query: ({ documentId, data }) => ({ url: `/accounting/documents/${documentId}/pay`, method: "POST", body: data }), 
+      invalidatesTags: ["Accounting", "Transactions", "Dashboard", "Finance", "FinancialReports"] 
+    }),
+    getActiveExchangeRates: build.query<any[], void>({ 
+      query: () => "/finance-setup/exchange-rates/active", 
+      providesTags: ["Finance"] 
+    }),
 
     getAccounts: build.query<Account[], any>({ query: (params) => ({ url: "/finance-setup/accounts", params }), providesTags: ["Accounts"] }),
     createAccount: build.mutation<Account, Partial<Account>>({ query: (body) => ({ url: "/finance-setup/accounts", method: "POST", body }), invalidatesTags: ["Accounts", "FinancialReports"] }),
@@ -918,7 +998,9 @@ export const api = createApi({
     createBudget: build.mutation<Budget, Partial<Budget>>({ query: (body) => ({ url: "/advanced-finance/budgets", method: "POST", body }), invalidatesTags: ["Budgets"] }),
     updateBudget: build.mutation<Budget, { id: string; data: Partial<Budget> }>({ query: ({ id, data }) => ({ url: `/advanced-finance/budgets/${id}`, method: "PUT", body: data }), invalidatesTags: ["Budgets"] }),
     deleteBudget: build.mutation<void, string>({ query: (id) => ({ url: `/advanced-finance/budgets/${id}`, method: "DELETE" }), invalidatesTags: ["Budgets"] }),
-
+    calculateDynamicPrice: build.mutation<{ finalPrice: number, appliedPriceList: string | null }, { partnerId: string, partnerType: "CUSTOMER" | "SUPPLIER", productId: string, variantId?: string, quantity: number }>({
+      query: (body) => ({ url: "/advanced-finance/calculate-price", method: "POST", body })
+    }),
   }),
 });
 
@@ -998,6 +1080,9 @@ export const {
   useUpdateProductMutation,
   useDeleteProductMutation,
   useGetProductVariantsQuery,
+  useCreateProductVariantMutation,
+  useUpdateProductVariantMutation,
+  useDeleteProductVariantMutation,
   useGetProductBatchesQuery,
   useCreateProductBatchMutation,
   useUpdateProductBatchMutation,
@@ -1012,6 +1097,7 @@ export const {
   useGetInventoryTransactionsQuery,
   useAdjustStockMutation,
   useTransferStockMutation,
+  useAutoPickStockMutation,
 
   // --- E. Assets & Asset Master ---
   useGetAssetCategoriesQuery,
@@ -1092,6 +1178,7 @@ export const {
   usePostJournalEntryMutation,
   useReverseJournalEntryMutation,
   useProcessPaymentMutation,
+  useGetActiveExchangeRatesQuery,
   
   useGetAccountsQuery,
   useCreateAccountMutation,
@@ -1110,5 +1197,6 @@ export const {
   useAddExchangeRateMutation, useDeleteExchangeRateMutation,
   useGetPriceListsQuery, useCreatePriceListMutation, useUpdatePriceListMutation, useDeletePriceListMutation,
   useGetBudgetsQuery, useCreateBudgetMutation, useUpdateBudgetMutation, useDeleteBudgetMutation,
+  useCalculateDynamicPriceMutation,
 
 } = api;

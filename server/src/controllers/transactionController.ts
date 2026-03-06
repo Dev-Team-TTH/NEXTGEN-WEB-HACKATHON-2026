@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
-import { PrismaClient, TransactionType, MovementDirection, TransactionStatus, ActionType } from "@prisma/client";
+import { TransactionType, MovementDirection, TransactionStatus, ActionType } from "@prisma/client";
+import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
 
-const prisma = new PrismaClient();
 const getUserId = (req: Request) => (req as any).user?.userId || req.body.userId;
 
 // ==========================================
@@ -77,7 +77,7 @@ export const getDocumentById = async (req: Request, res: Response): Promise<void
 };
 
 // ==========================================
-// 2. TẠO PHIẾU GIAO DỊCH (CREATE DRAFT)
+// 2. TẠO PHIẾU GIAO DỊCH (CREATE DRAFT & UOM CONVERSION)
 // ==========================================
 export const createDocument = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -86,6 +86,13 @@ export const createDocument = async (req: Request, res: Response): Promise<void>
       currencyCode, exchangeRate, taxes, landedCosts, transactions
     } = req.body;
     const userId = getUserId(req);
+
+    // ⚡ [TÍNH NĂNG MỚI] 1. Lấy thông tin Sản phẩm & Hệ số quy đổi UOM trước khi xử lý
+    const productIds = transactions ? transactions.map((t: any) => t.productId) : [];
+    const productsInfo = await prisma.products.findMany({
+      where: { productId: { in: productIds } },
+      include: { uomConversions: true }
+    });
 
     const itemsTotal = transactions ? transactions.reduce((sum: number, tx: any) => sum + (Number(tx.quantity) * Number(tx.unitCost)), 0) : 0;
     const taxesTotal = taxes ? taxes.reduce((sum: number, t: any) => sum + Number(t.taxAmount), 0) : 0;
@@ -120,30 +127,57 @@ export const createDocument = async (req: Request, res: Response): Promise<void>
       }
 
       if (transactions && transactions.length > 0) {
-        await tx.inventoryTransaction.createMany({
-          data: transactions.map((t: any) => {
-            let movement: MovementDirection = MovementDirection.OUT;
-            if (type === "PURCHASE_RECEIPT" || type === "RETURN" || type === "PURCHASE_ORDER") {
-              movement = MovementDirection.IN;
-            }
+        const txData = transactions.map((t: any) => {
+          
+          // ⚡ [TÍNH NĂNG MỚI] 2. Thực thi Thuật toán Quy đổi Đơn vị tính
+          let baseQuantity = Number(t.quantity);
+          let baseUnitCost = Number(t.unitCost);
 
-            return {
-              documentId: doc.documentId,
-              branchId,
-              movementDirection: movement,
-              fromWarehouseId: t.fromWarehouseId || null,
-              toWarehouseId: t.toWarehouseId || null,
-              fromBinId: t.fromBinId || null,
-              toBinId: t.toBinId || null,
-              productId: t.productId,
-              variantId: t.variantId || null,
-              batchId: t.batchId || null,
-              quantity: Number(t.quantity),
-              unitCost: Number(t.unitCost),
-              totalCost: Number(t.quantity) * Number(t.unitCost),
-            };
-          })
+          if (t.uomId) {
+            const product = productsInfo.find(p => p.productId === t.productId);
+            // Nếu UOM người dùng truyền lên khác với UOM gốc của sản phẩm
+            if (product && product.uomId !== t.uomId) {
+              // Tìm hệ số quy đổi xuôi (Từ UOM truyền lên -> UOM gốc)
+              const conversion = product.uomConversions.find(c => c.fromUomId === t.uomId && c.toUomId === product.uomId);
+              if (conversion) {
+                baseQuantity = baseQuantity * Number(conversion.conversionFactor);
+                baseUnitCost = baseUnitCost / Number(conversion.conversionFactor);
+              } else {
+                // Tìm hệ số quy đổi ngược (Từ UOM gốc -> UOM truyền lên)
+                const revConversion = product.uomConversions.find(c => c.toUomId === t.uomId && c.fromUomId === product.uomId);
+                if (revConversion) {
+                  baseQuantity = baseQuantity / Number(revConversion.conversionFactor);
+                  baseUnitCost = baseUnitCost * Number(revConversion.conversionFactor);
+                } else {
+                  throw new Error(`Không tìm thấy hệ số quy đổi ĐVT hợp lệ cho sản phẩm [${product.name}]. Vui lòng cấu hình trong Master Data.`);
+                }
+              }
+            }
+          }
+
+          let movement: MovementDirection = MovementDirection.OUT;
+          if (type === "PURCHASE_RECEIPT" || type === "RETURN" || type === "PURCHASE_ORDER") {
+            movement = MovementDirection.IN;
+          }
+
+          return {
+            documentId: doc.documentId,
+            branchId,
+            movementDirection: movement,
+            fromWarehouseId: t.fromWarehouseId || null,
+            toWarehouseId: t.toWarehouseId || null,
+            fromBinId: t.fromBinId || null,
+            toBinId: t.toBinId || null,
+            productId: t.productId,
+            variantId: t.variantId || null,
+            batchId: t.batchId || null,
+            quantity: baseQuantity,        // Sử dụng SL đã quy đổi
+            unitCost: baseUnitCost,        // Sử dụng Đơn giá đã quy đổi
+            totalCost: baseQuantity * baseUnitCost,
+          };
         });
+
+        await tx.inventoryTransaction.createMany({ data: txData });
       }
       return doc;
     });
@@ -156,7 +190,7 @@ export const createDocument = async (req: Request, res: Response): Promise<void>
 };
 
 // ==========================================
-// 3. CẬP NHẬT CHỨNG TỪ (UPDATE DRAFT)
+// 3. CẬP NHẬT CHỨNG TỪ (UPDATE DRAFT & UOM)
 // ==========================================
 export const updateDocument = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
@@ -164,6 +198,13 @@ export const updateDocument = async (req: Request, res: Response): Promise<void>
   const userId = getUserId(req);
 
   try {
+    // Lấy thông tin UOM trước khi xử lý
+    const productIds = transactions ? transactions.map((t: any) => t.productId) : [];
+    const productsInfo = await prisma.products.findMany({
+      where: { productId: { in: productIds } },
+      include: { uomConversions: true }
+    });
+
     const updatedDocument = await prisma.$transaction(async (tx) => {
       const existingDoc = await tx.document.findUnique({ where: { documentId: id } });
       if (!existingDoc) throw new Error("Không tìm thấy chứng từ!");
@@ -189,21 +230,45 @@ export const updateDocument = async (req: Request, res: Response): Promise<void>
       }
 
       if (transactions && transactions.length > 0) {
-        await tx.inventoryTransaction.createMany({
-          data: transactions.map((t: any) => {
-            let movement: MovementDirection = MovementDirection.OUT;
-            if (existingDoc.type === "PURCHASE_RECEIPT" || existingDoc.type === "RETURN" || existingDoc.type === "PURCHASE_ORDER") {
-              movement = MovementDirection.IN;
+        const txData = transactions.map((t: any) => {
+          
+          // Thuật toán quy đổi tương tự phần Create
+          let baseQuantity = Number(t.quantity);
+          let baseUnitCost = Number(t.unitCost);
+
+          if (t.uomId) {
+            const product = productsInfo.find(p => p.productId === t.productId);
+            if (product && product.uomId !== t.uomId) {
+              const conversion = product.uomConversions.find(c => c.fromUomId === t.uomId && c.toUomId === product.uomId);
+              if (conversion) {
+                baseQuantity = baseQuantity * Number(conversion.conversionFactor);
+                baseUnitCost = baseUnitCost / Number(conversion.conversionFactor);
+              } else {
+                const revConversion = product.uomConversions.find(c => c.toUomId === t.uomId && c.fromUomId === product.uomId);
+                if (revConversion) {
+                  baseQuantity = baseQuantity / Number(revConversion.conversionFactor);
+                  baseUnitCost = baseUnitCost * Number(revConversion.conversionFactor);
+                } else {
+                  throw new Error(`Không tìm thấy hệ số quy đổi ĐVT hợp lệ cho sản phẩm [${product.name}]`);
+                }
+              }
             }
-            return {
-              documentId: id, branchId: existingDoc.branchId, movementDirection: movement,
-              fromWarehouseId: t.fromWarehouseId || null, toWarehouseId: t.toWarehouseId || null,
-              fromBinId: t.fromBinId || null, toBinId: t.toBinId || null,
-              productId: t.productId, variantId: t.variantId || null, batchId: t.batchId || null,
-              quantity: Number(t.quantity), unitCost: Number(t.unitCost), totalCost: Number(t.quantity) * Number(t.unitCost)
-            };
-          })
+          }
+
+          let movement: MovementDirection = MovementDirection.OUT;
+          if (existingDoc.type === "PURCHASE_RECEIPT" || existingDoc.type === "RETURN" || existingDoc.type === "PURCHASE_ORDER") {
+            movement = MovementDirection.IN;
+          }
+          return {
+            documentId: id, branchId: existingDoc.branchId, movementDirection: movement,
+            fromWarehouseId: t.fromWarehouseId || null, toWarehouseId: t.toWarehouseId || null,
+            fromBinId: t.fromBinId || null, toBinId: t.toBinId || null,
+            productId: t.productId, variantId: t.variantId || null, batchId: t.batchId || null,
+            quantity: baseQuantity, unitCost: baseUnitCost, totalCost: baseQuantity * baseUnitCost
+          };
         });
+
+        await tx.inventoryTransaction.createMany({ data: txData });
       }
 
       return await tx.document.update({
@@ -281,7 +346,6 @@ export const approveDocument = async (req: Request, res: Response): Promise<void
 
       // ==============================================================
       // LUỒNG 1: ĐƠN ĐẶT HÀNG MUA (PURCHASE ORDER)
-      // Chấp thuận về mặt giấy tờ, KHÔNG cập nhật Tồn kho hay Giá vốn.
       // ==============================================================
       if (doc.type === "PURCHASE_ORDER") {
         const finalizedDoc = await tx.document.update({
@@ -299,14 +363,12 @@ export const approveDocument = async (req: Request, res: Response): Promise<void
 
       // ==============================================================
       // LUỒNG 2: ĐƠN BÁN HÀNG (SALES ORDER) - NGHIỆP VỤ GIỮ CHỖ (ALLOCATION)
-      // Cập nhật tăng `lockedQty` (đóng băng tồn kho) để chống bán lẹm.
       // ==============================================================
       if (doc.type === "SALES_ORDER") {
         for (const item of doc.transactions) {
           const targetWarehouseId = item.fromWarehouseId!;
           const targetBinId = item.fromBinId;
 
-          // Kiểm tra tồn kho có đủ để giữ chỗ không
           const currentBalance = await tx.inventoryBalance.findUnique({
              where: {
               warehouseId_binId_productId_variantId_batchId: {
@@ -321,7 +383,6 @@ export const approveDocument = async (req: Request, res: Response): Promise<void
             throw new Error(`Sản phẩm [${item.product.name}] không đủ tồn kho khả dụng để lập đơn bán! (Tồn khả dụng: ${availableQty})`);
           }
 
-          // FIX: Cập nhật tăng số lượng giữ chỗ (lockedQty) sử dụng Atomic Increment
           await tx.inventoryBalance.upsert({
             where: {
               warehouseId_binId_productId_variantId_batchId: {
@@ -355,8 +416,6 @@ export const approveDocument = async (req: Request, res: Response): Promise<void
 
       // ==============================================================
       // LUỒNG 3: PHIẾU XUẤT/NHẬP KHO THỰC TẾ (RECEIPT, ISSUE, RETURN)
-      // Tính lại Tồn kho thực tế (quantity), Giá vốn bình quân (Moving Average) & Ghi sổ Kế toán (Auto-GL)
-      // FIX RACE CONDITION: Áp dụng Atomic Operations (increment/decrement) cho DB update
       // ==============================================================
       if (fiscalPeriodId) {
         const period = await tx.fiscalPeriod.findUnique({ where: { periodId: fiscalPeriodId } });
@@ -364,6 +423,17 @@ export const approveDocument = async (req: Request, res: Response): Promise<void
       }
 
       const glGrouped: Record<string, { inventoryAccount: string, cogsAccount: string, totalAmount: number }> = {};
+
+      // Tính toán Phân bổ Landed Cost
+      const landedCosts = await tx.landedCost.findMany({ where: { documentId: id } });
+      const totalLandedCost = landedCosts.reduce((sum, lc) => sum + Number(lc.amount), 0);
+      
+      const totalItemsValue = doc.transactions.reduce((sum, item) => {
+        if (item.movementDirection === MovementDirection.IN) {
+            return sum + (item.quantity * Number(item.unitCost));
+        }
+        return sum;
+      }, 0);
 
       for (const item of doc.transactions) {
         const invAcc = item.product.category.inventoryAccountId;
@@ -393,7 +463,6 @@ export const approveDocument = async (req: Request, res: Response): Promise<void
         let transactionTotalCost = 0;
 
         if (item.movementDirection === MovementDirection.OUT) {
-          // XUẤT KHO: Trừ atomic để tránh âm kho khi duyệt đồng thời
           if (!currentBalance || currentBalance.quantity < item.quantity) {
             throw new Error(`Sản phẩm ${item.product.name} không đủ tồn kho để xuất! (Tồn thực tế: ${currentBalance?.quantity || 0})`);
           }
@@ -421,15 +490,21 @@ export const approveDocument = async (req: Request, res: Response): Promise<void
             }
           });
 
-          // Chốt chặn cuối cùng: Nếu 2 tiến trình chạy qua findUnique cùng lúc, update xong lượng bị < 0 thì lập tức rollback
           if (updatedBal.quantity < 0) {
-             throw new Error(`Phát hiện xâm lấn dữ liệu! Tồn kho ${item.product.name} đã bị thay đổi bởi giao dịch khác trong tích tắc.`);
+             throw new Error(`Phát hiện xâm lấn dữ liệu! Tồn kho ${item.product.name} bị thay đổi bởi giao dịch khác.`);
           }
           finalNewQty = updatedBal.quantity;
 
         } else if (item.movementDirection === MovementDirection.IN) {
-          // NHẬP KHO: Cộng atomic, tính lại giá vốn bình quân
-          transactionTotalCost = item.quantity * Number(item.unitCost);
+          let baseItemTotalCost = item.quantity * Number(item.unitCost);
+          let allocatedLandedCost = 0;
+
+          if (totalItemsValue > 0 && totalLandedCost > 0) {
+            const itemWeight = baseItemTotalCost / totalItemsValue;
+            allocatedLandedCost = itemWeight * totalLandedCost;
+          }
+
+          transactionTotalCost = baseItemTotalCost + allocatedLandedCost;
 
           if (currentBalance) {
             const oldQty = currentBalance.quantity;
@@ -466,7 +541,6 @@ export const approveDocument = async (req: Request, res: Response): Promise<void
           }
         }
 
-        // Cập nhật lại lịch sử (Transactions) để báo cáo lấy số đúng
         await tx.inventoryTransaction.update({
           where: { transactionId: item.transactionId },
           data: { 
@@ -477,12 +551,18 @@ export const approveDocument = async (req: Request, res: Response): Promise<void
           }
         });
 
-        // Gom nhóm hạch toán kế toán (GL Grouping)
         const groupKey = `${invAcc}_${cogsAcc}`;
         if (!glGrouped[groupKey]) {
           glGrouped[groupKey] = { inventoryAccount: invAcc, cogsAccount: cogsAcc, totalAmount: 0 };
         }
         glGrouped[groupKey].totalAmount += transactionTotalCost;
+      }
+      
+      if (totalLandedCost > 0) {
+        await tx.landedCost.updateMany({
+          where: { documentId: id },
+          data: { isAllocated: true }
+        });
       }
 
       // TỰ ĐỘNG GHI SỔ KẾ TOÁN (AUTO-GL)

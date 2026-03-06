@@ -1,8 +1,7 @@
 import { Request, Response } from "express";
-import { PrismaClient, PaymentStatus, PostingStatus, ActionType } from "@prisma/client";
+import { PaymentStatus, PostingStatus, ActionType } from "@prisma/client";
+import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
-
-const prisma = new PrismaClient();
 
 // Hàm Helper trích xuất userId
 const getUserId = (req: Request) => (req as any).user?.userId || req.body.userId;
@@ -76,7 +75,7 @@ export const getJournalEntryById = async (req: Request, res: Response): Promise<
 };
 
 // ==========================================
-// 2. TẠO BÚT TOÁN THỦ CÔNG (CREATE JOURNAL ENTRY)
+// 2. TẠO BÚT TOÁN THỦ CÔNG (CREATE JOURNAL ENTRY & BUDGET CONTROL)
 // ==========================================
 export const createJournalEntry = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -121,6 +120,48 @@ export const createJournalEntry = async (req: Request, res: Response): Promise<v
           postingStatus: postingStatus || PostingStatus.DRAFT
         }
       });
+
+      // ==========================================
+      // [TÍNH NĂNG MỚI] 2.1 KIỂM SOÁT NGÂN SÁCH (BUDGET CONTROL)
+      // ==========================================
+      const entryYear = new Date(entryDate).getFullYear();
+
+      for (const line of lines) {
+        // Chỉ kiểm tra ngân sách nếu dòng này có gắn CostCenter và là số Nợ (Tăng chi phí)
+        if (line.costCenterId && Number(line.debit) > 0) {
+          
+          // Lấy thông tin Tài khoản để biết đây có phải là Tài khoản Chi phí (EXPENSE) không
+          const account = await tx.account.findUnique({ where: { accountId: line.accountId } });
+
+          if (account && account.type === "EXPENSE") {
+            // Tìm cấu hình Ngân sách của Trung tâm chi phí này trong năm nay
+            const budget = await tx.budget.findUnique({
+              where: { 
+                costCenterId_year: { costCenterId: line.costCenterId, year: entryYear } 
+              }
+            });
+
+            if (!budget) {
+              throw new Error(`Phòng ban / TT Chi phí [${line.costCenterId}] chưa được cấp Ngân sách cho năm ${entryYear}! Không thể ghi nhận chi phí.`);
+            }
+
+            const debitAmount = Number(line.debit);
+            const newUsedAmount = Number(budget.usedAmount) + debitAmount;
+            const budgetLimit = Number(budget.totalAmount);
+
+            // Nếu vượt ngân sách -> Chặn!
+            if (newUsedAmount > budgetLimit) {
+              throw new Error(`Khoản chi này vượt quá Ngân sách cho phép! (Ngân sách: ${budgetLimit}, Đã dùng: ${budget.usedAmount}, Cần chi thêm: ${debitAmount})`);
+            }
+
+            // Nếu hợp lệ -> Trừ tiền vào quỹ ngân sách
+            await tx.budget.update({
+              where: { budgetId: budget.budgetId },
+              data: { usedAmount: newUsedAmount }
+            });
+          }
+        }
+      }
 
       // 3. Tạo các dòng Nợ/Có (Journal Lines)
       await tx.journalLine.createMany({
@@ -346,11 +387,18 @@ export const reverseJournalEntry = async (req: Request, res: Response): Promise<
 // ==========================================
 export const processPayment = async (req: Request, res: Response): Promise<void> => {
   const { documentId } = req.params;
-  const { amount, paymentMethod, reference, note, cashAccountId, bankAccountId, branchId, fiscalPeriodId } = req.body;
-  const userId = getUserId(req);
+  const { 
+    amount, paymentMethod, reference, note, 
+    cashAccountId, bankAccountId, branchId, fiscalPeriodId,
+    paymentExchangeRate, // [NEW] Tỷ giá thực tế ngày thanh toán
+    arApAccountId,       // [NEW] Tài khoản Công nợ (131 hoặc 331)
+    fxGainAccountId,     // [NEW] Tài khoản Doanh thu HĐ Tài chính (VD: 515)
+    fxLossAccountId      // [NEW] Tài khoản Chi phí Tài chính (VD: 635)
+  } = req.body;
+  const userId = (req as any).user?.userId || req.body.userId;
 
   try {
-    const paymentAmount = Number(amount);
+    const paymentAmount = Number(amount); // Số tiền theo đồng tiền của Chứng từ (Ngoại tệ hoặc VND)
     if (paymentAmount <= 0) {
       res.status(400).json({ message: "Số tiền thanh toán phải lớn hơn 0" });
       return;
@@ -363,74 +411,118 @@ export const processPayment = async (req: Request, res: Response): Promise<void>
         include: { customer: true, supplier: true }
       });
       if (!doc) throw new Error("Không tìm thấy chứng từ!");
-      if (doc.status !== "COMPLETED") throw new Error("Chỉ có thể thanh toán chứng từ đã Hoàn tất/Được duyệt!");
-      if (doc.paymentStatus === PaymentStatus.PAID) throw new Error("Chứng từ này đã được thanh toán đủ!");
+      if (doc.status !== "COMPLETED") throw new Error("Chỉ có thể thanh toán chứng từ đã Hoàn tất!");
+      if (doc.paymentStatus === "PAID") throw new Error("Chứng từ này đã được thanh toán đủ!");
 
       const totalDocAmount = Number(doc.totalAmount);
       const currentPaid = Number(doc.paidAmount);
       const newPaidAmount = currentPaid + paymentAmount;
 
-      // Xử lý sai số dấu phẩy động
       if (newPaidAmount - totalDocAmount > 0.001) {
-        throw new Error(`Số tiền thanh toán vượt quá số nợ còn lại! (Còn nợ: ${totalDocAmount - currentPaid})`);
+        throw new Error(`Số tiền thanh toán vượt quá nợ còn lại! (Còn nợ: ${totalDocAmount - currentPaid})`);
       }
 
-      // 2. Xác định trạng thái thanh toán mới
-      // Nếu số tiền thanh toán gần bằng tổng tiền (sai số 0.001) thì coi như PAID
-      const newPaymentStatus: PaymentStatus = Math.abs(totalDocAmount - newPaidAmount) <= 0.001 ? PaymentStatus.PAID : PaymentStatus.PARTIAL;
+      const newPaymentStatus = Math.abs(totalDocAmount - newPaidAmount) <= 0.001 ? "PAID" : "PARTIAL";
 
-      // 3. Tạo Auto GL Bút toán Thanh toán (Nếu Frontend truyền lên Account)
+      // ==============================================================
+      // [TÍNH NĂNG MỚI]: THUẬT TOÁN CHÊNH LỆCH TỶ GIÁ (FX GAINS / LOSSES)
+      // ==============================================================
+      const originalRate = Number(doc.exchangeRate || 1);
+      const currentRate = Number(paymentExchangeRate || originalRate);
+      
+      let fxDifferenceBase = 0; // Số tiền chênh lệch (tính bằng Base Currency - VNĐ)
+      let isFxGain = false;
+      let isFxLoss = false;
+
+      // Nếu tỷ giá thanh toán khác tỷ giá gốc
+      if (currentRate !== originalRate) {
+        fxDifferenceBase = paymentAmount * Math.abs(currentRate - originalRate);
+
+        if (doc.type.includes("PURCHASE")) { 
+          // Mang tính chất CHI TIỀN (AP)
+          if (currentRate > originalRate) isFxLoss = true; // Mua ngoại tệ đắt hơn -> Lỗ
+          else isFxGain = true;                            // Mua ngoại tệ rẻ hơn -> Lãi
+        } else if (doc.type.includes("SALES")) { 
+          // Mang tính chất THU TIỀN (AR)
+          if (currentRate > originalRate) isFxGain = true; // Bán ngoại tệ được giá hơn -> Lãi
+          else isFxLoss = true;                            // Bán ngoại tệ mất giá -> Lỗ
+        }
+      }
+
       let journalId = null;
-      if (fiscalPeriodId && (cashAccountId || bankAccountId)) {
+      // Nếu có truyền Kỳ kế toán và cấu hình Tài khoản, sẽ sinh Bút toán Sổ cái tự động
+      if (fiscalPeriodId && (cashAccountId || bankAccountId) && arApAccountId) {
         const period = await tx.fiscalPeriod.findUnique({ where: { periodId: fiscalPeriodId } });
-        if (period?.isClosed) throw new Error("Kỳ kế toán để ghi bút toán thanh toán đã bị Khóa!");
+        if (period?.isClosed) throw new Error("Kỳ kế toán để ghi sổ đã bị Khóa!");
 
         const paymentAccount = paymentMethod === "CASH" ? cashAccountId : bankAccountId;
         
         const journal = await tx.journalEntry.create({
           data: {
             branchId: branchId || doc.branchId,
-            fiscalPeriodId,
-            documentId,
-            entryDate: new Date(),
-            description: `Thanh toán ${paymentMethod} cho phiếu ${doc.documentNumber}`,
-            createdById: userId,
-            postingStatus: PostingStatus.POSTED
+            fiscalPeriodId, documentId, entryDate: new Date(),
+            description: `Thanh toán ${paymentMethod} cho ${doc.documentNumber} (Tỷ giá: ${currentRate})`,
+            createdById: userId, postingStatus: "POSTED"
           }
         });
         journalId = journal.journalId;
 
-        // Giả lập đối ứng Công nợ (Trong thực tế cần truyền thêm AP/AR Account)
-        // Đây là ví dụ chung, nếu Thu tiền Khách (SALES) -> Nợ Tiền / Có Phải thu
-        // Nếu Trả tiền NCC (PURCHASE) -> Nợ Phải trả / Có Tiền
+        // Tính toán số tiền quy ra VNĐ
+        const baseAmountToClear = paymentAmount * originalRate; // Tiền VNĐ để xóa nợ gốc
+        const actualBaseAmountPaid = paymentAmount * currentRate; // Tiền VNĐ thực tế ra/vào túi
+
+        const journalLines = [];
+
+        if (doc.type.includes("PURCHASE")) {
+           // TRẢ TIỀN NHÀ CUNG CẤP (Nợ Công nợ / Có Tiền mặt)
+           journalLines.push({ journalId, accountId: arApAccountId, debit: baseAmountToClear, credit: 0, description: "Giảm công nợ NCC theo tỷ giá gốc" });
+           journalLines.push({ journalId, accountId: paymentAccount, debit: 0, credit: actualBaseAmountPaid, description: "Chi tiền thanh toán thực tế" });
+           
+           if (isFxLoss && fxDifferenceBase > 0) {
+             journalLines.push({ journalId, accountId: fxLossAccountId, debit: fxDifferenceBase, credit: 0, description: "Lỗ chênh lệch tỷ giá" });
+           } else if (isFxGain && fxDifferenceBase > 0) {
+             journalLines.push({ journalId, accountId: fxGainAccountId, debit: 0, credit: fxDifferenceBase, description: "Lãi chênh lệch tỷ giá" });
+           }
+        } else {
+           // THU TIỀN KHÁCH HÀNG (Nợ Tiền mặt / Có Công nợ)
+           journalLines.push({ journalId, accountId: paymentAccount, debit: actualBaseAmountPaid, credit: 0, description: "Thu tiền thanh toán thực tế" });
+           journalLines.push({ journalId, accountId: arApAccountId, debit: 0, credit: baseAmountToClear, description: "Giảm công nợ KH theo tỷ giá gốc" });
+
+           if (isFxLoss && fxDifferenceBase > 0) {
+             journalLines.push({ journalId, accountId: fxLossAccountId, debit: fxDifferenceBase, credit: 0, description: "Lỗ chênh lệch tỷ giá" });
+           } else if (isFxGain && fxDifferenceBase > 0) {
+             journalLines.push({ journalId, accountId: fxGainAccountId, debit: 0, credit: fxDifferenceBase, description: "Lãi chênh lệch tỷ giá" });
+           }
+        }
+
+        // Check an toàn: Đảm bảo Kế toán Kép Nợ = Có tuyệt đối
+        const totalDebit = journalLines.reduce((sum, line) => sum + line.debit, 0);
+        const totalCredit = journalLines.reduce((sum, line) => sum + line.credit, 0);
+        if (Math.abs(totalDebit - totalCredit) > 0.001) {
+           throw new Error(`Lỗi thuật toán Kế toán kép: Nợ (${totalDebit}) khác Có (${totalCredit})`);
+        }
+
+        await tx.journalLine.createMany({ data: journalLines });
       }
 
       // 4. Tạo Lịch sử Giao dịch Thanh toán
       const paymentTx = await tx.paymentTransaction.create({
         data: {
-          documentId,
-          journalEntryId: journalId,
-          amount: paymentAmount,
-          paymentMethod,
-          reference,
-          note,
-          processedById: userId
+          documentId, journalEntryId: journalId,
+          amount: paymentAmount, paymentMethod, reference, note, processedById: userId
         }
       });
 
       // 5. Cập nhật trạng thái chứng từ gốc
       await tx.document.update({
         where: { documentId },
-        data: {
-          paidAmount: newPaidAmount,
-          paymentStatus: newPaymentStatus
-        }
+        data: { paidAmount: newPaidAmount, paymentStatus: newPaymentStatus }
       });
 
-      await logAudit("PaymentTransaction", paymentTx.paymentId, "CREATE", null, { amount: paymentAmount, newStatus: newPaymentStatus }, userId, req.ip);
+      await logAudit("PaymentTransaction", paymentTx.paymentId, "CREATE", null, { amount: paymentAmount, fxDiff: fxDifferenceBase }, userId, req.ip);
     });
 
-    res.json({ message: "Ghi nhận thanh toán thành công!" });
+    res.json({ message: "Ghi nhận thanh toán và chênh lệch tỷ giá thành công!" });
   } catch (error: any) {
     res.status(400).json({ message: "Lỗi xử lý thanh toán", error: error.message });
   }

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { 
   getAccounts, createAccount, updateAccount, deleteAccount,
   getFiscalYears, createFiscalYear, toggleFiscalYearStatus,
-  getFiscalPeriods, toggleFiscalPeriodStatus
+  getFiscalPeriods, toggleFiscalPeriodStatus, getActiveExchangeRates
 } from "../controllers/financeSetupController";
 import { authenticateToken } from "../middleware/authMiddleware";
 
@@ -31,5 +31,6 @@ router.put("/years/:id/toggle-status", toggleFiscalYearStatus);
 // ------------------------------------------------------------------
 router.get("/periods", getFiscalPeriods);
 router.put("/periods/:id/toggle-status", toggleFiscalPeriodStatus);
+router.get("/exchange-rates/active", getActiveExchangeRates);
 
 export default router;

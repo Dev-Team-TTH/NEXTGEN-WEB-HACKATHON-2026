@@ -12,6 +12,7 @@ import relativeTime from "dayjs/plugin/relativeTime";
 import 'dayjs/locale/vi';
 
 // --- REDUX & API ---
+// Ghi chú: AuditLogType ở api.ts cần chứa các trường: tableName, recordId, action, oldValues, newValues, timestamp
 import { useGetSystemAuditLogsQuery, SystemAuditLog as AuditLogType } from "@/state/api";
 import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
 
@@ -22,26 +23,27 @@ dayjs.locale('vi');
 // HELPERS: DATA VIZ HÀNH ĐỘNG
 // ==========================================
 const getActionUI = (action: string) => {
-  const act = action.toUpperCase();
-  if (act.includes("CREATE") || act.includes("ADD") || act.includes("POST")) 
+  const act = action ? action.toUpperCase() : "UNKNOWN";
+  if (act.includes("CREATE") || act.includes("ADD") || act.includes("POST") || act.includes("SUBMIT")) 
     return { icon: PlusCircle, color: "text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-500/10 border-emerald-200", label: "TẠO MỚI" };
-  if (act.includes("UPDATE") || act.includes("EDIT") || act.includes("PUT")) 
+  if (act.includes("UPDATE") || act.includes("EDIT") || act.includes("PUT") || act.includes("APPROVE")) 
     return { icon: Edit3, color: "text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-500/10 border-blue-200", label: "CẬP NHẬT" };
-  if (act.includes("DELETE") || act.includes("REMOVE")) 
-    return { icon: Trash2, color: "text-rose-600 bg-rose-50 dark:text-rose-400 dark:bg-rose-500/10 border-rose-200", label: "XÓA" };
+  if (act.includes("DELETE") || act.includes("REMOVE") || act.includes("CANCEL") || act.includes("REJECT")) 
+    return { icon: Trash2, color: "text-rose-600 bg-rose-50 dark:text-rose-400 dark:bg-rose-500/10 border-rose-200", label: "XÓA/HỦY" };
   if (act.includes("LOGIN") || act.includes("LOGOUT")) 
     return { icon: LogIn, color: "text-purple-600 bg-purple-50 dark:text-purple-400 dark:bg-purple-500/10 border-purple-200", label: "HỆ THỐNG" };
   
   return { icon: Database, color: "text-slate-600 bg-slate-50 dark:text-slate-400 dark:bg-slate-500/10 border-slate-200", label: act };
 };
 
-// Hàm Parse JSON an toàn để hiển thị Diff
-const safeParseJSON = (str?: string) => {
-  if (!str) return null;
+// Hàm Parse JSON thông minh (Xử lý cả Object từ Prisma lẫn String)
+const safeParseJSON = (data?: any) => {
+  if (!data) return null;
+  if (typeof data === 'object') return JSON.stringify(data, null, 2);
   try {
-    return JSON.stringify(JSON.parse(str), null, 2);
+    return JSON.stringify(JSON.parse(data), null, 2);
   } catch (e) {
-    return str; // Nếu không phải JSON thì trả về chuỗi gốc
+    return String(data); 
   }
 };
 
@@ -52,41 +54,54 @@ export default function SystemAuditLog() {
   // --- STATE ---
   const [searchQuery, setSearchQuery] = useState("");
   const [filterAction, setFilterAction] = useState("ALL");
-  const [selectedLog, setSelectedLog] = useState<AuditLogType | null>(null);
+  // Sử dụng 'any' tạm thời trong modal để linh hoạt chứa các trường chuẩn từ Backend
+  const [selectedLog, setSelectedLog] = useState<any | null>(null);
 
-  // --- LẤY DỮ LIỆU (Giới hạn 100 logs gần nhất để tối ưu hiệu năng) ---
+  // --- LẤY DỮ LIỆU ---
   const { data: rawLogs = [], isLoading, isError, refetch, isFetching } = useGetSystemAuditLogsQuery({ limit: 100 });
 
-  // --- XỬ LÝ LỌC TRÊN CLIENT ---
+  // --- XỬ LÝ LỌC TRÊN CLIENT (SMART FILTER ENGINE) ---
   const logs = useMemo(() => {
-    return rawLogs.filter(log => {
-      const matchSearch = 
-        log.user?.fullName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        log.entityName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        log.action.toLowerCase().includes(searchQuery.toLowerCase());
+    return rawLogs.filter((log: any) => {
+      const searchLower = searchQuery.toLowerCase();
       
-      const matchFilter = filterAction === "ALL" || log.action.toUpperCase().includes(filterAction);
+      // Đồng bộ trường dữ liệu với schema.prisma (dùng tableName thay vì entityName)
+      const userName = (log.user?.fullName || log.userId || "").toLowerCase();
+      const tableName = (log.tableName || "").toLowerCase();
+      const actionName = (log.action || "").toLowerCase();
+      
+      const matchSearch = 
+        userName.includes(searchLower) ||
+        tableName.includes(searchLower) ||
+        actionName.includes(searchLower);
+      
+      const matchFilter = filterAction === "ALL" || actionName.toUpperCase().includes(filterAction);
       
       return matchSearch && matchFilter;
     });
   }, [rawLogs, searchQuery, filterAction]);
 
   // --- CỘT DATATABLE ---
-  const columns: ColumnDef<AuditLogType>[] = [
+  const columns: ColumnDef<any>[] = [
     {
       header: "Thời gian",
       accessorKey: "timestamp",
       sortable: true,
-      cell: (row) => (
-        <div className="flex flex-col">
-          <span className="font-bold text-slate-800 dark:text-slate-200 text-xs">
-            {dayjs(row.timestamp).format('HH:mm:ss')}
-          </span>
-          <span className="text-[10px] text-slate-500 mt-0.5">
-            {dayjs(row.timestamp).format('DD/MM/YYYY')}
-          </span>
-        </div>
-      )
+      cell: (row) => {
+        // Fallback thời gian phòng trường hợp backend trả về createdAt
+        const timeVal = row.timestamp || row.createdAt;
+        if (!timeVal) return <span>-</span>;
+        return (
+          <div className="flex flex-col">
+            <span className="font-bold text-slate-800 dark:text-slate-200 text-xs">
+              {dayjs(timeVal).format('HH:mm:ss')}
+            </span>
+            <span className="text-[10px] text-slate-500 mt-0.5">
+              {dayjs(timeVal).format('DD/MM/YYYY')}
+            </span>
+          </div>
+        );
+      }
     },
     {
       header: "Nhân viên (User)",
@@ -115,15 +130,15 @@ export default function SystemAuditLog() {
       }
     },
     {
-      header: "Đối tượng (Entity)",
-      accessorKey: "entityName",
+      header: "Bảng (Table) & Record ID",
+      accessorKey: "tableName",
       cell: (row) => (
         <div className="flex flex-col">
           <span className="text-xs font-bold text-slate-800 dark:text-white uppercase tracking-wider">
-            {row.entityName}
+            {row.tableName || "UNKNOWN"}
           </span>
-          <span className="text-[10px] text-slate-500 font-mono mt-0.5" title={row.entityId}>
-            ID: {row.entityId.substring(0, 8)}...
+          <span className="text-[10px] text-slate-500 font-mono mt-0.5" title={row.recordId}>
+            ID: {row.recordId ? `${row.recordId.substring(0, 8)}...` : "N/A"}
           </span>
         </div>
       )
@@ -172,7 +187,7 @@ export default function SystemAuditLog() {
           <div className="relative w-full md:w-80">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input 
-              type="text" placeholder="Tìm tên nhân viên, entity..." 
+              type="text" placeholder="Tìm tên nhân viên, bảng dữ liệu..." 
               value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500"
             />
@@ -184,7 +199,7 @@ export default function SystemAuditLog() {
             <option value="ALL">Tất cả Hành động</option>
             <option value="CREATE">Chỉ Tạo mới (Create)</option>
             <option value="UPDATE">Chỉ Cập nhật (Update)</option>
-            <option value="DELETE">Chỉ Xóa (Delete)</option>
+            <option value="DELETE">Chỉ Xóa/Hủy (Delete)</option>
           </select>
         </div>
         
@@ -208,14 +223,14 @@ export default function SystemAuditLog() {
           <DataTable 
             data={logs} 
             columns={columns} 
-            searchKey="entityName" // DataTable component local search (phụ trợ)
+            searchKey="tableName" // Thay đổi search key thành tableName
             searchPlaceholder="Tìm nhanh đối tượng..." 
             itemsPerPage={15} 
           />
         )}
       </div>
 
-      {/* 3. MODAL XEM CHI TIẾT DIFF (TRƯỢT TỪ PHẢI SANG - DRAWER) */}
+      {/* 3. MODAL XEM CHI TIẾT DIFF (TRƯỢT TỪ PHẢI SANG) */}
       <AnimatePresence>
         {selectedLog && (
           <motion.div
@@ -255,49 +270,49 @@ export default function SystemAuditLog() {
                   </div>
                   <div>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Clock className="w-3 h-3"/> Thời gian</p>
-                    <p className="text-sm font-semibold text-slate-800 dark:text-white">{dayjs(selectedLog.timestamp).format('HH:mm:ss - DD/MM/YYYY')}</p>
+                    <p className="text-sm font-semibold text-slate-800 dark:text-white">{dayjs(selectedLog.timestamp || selectedLog.createdAt).format('HH:mm:ss - DD/MM/YYYY')}</p>
                   </div>
                   <div className="col-span-2 flex items-center gap-3 pt-3 border-t border-slate-200 dark:border-slate-700/50">
                     <span className={`px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wider border ${getActionUI(selectedLog.action).color}`}>
-                      {selectedLog.action}
+                      {selectedLog.action || "UNKNOWN"}
                     </span>
                     <ArrowRight className="w-4 h-4 text-slate-400" />
-                    <span className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase">{selectedLog.entityName}</span>
+                    <span className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase">{selectedLog.tableName}</span>
                   </div>
                 </div>
 
-                {/* Diff Viewer (Data Viz) */}
+                {/* Diff Viewer (Data Viz) - Đồng bộ với schema.prisma (oldValues, newValues) */}
                 <div className="flex flex-col gap-4">
                   <h3 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
                     <Database className="w-4 h-4 text-blue-500" /> Thay đổi Dữ liệu (Payload)
                   </h3>
 
-                  {(!selectedLog.oldValue && !selectedLog.newValue) ? (
+                  {(!selectedLog.oldValues && !selectedLog.newValues) ? (
                     <div className="p-8 text-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl text-slate-500 text-sm">
-                      Không có chi tiết dữ liệu (Payload trống)
+                      Không có chi tiết thay đổi dữ liệu (Payload trống)
                     </div>
                   ) : (
                     <div className="flex flex-col gap-4">
-                      {/* Old Value (Màu đỏ nhạt) */}
-                      {selectedLog.oldValue && (
+                      {/* Old Values (Màu đỏ nhạt) */}
+                      {selectedLog.oldValues && (
                         <div className="flex flex-col rounded-xl overflow-hidden border border-rose-200 dark:border-rose-900/50">
                           <div className="bg-rose-50 dark:bg-rose-900/20 px-4 py-2 text-xs font-bold text-rose-700 dark:text-rose-400 border-b border-rose-200 dark:border-rose-900/50">
                             Dữ liệu Cũ (Before)
                           </div>
                           <pre className="p-4 text-[11px] font-mono text-slate-700 dark:text-slate-300 bg-white dark:bg-[#0d1321] overflow-x-auto scrollbar-thin">
-                            {safeParseJSON(selectedLog.oldValue)}
+                            {safeParseJSON(selectedLog.oldValues)}
                           </pre>
                         </div>
                       )}
 
-                      {/* New Value (Màu xanh lá nhạt) */}
-                      {selectedLog.newValue && (
+                      {/* New Values (Màu xanh lá nhạt) */}
+                      {selectedLog.newValues && (
                         <div className="flex flex-col rounded-xl overflow-hidden border border-emerald-200 dark:border-emerald-900/50 mt-2">
                           <div className="bg-emerald-50 dark:bg-emerald-900/20 px-4 py-2 text-xs font-bold text-emerald-700 dark:text-emerald-400 border-b border-emerald-200 dark:border-emerald-900/50">
                             Dữ liệu Mới (After)
                           </div>
                           <pre className="p-4 text-[11px] font-mono text-slate-700 dark:text-slate-300 bg-white dark:bg-[#0d1321] overflow-x-auto scrollbar-thin">
-                            {safeParseJSON(selectedLog.newValue)}
+                            {safeParseJSON(selectedLog.newValues)}
                           </pre>
                         </div>
                       )}

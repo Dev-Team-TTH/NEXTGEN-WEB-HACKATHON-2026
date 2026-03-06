@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
-import { PrismaClient, UserStatus } from "@prisma/client";
+import { UserStatus } from "@prisma/client";
+import prisma from "../prismaClient";
 import jwt from "jsonwebtoken";
 import speakeasy from "speakeasy";
 import qrcode from "qrcode";
@@ -8,7 +9,6 @@ import { hashPassword, comparePassword } from "../utils/hash";
 import { generateAccessToken, generateRefreshToken } from "../utils/jwt";
 import { AuthRequest } from "../middleware/authMiddleware";
 
-const prisma = new PrismaClient();
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "erp_v7_super_secret_key_refresh";
 
 // ==========================================

@@ -14,11 +14,21 @@ import { useGetOrganizationStructureQuery } from "@/state/api";
 // 1. INTERFACES (CẤU TRÚC DỮ LIỆU CÂY)
 // ==========================================
 interface OrgNode {
-  id: string;
+  // Bổ sung các ID động từ Prisma Schema để chống lỗi Missing Key
+  id?: string;
+  companyId?: string;
+  branchId?: string;
+  departmentId?: string;
+  
   name: string;
-  type: "COMPANY" | "BRANCH" | "DEPARTMENT" | "TEAM";
+  type?: "COMPANY" | "BRANCH" | "DEPARTMENT" | "TEAM";
   managerName?: string;
   headcount?: number;
+  
+  // Các relation lồng nhau từ Backend trả về
+  branches?: OrgNode[];
+  departments?: OrgNode[];
+  warehouses?: OrgNode[];
   children?: OrgNode[];
 }
 
@@ -28,7 +38,15 @@ interface OrgNode {
 const TreeNode = ({ node, level = 0 }: { node: OrgNode; level?: number }) => {
   const [isExpanded, setIsExpanded] = useState(level < 2); // Mặc định mở 2 cấp đầu
 
-  const hasChildren = node.children && node.children.length > 0;
+  // Tự động nhận diện loại Node dựa vào cấp bậc hoặc ID có sẵn nếu Backend không gửi trường 'type'
+  const nodeType = node.type 
+    || (node.companyId ? "COMPANY" : "") 
+    || (node.branchId ? "BRANCH" : "") 
+    || (node.departmentId ? "DEPARTMENT" : "TEAM");
+
+  // Gom các nhánh con thực tế lại (Do Prisma trả về các mảng branches, departments riêng biệt)
+  const actualChildren = node.children || node.branches || node.departments || node.warehouses || [];
+  const hasChildren = actualChildren.length > 0;
 
   // Data Viz & Theming dựa trên loại Entity
   const getTheme = (type: string) => {
@@ -41,7 +59,7 @@ const TreeNode = ({ node, level = 0 }: { node: OrgNode; level?: number }) => {
     }
   };
 
-  const theme = getTheme(node.type);
+  const theme = getTheme(nodeType);
   const Icon = theme.icon;
 
   return (
@@ -77,7 +95,7 @@ const TreeNode = ({ node, level = 0 }: { node: OrgNode; level?: number }) => {
         </div>
         
         {/* Badge cho Tổng Công ty */}
-        {node.type === "COMPANY" && <div className="absolute -top-2 -right-2 p-1.5 bg-amber-400 text-white rounded-full shadow-lg"><Star className="w-3 h-3 fill-current" /></div>}
+        {nodeType === "COMPANY" && <div className="absolute -top-2 -right-2 p-1.5 bg-amber-400 text-white rounded-full shadow-lg"><Star className="w-3 h-3 fill-current" /></div>}
       </div>
 
       {/* RENDER CÁC NHÁNH CON (RECURSIVE) */}
@@ -94,13 +112,17 @@ const TreeNode = ({ node, level = 0 }: { node: OrgNode; level?: number }) => {
             <div className="absolute top-0 bottom-0 left-[2.3rem] w-px bg-slate-200 dark:bg-slate-700 -z-10" />
             
             <div className="pl-12 flex flex-col gap-1 relative">
-              {node.children!.map((child, index) => (
-                <div key={child.id} className="relative">
-                  {/* Nhánh rẽ ngang */}
-                  <div className="absolute top-8 left-[-1.5rem] w-6 h-px bg-slate-200 dark:bg-slate-700 -z-10" />
-                  <TreeNode node={child} level={level + 1} />
-                </div>
-              ))}
+              {actualChildren.map((child, index) => {
+                // [GIẢI PHÁP SMART FALLBACK KEY]: Quét mọi loại ID có thể tồn tại trong object
+                const uniqueKey = child.companyId || child.branchId || child.departmentId || child.id || `node-${level}-${index}`;
+                return (
+                  <div key={uniqueKey} className="relative">
+                    {/* Nhánh rẽ ngang */}
+                    <div className="absolute top-8 left-[-1.5rem] w-6 h-px bg-slate-200 dark:bg-slate-700 -z-10" />
+                    <TreeNode node={child} level={level + 1} />
+                  </div>
+                );
+              })}
             </div>
           </motion.div>
         )}
@@ -113,7 +135,7 @@ const TreeNode = ({ node, level = 0 }: { node: OrgNode; level?: number }) => {
 // 3. COMPONENT CHÍNH: ORG CHART
 // ==========================================
 export default function OrganizationChart() {
-  // 👉 FETCH DATA TỪ API (Lấy cấu trúc dạng cây)
+  // 👉 FETCH DATA TỪ API (Lấy cấu trúc dạng cây từ Master Data)
   const { data: orgData, isLoading, isError, refetch } = useGetOrganizationStructureQuery();
 
   // --- ANIMATION CONFIG ---
@@ -157,16 +179,19 @@ export default function OrganizationChart() {
             <Loader2 className="w-10 h-10 animate-spin mb-4" />
             <p className="font-semibold text-slate-600 dark:text-slate-300">Đang vẽ sơ đồ phả hệ...</p>
           </div>
-        ) : !orgData ? (
+        ) : !orgData || (Array.isArray(orgData) && orgData.length === 0) ? (
            <div className="flex flex-col items-center justify-center h-full text-slate-400 opacity-50">
              <Network className="w-20 h-20 mb-4" />
              <p className="font-bold">Chưa có dữ liệu Tổ chức.</p>
            </div>
         ) : (
           <div className="min-w-[600px] w-full">
-            {/* Render gốc rễ của cây (Có thể API trả về mảng nhiều cty, hoặc 1 cty gốc) */}
             {Array.isArray(orgData) ? (
-              orgData.map((rootNode: OrgNode) => <TreeNode key={rootNode.id} node={rootNode} />)
+              orgData.map((rootNode: OrgNode, index: number) => {
+                // [GIẢI PHÁP SMART FALLBACK KEY]: Dành cho node Gốc
+                const uniqueKey = rootNode.companyId || rootNode.branchId || rootNode.id || `root-${index}`;
+                return <TreeNode key={uniqueKey} node={rootNode} />;
+              })
             ) : (
               <TreeNode node={orgData as OrgNode} />
             )}

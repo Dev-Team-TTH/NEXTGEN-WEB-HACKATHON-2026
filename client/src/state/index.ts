@@ -31,8 +31,10 @@ export interface InitialStateTypes {
   // --- C. Bối cảnh làm việc ERP (ERP Context) ---
   activeCompanyId: string | null;      
   activeBranchId: string | null;       
+  activeDepartmentId: string | null;   // [MỚI] Dùng cho Budget Control & Assets
   activeWarehouseId: string | null;    
   activeFiscalPeriodId: string | null; 
+  baseCurrency: string;                // [MỚI] Dùng cho Tỷ giá (FX Gains/Losses)
 }
 
 // ==========================================
@@ -49,8 +51,10 @@ const initialState: InitialStateTypes = {
   currentUser: null,
   activeCompanyId: null,
   activeBranchId: null,
+  activeDepartmentId: null,
   activeWarehouseId: null,
   activeFiscalPeriodId: null,
+  baseCurrency: "VND", // Mặc định là VNĐ
 };
 
 // ==========================================
@@ -92,7 +96,6 @@ export const globalSlice = createSlice({
     // LUỒNG 2: QUẢN LÝ XÁC THỰC (AUTH) VÀ PHỤC HỒI (REHYDRATION)
     // ------------------------------------------
     
-    // 🔥 TÍNH NĂNG MỚI & HOÀN THIỆN: Khôi phục toàn bộ (UI + Auth + Context) khi F5
     restoreSession: (state) => {
       if (typeof window !== "undefined") {
         // 1. Phục hồi trạng thái UI
@@ -100,11 +103,13 @@ export const globalSlice = createSlice({
         const storedDarkMode = localStorage.getItem("isDarkMode");
         const storedNotif = localStorage.getItem("isNotificationsEnabled");
         const storedLang = localStorage.getItem("language");
+        const storedCurrency = localStorage.getItem("baseCurrency");
 
         if (storedSidebar !== null) state.isSidebarCollapsed = storedSidebar === "true";
         if (storedDarkMode !== null) state.isDarkMode = storedDarkMode === "true";
         if (storedNotif !== null) state.isNotificationsEnabled = storedNotif === "true";
         if (storedLang !== null) state.language = storedLang;
+        if (storedCurrency !== null) state.baseCurrency = storedCurrency;
 
         // 2. Phục hồi trạng thái Auth
         const storedAccessToken = localStorage.getItem("accessToken");
@@ -114,10 +119,10 @@ export const globalSlice = createSlice({
         // 3. Phục hồi Bối cảnh ERP
         const storedCompanyId = localStorage.getItem("activeCompanyId");
         const storedBranchId = localStorage.getItem("activeBranchId");
+        const storedDepartmentId = localStorage.getItem("activeDepartmentId");
         const storedWarehouseId = localStorage.getItem("activeWarehouseId");
         const storedFiscalPeriodId = localStorage.getItem("activeFiscalPeriodId");
 
-        // BỨC TƯỜNG LỬA CHỐNG BẪY CHUỖI "undefined" HOẶC "null"
         if (storedAccessToken && storedAccessToken !== "undefined" && storedAccessToken !== "null") {
           state.accessToken = storedAccessToken;
           state.refreshToken = storedRefreshToken;
@@ -133,14 +138,14 @@ export const globalSlice = createSlice({
 
           if (storedCompanyId) state.activeCompanyId = storedCompanyId;
           if (storedBranchId) state.activeBranchId = storedBranchId;
+          if (storedDepartmentId) state.activeDepartmentId = storedDepartmentId;
           if (storedWarehouseId) state.activeWarehouseId = storedWarehouseId;
           if (storedFiscalPeriodId) state.activeFiscalPeriodId = storedFiscalPeriodId;
         } else {
-          // Nếu phát hiện rác "undefined", ra lệnh dọn dẹp sạch sẽ ngay lập tức
           localStorage.removeItem("accessToken");
           localStorage.removeItem("refreshToken");
           localStorage.removeItem("currentUser");
-          state.isAuthenticated = false; // Ép văng ra Login
+          state.isAuthenticated = false; 
         }
       }
     },
@@ -176,10 +181,15 @@ export const globalSlice = createSlice({
         }
       }
       
-      if (action.payload?.branchId && !state.activeBranchId) {
-        state.activeBranchId = action.payload.branchId;
-        if (typeof window !== "undefined") {
-          localStorage.setItem("activeBranchId", action.payload.branchId);
+      // Tự động gán Branch và Department mặc định từ User Profile vào ERP Context
+      if (action.payload) {
+        if (action.payload.branchId && !state.activeBranchId) {
+          state.activeBranchId = action.payload.branchId;
+          if (typeof window !== "undefined") localStorage.setItem("activeBranchId", action.payload.branchId);
+        }
+        if (action.payload.departmentId && !state.activeDepartmentId) {
+          state.activeDepartmentId = action.payload.departmentId;
+          if (typeof window !== "undefined") localStorage.setItem("activeDepartmentId", action.payload.departmentId);
         }
       }
     },
@@ -190,23 +200,35 @@ export const globalSlice = createSlice({
     setActiveCompanyId: (state, action: PayloadAction<string | null>) => {
       state.activeCompanyId = action.payload;
       state.activeBranchId = null;
+      state.activeDepartmentId = null;
       state.activeWarehouseId = null;
 
       if (typeof window !== "undefined") {
         if (action.payload) localStorage.setItem("activeCompanyId", action.payload);
         else localStorage.removeItem("activeCompanyId");
         localStorage.removeItem("activeBranchId");
+        localStorage.removeItem("activeDepartmentId");
         localStorage.removeItem("activeWarehouseId");
       }
     },
     setActiveBranchId: (state, action: PayloadAction<string | null>) => {
       state.activeBranchId = action.payload;
+      state.activeDepartmentId = null; // Chuyển chi nhánh thì reset phòng ban
       state.activeWarehouseId = null;
 
       if (typeof window !== "undefined") {
         if (action.payload) localStorage.setItem("activeBranchId", action.payload);
         else localStorage.removeItem("activeBranchId");
+        localStorage.removeItem("activeDepartmentId");
         localStorage.removeItem("activeWarehouseId");
+      }
+    },
+    setActiveDepartmentId: (state, action: PayloadAction<string | null>) => {
+      state.activeDepartmentId = action.payload;
+      
+      if (typeof window !== "undefined") {
+        if (action.payload) localStorage.setItem("activeDepartmentId", action.payload);
+        else localStorage.removeItem("activeDepartmentId");
       }
     },
     setActiveWarehouseId: (state, action: PayloadAction<string | null>) => {
@@ -225,6 +247,13 @@ export const globalSlice = createSlice({
         else localStorage.removeItem("activeFiscalPeriodId");
       }
     },
+    setBaseCurrency: (state, action: PayloadAction<string>) => {
+      state.baseCurrency = action.payload;
+
+      if (typeof window !== "undefined") {
+        localStorage.setItem("baseCurrency", action.payload);
+      }
+    },
 
     // ------------------------------------------
     // LUỒNG 4: ĐĂNG XUẤT TỔNG (LOGOUT)
@@ -236,18 +265,19 @@ export const globalSlice = createSlice({
       state.currentUser = null;
       state.activeCompanyId = null;
       state.activeBranchId = null;
+      state.activeDepartmentId = null;
       state.activeWarehouseId = null;
       state.activeFiscalPeriodId = null;
+      // Không clear baseCurrency, language, UI settings để giữ thói quen
 
       if (typeof window !== "undefined") {
-        // Chỉ xóa dữ liệu nhạy cảm và bối cảnh ERP. 
-        // CỐ TÌNH GIỮ LẠI: isDarkMode, language, isSidebarCollapsed để tôn trọng thói quen người dùng.
         const keysToRemove = [
           "accessToken", 
           "refreshToken", 
           "currentUser", 
           "activeCompanyId", 
           "activeBranchId", 
+          "activeDepartmentId",
           "activeWarehouseId", 
           "activeFiscalPeriodId"
         ];
@@ -274,8 +304,10 @@ export const {
 
   setActiveCompanyId,
   setActiveBranchId,
+  setActiveDepartmentId,
   setActiveWarehouseId,
-  setActiveFiscalPeriodId
+  setActiveFiscalPeriodId,
+  setBaseCurrency
 } = globalSlice.actions;
 
 export default globalSlice.reducer;

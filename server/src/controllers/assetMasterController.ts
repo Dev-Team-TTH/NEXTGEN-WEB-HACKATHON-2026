@@ -1,8 +1,7 @@
 import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
 
-const prisma = new PrismaClient();
 
 // ==========================================
 // 1. LẤY DANH SÁCH DANH MỤC TÀI SẢN (GET)

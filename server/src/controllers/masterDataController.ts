@@ -1,8 +1,6 @@
 import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
-
-const prisma = new PrismaClient();
 
 // Hàm Helper trích xuất userId
 const getUserId = (req: Request) => (req as any).user?.userId || req.body.userId;

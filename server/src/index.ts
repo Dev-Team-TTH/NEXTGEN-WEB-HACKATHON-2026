@@ -5,7 +5,7 @@ import morgan from "morgan";
 import dotenv from "dotenv";
 
 // ==========================================
-// IMPORT TOÀN BỘ CÁC ROUTES CỦA HỆ THỐNG
+// 1. IMPORT TOÀN BỘ CÁC ROUTES CỦA HỆ THỐNG
 // ==========================================
 import authRoutes from "./routes/authRoutes";
 import orgAndRbacRoutes from "./routes/orgAndRbacRoutes";
@@ -23,14 +23,21 @@ import approvalRoutes from "./routes/approvalRoutes";
 import approvalConfigRoutes from "./routes/approvalConfigRoutes";
 import dashboardRoutes from "./routes/dashboardRoutes";
 
+// ==========================================
+// 2. IMPORT CÁC CRONJOBS (TIẾN TRÌNH CHẠY NGẦM)
+// ==========================================
+import { startCronJobs } from "./utils/fxAutoUpdater";
+
 // Nạp biến môi trường từ file .env
 dotenv.config();
 
+// Khởi tạo ứng dụng Express
 const app: Application = express();
 const PORT = process.env.PORT || 5000;
+const apiPrefix = "/api/v1"; // Tiền tố phiên bản API chuẩn mực
 
 // ==========================================
-// 1. GLOBAL MIDDLEWARES (LÁ CHẮN BẢO VỆ)
+// 3. GLOBAL MIDDLEWARES (LÁ CHẮN BẢO VỆ)
 // ==========================================
 // Helmet giúp bảo vệ ứng dụng khỏi một số lỗ hổng web đã biết bằng cách thiết lập cấu hình HTTP headers phù hợp
 app.use(helmet()); 
@@ -50,45 +57,42 @@ app.use(express.json({ limit: "10mb" })); // Tăng giới hạn payload lên 10M
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // ==========================================
-// 2. ĐĂNG KÝ ROUTER (API ENDPOINTS)
+// 4. ĐĂNG KÝ ROUTER (API ENDPOINTS)
 // ==========================================
-// Tiền tố phiên bản API chuẩn mực
-const apiPrefix = "/api/v1";
 
-// --- 2.1. Authentication & Phân quyền (Security Core) ---
+// --- 4.1. Authentication & Phân quyền (Security Core) ---
 app.use(`${apiPrefix}/auth`, authRoutes);
 app.use(`${apiPrefix}/org-rbac`, orgAndRbacRoutes);
 
-// --- 2.2. Master Data & Cấu hình (Dữ liệu nền tảng) ---
+// --- 4.2. Master Data & Cấu hình (Dữ liệu nền tảng) ---
 app.use(`${apiPrefix}/master-data`, masterDataRoutes);
 app.use(`${apiPrefix}/asset-master`, assetMasterRoutes);
 app.use(`${apiPrefix}/finance-setup`, financeSetupRoutes);
 
-// --- 2.3. Sản phẩm & Tồn kho (WMS Core) ---
+// --- 4.3. Sản phẩm & Tồn kho (WMS Core) ---
 app.use(`${apiPrefix}/products`, productRoutes);
 app.use(`${apiPrefix}/inventory`, inventoryRoutes);
 
-// --- 2.4. Mua bán & Giao dịch kho (Transactions) ---
+// --- 4.4. Mua bán & Giao dịch kho (Transactions) ---
 app.use(`${apiPrefix}/transactions`, transactionRoutes);
 
-// --- 2.5. Tài chính Kế toán (Accounting & Finance Core) ---
+// --- 4.5. Tài chính Kế toán (Accounting & Finance Core) ---
 app.use(`${apiPrefix}/accounting`, accountingRoutes);
 app.use(`${apiPrefix}/advanced-finance`, advancedFinanceRoutes);
 app.use(`${apiPrefix}/expenses`, expenseRoutes);
 
-// --- 2.6. Quản lý Tài sản (Enterprise Asset Management) ---
+// --- 4.6. Quản lý Tài sản (Enterprise Asset Management) ---
 app.use(`${apiPrefix}/assets`, assetRoutes);
 
-// --- 2.7. Quy trình Phê duyệt (Approval Workflows) ---
+// --- 4.7. Quy trình Phê duyệt (Approval Workflows) ---
 app.use(`${apiPrefix}/approval-config`, approvalConfigRoutes);
 app.use(`${apiPrefix}/approvals`, approvalRoutes);
 
-// --- 2.8. Báo cáo & Thống kê (Dashboard & Analytics) ---
+// --- 4.8. Báo cáo & Thống kê (Dashboard & Analytics) ---
 app.use(`${apiPrefix}/dashboard`, dashboardRoutes);
 
-
 // ==========================================
-// 3. HEALTH CHECK ENDPOINT
+// 5. HEALTH CHECK ENDPOINT
 // ==========================================
 // Dùng để AWS, Docker hoặc Load Balancer kiểm tra xem Server còn sống không
 app.get("/", (req: Request, res: Response) => {
@@ -101,17 +105,17 @@ app.get("/", (req: Request, res: Response) => {
 });
 
 // ==========================================
-// 4. XỬ LÝ LỖI (GLOBAL ERROR HANDLING)
+// 6. XỬ LÝ LỖI (GLOBAL ERROR HANDLING)
 // ==========================================
 
-// 4.1. Bắt lỗi 404 (Route không tồn tại)
+// 6.1. Bắt lỗi 404 (Route không tồn tại)
 app.use((req: Request, res: Response, next: NextFunction) => {
   res.status(404).json({
     message: `Không tìm thấy endpoint: ${req.method} ${req.originalUrl}`
   });
 });
 
-// 4.2. Trạm bắt lỗi tập trung (Global Error Handler)
+// 6.2. Trạm bắt lỗi tập trung (Global Error Handler)
 // Ngăn chặn việc sập Node.js (App Crash) khi có lỗi không mong muốn xảy ra ở Controller
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error("[🔥 LỖI HỆ THỐNG]:", err.stack || err.message);
@@ -125,8 +129,13 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 });
 
 // ==========================================
-// 5. KHỞI ĐỘNG SERVER
+// 7. KÍCH HOẠT TIẾN TRÌNH & KHỞI ĐỘNG SERVER
 // ==========================================
+
+// 🚀 Kích hoạt Bot tự động cập nhật Tỷ giá ngoại tệ
+startCronJobs();
+
+// Bắt đầu lắng nghe các luồng kết nối
 app.listen(PORT, () => {
   console.log(`\n======================================================`);
   console.log(`🚀 Backend đang chạy mạnh mẽ tại cổng: ${PORT}`);

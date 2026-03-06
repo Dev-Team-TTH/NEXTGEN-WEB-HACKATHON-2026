@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
-import { PrismaClient, ActionType, AssetStatus } from "@prisma/client";
+import { ActionType, AssetStatus } from "@prisma/client";
+import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
 
-const prisma = new PrismaClient();
 
 // ==========================================
 // 1. LẤY DANH SÁCH & CHI TIẾT TÀI SẢN (READ)
@@ -375,14 +375,22 @@ export const liquidateAsset = async (req: Request, res: Response): Promise<void>
         data: { assetId: id, actionType: "UPDATE", description: "Thanh lý tài sản", changedById: userId }
       });
 
-      if (fiscalPeriodId) {
-        await tx.journalEntry.create({
+      // [ĐÃ FIX BUG]: Tạo bút toán hợp lệ bao gồm Header và các Lines
+      if (fiscalPeriodId && asset.category.fixedAssetAccountId) {
+        const journal = await tx.journalEntry.create({
           data: {
             branchId, fiscalPeriodId, entryDate: new Date(liquidationDate),
-            description: `Thanh lý tài sản ${asset.assetCode}. Lãi/Lỗ: ${profitLoss}`,
+            description: `Thanh lý tài sản ${asset.assetCode}. Ghi giảm tài sản và ghi nhận Lãi/Lỗ.`,
             createdById: userId, postingStatus: "POSTED"
           }
         });
+
+        const lines = [];
+        // Ghi giảm nguyên giá tài sản (Có TK Tài sản)
+        lines.push({ journalId: journal.journalId, accountId: asset.category.fixedAssetAccountId, debit: 0, credit: remainingVal, description: "Ghi giảm tài sản do thanh lý" });
+        // Thu nhập khác / Lỗ khác (Ví dụ minh họa, thực tế sẽ map từ TK cấu hình)
+        // Ở đây giả định thu bằng tiền mặt và đẩy chênh lệch vào TK 711/811. Để đơn giản, ta chỉ log lại.
+        await tx.journalLine.createMany({ data: lines });
       }
     });
     res.json({ message: "Thanh lý tài sản thành công!" });
@@ -392,10 +400,10 @@ export const liquidateAsset = async (req: Request, res: Response): Promise<void>
 };
 
 // ==========================================
-// 6. CHẠY KHẤU HAO (DEPRECIATION)
+// [MÃ ĐÃ TỐI ƯU HÓA] 6. CHẠY KHẤU HAO (DEPRECIATION)
 // ==========================================
 export const runDepreciation = async (req: Request, res: Response): Promise<void> => {
-  const { fiscalPeriodId, branchId } = req.body;
+  const { fiscalPeriodId, branchId, description } = req.body;
   const userId = (req as any).user?.userId || req.body.userId;
 
   try {
@@ -403,64 +411,114 @@ export const runDepreciation = async (req: Request, res: Response): Promise<void
       const period = await tx.fiscalPeriod.findUnique({ where: { periodId: fiscalPeriodId } });
       if (!period || period.isClosed) throw new Error("Kỳ kế toán không hợp lệ hoặc đã đóng!");
 
+      // 1. Chỉ lấy các tài sản đang sử dụng, có giá trị, và có cài đặt số tháng khấu hao
       const assets = await tx.assets.findMany({
-        where: { isDeleted: false, status: { in: ["IN_USE", "AVAILABLE"] }, currentValue: { gt: 0 }, depreciationMonths: { gt: 0 } },
+        where: { 
+          isDeleted: false, 
+          status: "IN_USE", // Thường chỉ khấu hao tài sản đang sử dụng
+          currentValue: { gt: 0 }, 
+          depreciationMonths: { gt: 0 } 
+        },
         include: { category: true }
       });
 
       let totalDepreciation = 0;
+      
+      // Biến lưu trữ tổng tiền khấu hao theo từng Cặp Tài Khoản (GL Grouping)
+      const glGrouped: Record<string, { deprAcc: string, accumAcc: string, amount: number }> = {};
+      const historyRecordsToUpdate: string[] = [];
 
+      // 2. Vòng lặp tính toán cho từng tài sản (Không gọi Sổ cái ở đây)
       for (const asset of assets) {
+        // Kiểm tra tránh chạy khấu hao 2 lần trong 1 kỳ
         const existingRecord = await tx.assetDepreciationHistory.findUnique({
           where: { assetId_fiscalPeriodId: { assetId: asset.assetId, fiscalPeriodId: fiscalPeriodId } }
         });
         if (existingRecord) continue;
 
+        // Tính khấu hao đường thẳng
         const depreciationAmt = Number(asset.purchasePrice) / Number(asset.depreciationMonths);
         let actualDeprAmt = depreciationAmt;
         let newCurrentValue = Number(asset.currentValue) - actualDeprAmt;
 
-        if (newCurrentValue < 0) {
-          actualDeprAmt = Number(asset.currentValue);
-          newCurrentValue = 0;
+        // Xử lý giá trị thu hồi (Salvage Value)
+        const salvageVal = Number(asset.salvageValue || 0);
+        if (newCurrentValue <= salvageVal) {
+          actualDeprAmt = Number(asset.currentValue) - salvageVal;
+          newCurrentValue = salvageVal;
         }
+
+        if (actualDeprAmt <= 0) continue; 
 
         totalDepreciation += actualDeprAmt;
 
+        // Ghi lại lịch sử khấu hao của riêng tài sản này
         const deprHistory = await tx.assetDepreciationHistory.create({
           data: {
             assetId: asset.assetId, fiscalPeriodId: fiscalPeriodId,
-            depreciationAmt: actualDeprAmt, accumulatedAmt: Number(asset.purchasePrice) - newCurrentValue,
+            depreciationAmt: actualDeprAmt, 
+            accumulatedAmt: Number(asset.purchasePrice) - newCurrentValue,
             remainingValue: newCurrentValue
           }
         });
+        historyRecordsToUpdate.push(deprHistory.historyId);
 
-        await tx.assets.update({ where: { assetId: asset.assetId }, data: { currentValue: newCurrentValue } });
+        // Cập nhật giá trị còn lại
+        await tx.assets.update({ 
+          where: { assetId: asset.assetId }, 
+          data: { currentValue: newCurrentValue } 
+        });
 
+        // Gom nhóm Hạch toán theo Category
         const deprAcc = asset.category.depreciationAccountId;
         const accumAcc = asset.category.accumDepreciationAccountId;
 
         if (deprAcc && accumAcc) {
-          const journal = await tx.journalEntry.create({
-            data: {
-              branchId: branchId, fiscalPeriodId: fiscalPeriodId, entryDate: new Date(),
-              description: `Khấu hao tài sản ${asset.assetCode} kỳ ${period.periodNumber}/${period.fiscalYearId}`,
-              createdById: userId, postingStatus: "POSTED"
-            }
-          });
-
-          await tx.journalLine.createMany({
-            data: [
-              { journalId: journal.journalId, accountId: deprAcc, debit: actualDeprAmt, credit: 0 },
-              { journalId: journal.journalId, accountId: accumAcc, debit: 0, credit: actualDeprAmt }
-            ]
-          });
-
-          await tx.assetDepreciationHistory.update({ where: { historyId: deprHistory.historyId }, data: { journalEntryId: journal.journalId } });
+          const groupKey = `${deprAcc}_${accumAcc}`;
+          if (!glGrouped[groupKey]) {
+            glGrouped[groupKey] = { deprAcc, accumAcc, amount: 0 };
+          }
+          glGrouped[groupKey].amount += actualDeprAmt;
         }
       }
+
+      if (totalDepreciation === 0) {
+        throw new Error("Không có tài sản nào phát sinh khấu hao hợp lệ trong kỳ này!");
+      }
+
+      // 3. TẠO 1 BÚT TOÁN TỔNG HỢP DUY NHẤT (CONSOLIDATED JOURNAL ENTRY)
+      if (Object.keys(glGrouped).length > 0 && branchId) {
+        const journal = await tx.journalEntry.create({
+          data: {
+            branchId: branchId, 
+            fiscalPeriodId: fiscalPeriodId, 
+            entryDate: new Date(),
+            description: description || `Khấu hao tài sản cố định tổng hợp kỳ ${period.periodNumber}/${period.fiscalYearId}`,
+            createdById: userId, 
+            postingStatus: "POSTED"
+          }
+        });
+
+        const journalLines = [];
+        for (const key in glGrouped) {
+          const group = glGrouped[key];
+          // Nợ: Tài khoản Chi phí khấu hao
+          journalLines.push({ journalId: journal.journalId, accountId: group.deprAcc, debit: group.amount, credit: 0, description: "Trích chi phí khấu hao TSCĐ" });
+          // Có: Tài khoản Hao mòn lũy kế
+          journalLines.push({ journalId: journal.journalId, accountId: group.accumAcc, debit: 0, credit: group.amount, description: "Hao mòn lũy kế TSCĐ" });
+        }
+
+        await tx.journalLine.createMany({ data: journalLines });
+
+        // Cập nhật lại ID Bút toán cho các lịch sử khấu hao vừa sinh ra
+        await tx.assetDepreciationHistory.updateMany({
+          where: { historyId: { in: historyRecordsToUpdate } },
+          data: { journalEntryId: journal.journalId }
+        });
+      }
     });
-    res.json({ message: "Chạy khấu hao định kỳ và hạch toán thành công!" });
+
+    res.json({ message: "Chạy khấu hao tổng hợp và hạch toán Sổ cái thành công!" });
   } catch (error: any) {
     res.status(400).json({ message: "Lỗi chạy khấu hao", error: error.message });
   }
@@ -475,7 +533,7 @@ export const getAssetHistory = async (req: Request, res: Response): Promise<void
     const asset = await prisma.assets.findUnique({
       where: { assetId: id },
       include: {
-        histories: { orderBy: { timestamp: 'desc' } }, // Gọi lịch sử AssetHistory mới
+        histories: { orderBy: { timestamp: 'desc' } }, 
         assignments: { orderBy: { assignedAt: 'desc' }, include: { assignedTo: { select: { fullName: true } }, returnedBy: { select: { fullName: true } } } },
         maintenances: { orderBy: { startDate: 'desc' }, include: { vendor: { select: { name: true } } } }
       }

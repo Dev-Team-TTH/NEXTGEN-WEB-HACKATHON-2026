@@ -12,13 +12,13 @@ import { toast } from "react-hot-toast";
 // --- REDUX & API ---
 import { 
   useGetDocumentByIdQuery, 
-  useAllocateLandedCostMutation 
+  useUpdateDocumentMutation // [FIX TỬ HUYỆT 4] Sử dụng UpdateDocument chuẩn từ Controller
 } from "@/state/api";
 
 // ==========================================
 // 1. INTERFACES & HELPERS
 // ==========================================
-const formatVND = (val: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
+const formatVND = (val: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val || 0);
 
 interface AdditionalCost {
   id: number;
@@ -40,7 +40,7 @@ export default function LandedCostModal({ isOpen, onClose, documentId }: LandedC
   
   // --- API HOOKS ---
   const { data: document, isLoading: loadingDoc } = useGetDocumentByIdQuery(documentId || "", { skip: !isOpen || !documentId });
-  const [allocateLandedCost, { isLoading: isSubmitting }] = useAllocateLandedCostMutation();
+  const [updateDocument, { isLoading: isSubmitting }] = useUpdateDocumentMutation();
 
   // --- LOCAL STATE ---
   const [allocationMethod, setAllocationMethod] = useState<"VALUE" | "QUANTITY">("VALUE");
@@ -48,28 +48,45 @@ export default function LandedCostModal({ isOpen, onClose, documentId }: LandedC
     { id: Date.now(), costType: "FREIGHT", amount: "", reference: "" }
   ]);
 
-  // Reset form khi mở Modal
+  // Khởi tạo form thông minh: Nếu phiếu DRAFT đã có Landed Cost từ trước, load lại luôn!
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && document) {
       setAllocationMethod("VALUE");
-      setCosts([{ id: Date.now(), costType: "FREIGHT", amount: "", reference: "" }]);
+      
+      const existingCosts = (document as any).landedCosts || [];
+      if (existingCosts.length > 0) {
+        setCosts(existingCosts.map((lc: any, idx: number) => {
+          // Bóc tách ngược dữ liệu từ description (Format: "TYPE - Reference")
+          const parts = (lc.description || "").split(" - ");
+          const type = parts[0] as any;
+          const ref = parts.slice(1).join(" - ") || "";
+          
+          return {
+            id: Date.now() + idx,
+            costType: ["FREIGHT", "CUSTOMS", "INSURANCE", "OTHER"].includes(type) ? type : "OTHER",
+            amount: lc.amount,
+            reference: ref
+          };
+        }));
+      } else {
+        setCosts([{ id: Date.now(), costType: "FREIGHT", amount: "", reference: "" }]);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, document]);
 
   // --- THUẬT TOÁN TÍNH TOÁN & DATA VIZ ---
-  // Ép kiểu as any để truy xuất an toàn mảng chi tiết dòng hàng
   const items = useMemo(() => {
-    return (document as any)?.lines || (document as any)?.items || (document as any)?.documentLines || [];
+    return (document as any)?.transactions || [];
   }, [document]);
   
   // 1. Tổng giá trị gốc
   const totalBaseValue = useMemo(() => {
-    return items.reduce((sum: number, item: any) => sum + (item.totalPrice || (item.quantity * item.unitPrice) || 0), 0);
+    return items.reduce((sum: number, item: any) => sum + (Number(item.totalCost) || (Number(item.quantity) * Number(item.unitCost)) || 0), 0);
   }, [items]);
 
   // 2. Tổng số lượng
   const totalBaseQty = useMemo(() => {
-    return items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0);
+    return items.reduce((sum: number, item: any) => sum + (Number(item.quantity) || 0), 0);
   }, [items]);
 
   // 3. Tổng chi phí phát sinh thêm (Landed Costs)
@@ -81,9 +98,9 @@ export default function LandedCostModal({ isOpen, onClose, documentId }: LandedC
   const previewItems = useMemo(() => {
     if (totalBaseValue === 0 || items.length === 0) return [];
 
-    return items.map((item: any) => {
-      const itemBaseValue = item.totalPrice || (item.quantity * item.unitPrice) || 0;
-      const itemQty = item.quantity || 1;
+    return items.map((item: any, idx: number) => {
+      const itemBaseValue = Number(item.totalCost) || (Number(item.quantity) * Number(item.unitCost)) || 0;
+      const itemQty = Number(item.quantity) || 1;
       
       let allocatedAmount = 0;
       if (allocationMethod === "VALUE") {
@@ -98,7 +115,8 @@ export default function LandedCostModal({ isOpen, onClose, documentId }: LandedC
 
       return {
         ...item,
-        oldUnitPrice: item.unitPrice || 0,
+        id: item.transactionId || idx,
+        oldUnitPrice: Number(item.unitCost) || 0,
         allocatedAmount,
         newUnitPrice,
         newTotalValue,
@@ -116,7 +134,7 @@ export default function LandedCostModal({ isOpen, onClose, documentId }: LandedC
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!documentId) return;
+    if (!documentId || !document) return;
 
     const validCosts = costs.filter(c => Number(c.amount) > 0);
     if (validCosts.length === 0) {
@@ -124,20 +142,20 @@ export default function LandedCostModal({ isOpen, onClose, documentId }: LandedC
     }
 
     try {
-      const payload = {
-        documentId,
-        allocationMethod,
-        costs: validCosts.map(c => ({
-          type: c.costType,
-          amount: Number(c.amount),
-          reference: c.reference
+      // Chuẩn bị Payload để Update đè vào chứng từ Nháp
+      const payload: any = {
+        ...document, // Kéo theo mọi dữ liệu cũ (note, supplierId, currencyCode...)
+        
+        // Ghi đè mảng Landed Cost mới
+        landedCosts: validCosts.map(c => ({
+          description: `${c.costType} - ${c.reference || "Không có Ref"}`,
+          amount: Number(c.amount)
         }))
       };
 
-      // Payload được ép kiểu as any để bypass các ràng buộc Interface chưa chính xác từ backend
-      await allocateLandedCost(payload as any).unwrap();
+      await updateDocument({ id: documentId, data: payload }).unwrap();
       
-      toast.success("Phân bổ chi phí thành công! Giá vốn đã được làm lại.");
+      toast.success("Lưu Chi phí thành công! Bấm DUYỆT PHIẾU để hệ thống cấu thành Giá vốn.");
       onClose();
     } catch (err: any) {
       toast.error(err?.data?.message || "Lỗi hệ thống! Không thể ghi nhận bút toán.");
@@ -186,7 +204,7 @@ export default function LandedCostModal({ isOpen, onClose, documentId }: LandedC
                 <div>
                   <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">Phân bổ Chi phí Nhập khẩu</h2>
                   <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 mt-0.5 uppercase tracking-wider">
-                    Tham chiếu: {document?.documentNumber || documentId}
+                    Tham chiếu: {(document as any)?.documentNumber || documentId}
                   </p>
                 </div>
               </div>
@@ -280,7 +298,7 @@ export default function LandedCostModal({ isOpen, onClose, documentId }: LandedC
                                   />
                                 </div>
                                 <input 
-                                  type="text" placeholder="Số chứng từ..." value={cost.reference} onChange={(e)=>updateCost(cost.id, "reference", e.target.value)}
+                                  type="text" placeholder="Số tham chiếu..." value={cost.reference} onChange={(e)=>updateCost(cost.id, "reference", e.target.value)}
                                   className="flex-[0.8] px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-slate-400 transition-shadow"
                                 />
                               </div>
@@ -307,7 +325,7 @@ export default function LandedCostModal({ isOpen, onClose, documentId }: LandedC
                         </div>
                       </div>
 
-                      {/* Stacked Progress Bar Motion (Đã fix lỗi TypeScript 17001 gộp 2 thuộc tính style) */}
+                      {/* Stacked Progress Bar Motion */}
                       <div className="w-full h-4 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden flex shadow-inner mb-5">
                         <motion.div 
                           layout transition={{ type: "spring", stiffness: 120, damping: 25 }}
@@ -338,7 +356,7 @@ export default function LandedCostModal({ isOpen, onClose, documentId }: LandedC
                         <h4 className="text-sm font-bold text-slate-800 dark:text-white">Bảng Dự phóng Giá vốn Cấu thành (MAC)</h4>
                       </div>
                       
-                      <div className="overflow-x-auto flex-1 p-2">
+                      <div className="overflow-x-auto flex-1 p-2 scrollbar-hide">
                         <table className="w-full text-left text-sm whitespace-nowrap">
                           <thead className="text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100 dark:border-slate-700">
                             <tr>
@@ -351,10 +369,10 @@ export default function LandedCostModal({ isOpen, onClose, documentId }: LandedC
                           </thead>
                           <motion.tbody variants={listVariants} initial="hidden" animate="visible" className="divide-y divide-slate-100 dark:divide-slate-700/50">
                             {previewItems.map((item: any, idx: number) => (
-                              <motion.tr variants={itemVariants} key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
+                              <motion.tr variants={itemVariants} key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
                                 <td className="px-4 py-4">
                                   <p className="font-bold text-slate-800 dark:text-slate-200">{item.product?.name || item.description || "Sản phẩm"}</p>
-                                  <p className="text-[10px] text-slate-500 font-mono mt-0.5">{item.product?.sku || item.itemCode || `SKU-${idx}`}</p>
+                                  <p className="text-[10px] text-slate-500 font-mono mt-0.5">{item.product?.productCode || `SKU-${idx}`}</p>
                                 </td>
                                 <td className="px-4 py-4 text-right font-medium">{item.quantity}</td>
                                 <td className="px-4 py-4 text-right text-slate-500">{formatVND(item.oldUnitPrice)}</td>
@@ -395,11 +413,11 @@ export default function LandedCostModal({ isOpen, onClose, documentId }: LandedC
               </button>
               <button 
                 onClick={handleSubmit} 
-                disabled={isSubmitting || !document || totalAdditionalCost <= 0} 
+                disabled={isSubmitting || !document || totalAdditionalCost === 0} 
                 className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-bold rounded-xl shadow-xl shadow-blue-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
-                Xác nhận Phân bổ & Cập nhật Kho
+                Lưu vào Chứng Từ Nháp
               </button>
             </div>
 

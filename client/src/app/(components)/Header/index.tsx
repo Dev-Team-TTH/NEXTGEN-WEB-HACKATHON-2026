@@ -13,33 +13,42 @@ interface HeaderProps {
 }
 
 // ==========================================
-// COMPONENT: TIÊU ĐỀ TRANG (PAGE HEADER)
-// Tuân thủ Adaptive (Tự gập xuống dòng trên Mobile)
+// COMPONENT: TIÊU ĐỀ TRANG (PAGE HEADER ĐẲNG CẤP ENTERPRISE)
+// Tuân thủ 5 Tiêu chí: Thẩm mỹ, 60fps, Adaptive, Hiệu năng, Tinh tế
 // ==========================================
 export default function Header({ title, subtitle, rightNode }: HeaderProps) {
   return (
     <motion.div 
-      // Hiệu ứng xuất hiện: Trượt nhẹ từ trên xuống và rõ dần
-      initial={{ opacity: 0, y: -10 }}
+      // TỐI ƯU FPS: Chỉ animate những thuộc tính rẻ (opacity, y) và giao cho GPU xử lý
+      initial={{ opacity: 0, y: -15 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: "easeOut" }}
-      className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 sm:mb-8"
+      transition={{ duration: 0.4, ease: [0.25, 0.8, 0.25, 1] }} // Custom cubic-bezier cho độ mượt kiểu Apple
+      className="relative flex flex-col md:flex-row md:items-center justify-between gap-5 mb-8 sm:mb-10 transform-gpu will-change-transform w-full"
     >
-      {/* Khối Văn bản (Typography) */}
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-          {title}
-        </h1>
-        {subtitle && (
-          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-            {subtitle}
-          </p>
-        )}
+      {/* 1. HIỆU ỨNG KHÔNG GIAN TẠO CHIỀU SÂU (AMBIENT GLOW) */}
+      <div className="absolute -top-6 -left-6 w-32 h-32 bg-blue-500/10 dark:bg-blue-500/20 rounded-full blur-3xl pointer-events-none z-0" />
+      
+      {/* 2. KHỐI VĂN BẢN & MỎ NEO THỊ GIÁC */}
+      <div className="relative z-10 flex items-stretch gap-3.5 sm:gap-4">
+        {/* Accent Pillar: Thanh mỏ neo thị giác Gradient */}
+        <div className="w-1.5 shrink-0 rounded-full bg-gradient-to-b from-blue-600 via-indigo-600 to-purple-600 shadow-[0_0_12px_rgba(79,70,229,0.4)] dark:shadow-[0_0_16px_rgba(79,70,229,0.3)]" />
+        
+        <div className="flex flex-col justify-center py-0.5">
+          <h1 className="text-2xl sm:text-[28px] lg:text-3xl font-black tracking-tight text-slate-900 dark:text-white leading-none">
+            {title}
+          </h1>
+          {subtitle && (
+            <p className="text-[13px] sm:text-sm font-semibold text-slate-500 dark:text-slate-400 mt-1.5 sm:mt-2 max-w-xl leading-relaxed">
+              {subtitle}
+            </p>
+          )}
+        </div>
       </div>
 
-      {/* Khối Nút Bấm / Hành động (Call-to-Action Slot) */}
+      {/* 3. KHỐI NÚT BẤM (ADAPTIVE ACTION BAR) */}
+      {/* Tối ưu Mobile: flex-wrap cho phép các nút rớt dòng gọn gàng nếu thiếu không gian, thay vì bị bóp méo */}
       {rightNode && (
-        <div className="w-full sm:w-auto flex items-center justify-start sm:justify-end gap-3">
+        <div className="relative z-10 w-full md:w-auto flex flex-wrap items-center justify-start md:justify-end gap-3 mt-1 md:mt-0">
           {rightNode}
         </div>
       )}

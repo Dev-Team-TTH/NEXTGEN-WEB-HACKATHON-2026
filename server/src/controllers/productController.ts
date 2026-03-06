@@ -1,31 +1,29 @@
 import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import { ActionType, UserStatus } from "@prisma/client";
+import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
 
-const prisma = new PrismaClient();
-
-// Hàm Helper trích xuất userId an toàn
-const getUserId = (req: Request) => (req as any).user?.userId || req.body.userId;
+const getUserId = (req: Request) => (req as any).user?.userId || req.body?.userId;
 
 // ==========================================
-// 1. LẤY DANH SÁCH SẢN PHẨM (KÈM TỒN KHO THỰC TẾ)
+// 1. PRODUCTS (SẢN PHẨM CHÍNH)
 // ==========================================
 export const getProducts = async (req: Request, res: Response): Promise<void> => {
   try {
-    const search = req.query.search?.toString();
-    const categoryId = req.query.categoryId?.toString();
+    const { search, categoryId, status } = req.query;
 
     const products = await prisma.products.findMany({
       where: {
         isDeleted: false,
+        ...(categoryId && { categoryId: String(categoryId) }),
+        ...(status && { status: status as UserStatus }),
         ...(search && {
           OR: [
-            { name: { contains: search, mode: "insensitive" } },
-            { productCode: { contains: search, mode: "insensitive" } },
-            { barcode: { contains: search, mode: "insensitive" } },
-          ],
-        }),
-        ...(categoryId && { categoryId }),
+            { name: { contains: String(search), mode: 'insensitive' } },
+            { productCode: { contains: String(search), mode: 'insensitive' } },
+            { barcode: { contains: String(search), mode: 'insensitive' } }
+          ]
+        })
       },
       include: {
         category: { select: { name: true, code: true } },
@@ -34,43 +32,19 @@ export const getProducts = async (req: Request, res: Response): Promise<void> =>
         variants: { where: { isDeleted: false } },
         uomConversions: {
           include: { fromUom: { select: { name: true } }, toUom: { select: { name: true } } }
-        },
-        balances: true, // Lấy Balances để tính tổng tồn kho
+        }
       },
       orderBy: { createdAt: 'desc' }
     });
-
-    // Xử lý dữ liệu trả về: Tính tổng tồn kho (Quantity) và Tổng giá trị (Total Value)
-    const productsWithStock = products.map((product) => {
-      const totalStock = product.balances.reduce((sum, bal) => sum + bal.quantity, 0);
-      const totalLocked = product.balances.reduce((sum, bal) => sum + bal.lockedQty, 0);
-      const totalStockValue = product.balances.reduce((sum, bal) => sum + Number(bal.totalValue), 0);
-
-      return {
-        ...product,
-        totalStock,
-        totalLocked,
-        availableStock: totalStock - totalLocked,
-        totalStockValue,
-        // Ép kiểu Decimal sang Number cho Frontend dễ xử lý
-        price: Number(product.price),
-        purchasePrice: Number(product.purchasePrice),
-        standardCost: Number(product.standardCost)
-      };
-    });
-
-    res.json(productsWithStock);
+    res.json(products);
   } catch (error: any) {
-    res.status(500).json({ message: "Lỗi truy xuất danh sách Sản phẩm", error: error.message });
+    res.status(500).json({ message: "Lỗi truy xuất danh sách sản phẩm", error: error.message });
   }
 };
 
-// ==========================================
-// 2. LẤY CHI TIẾT MỘT SẢN PHẨM (GET BY ID)
-// ==========================================
 export const getProductById = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
   try {
+    const { id } = req.params;
     const product = await prisma.products.findUnique({
       where: { productId: id },
       include: {
@@ -79,9 +53,8 @@ export const getProductById = async (req: Request, res: Response): Promise<void>
         supplier: true,
         variants: { where: { isDeleted: false } },
         batches: { orderBy: { expiryDate: 'asc' } },
-        uomConversions: { include: { fromUom: true, toUom: true } },
-        balances: {
-          include: { warehouse: { select: { name: true } }, bin: { select: { name: true } } }
+        uomConversions: {
+          include: { fromUom: true, toUom: true }
         }
       }
     });
@@ -90,323 +63,384 @@ export const getProductById = async (req: Request, res: Response): Promise<void>
       res.status(404).json({ message: "Không tìm thấy sản phẩm!" });
       return;
     }
-
-    // Ép kiểu Decimal sang Number
-    const safeProduct = {
-      ...product,
-      price: Number(product.price),
-      purchasePrice: Number(product.purchasePrice),
-      standardCost: Number(product.standardCost)
-    };
-
-    res.json(safeProduct);
+    res.json(product);
   } catch (error: any) {
-    res.status(500).json({ message: "Lỗi lấy chi tiết sản phẩm", error: error.message });
+    res.status(500).json({ message: "Lỗi truy xuất chi tiết sản phẩm", error: error.message });
   }
 };
 
-// ==========================================
-// 3. TẠO SẢN PHẨM MỚI (TRANSACTION + AUTO DEFAULT VARIANT)
-// ==========================================
 export const createProduct = async (req: Request, res: Response): Promise<void> => {
   try {
     const {
-      productCode, name, barcode, price, purchasePrice, costingMethod,
-      uomId, categoryId, supplierId, reorderPoint,
-      hasVariants, hasBatches, variants, uomConversions
+      productCode, name, barcode, imageUrl, price, purchasePrice, standardCost, costingMethod,
+      uomId, categoryId, supplierId, reorderPoint, hasVariants, hasBatches, status
     } = req.body;
     const userId = getUserId(req);
 
-    const newProduct = await prisma.$transaction(async (tx) => {
-      // 1. Tạo Product gốc
-      const product = await tx.products.create({
+    const product = await prisma.$transaction(async (tx) => {
+      const newProd = await tx.products.create({
         data: {
-          productCode, name, barcode, 
-          price: Number(price), 
+          productCode, name, barcode, imageUrl,
+          price: Number(price || 0),
           purchasePrice: Number(purchasePrice || 0),
-          costingMethod: costingMethod || "MOVING_AVERAGE",
-          uomId, categoryId, supplierId,
+          standardCost: Number(standardCost || 0),
+          costingMethod, uomId, categoryId, supplierId,
           reorderPoint: Number(reorderPoint || 0),
           hasVariants: Boolean(hasVariants),
           hasBatches: Boolean(hasBatches),
-        },
+          status: status || "ACTIVE"
+        }
       });
-
-      // 2. Xử lý Variant (Biến thể)
-      if (hasVariants && variants && variants.length > 0) {
-        await tx.productVariant.createMany({
-          data: variants.map((v: any) => ({
-            productId: product.productId,
-            sku: v.sku,
-            attributes: JSON.stringify(v.attributes),
-            additionalPrice: Number(v.additionalPrice || 0)
-          }))
-        });
-      } else {
-        // TỰ ĐỘNG tạo 1 Variant mặc định nếu sản phẩm không có biến thể
-        await tx.productVariant.create({
-          data: {
-            productId: product.productId,
-            sku: `${product.productCode}-DEFAULT`,
-            attributes: JSON.stringify({ type: "default" }),
-            additionalPrice: 0
-          }
-        });
-      }
-
-      // 3. Xử lý Quy đổi Đơn vị tính (UoM Conversions)
-      if (uomConversions && uomConversions.length > 0) {
-        await tx.productUomConversion.createMany({
-          data: uomConversions.map((conv: any) => ({
-            productId: product.productId,
-            fromUomId: conv.fromUomId,
-            toUomId: uomId, // Quy về UoM gốc
-            conversionFactor: Number(conv.conversionFactor)
-          }))
-        });
-      }
-
-      return product;
+      return newProd;
     });
 
-    await logAudit("Products", newProduct.productId, "CREATE", null, newProduct, userId, req.ip);
-    res.status(201).json(newProduct);
+    await logAudit("Products", product.productId, ActionType.CREATE, null, product, userId, req.ip);
+    res.status(201).json(product);
   } catch (error: any) {
-    res.status(500).json({ message: "Lỗi tạo Sản phẩm", error: error.message });
+    res.status(400).json({ message: "Lỗi tạo sản phẩm", error: error.message });
   }
 };
 
-// ==========================================
-// 4. CẬP NHẬT SẢN PHẨM
-// ==========================================
 export const updateProduct = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
-  const updateData = { ...req.body };
-  const userId = getUserId(req);
-
-  // Xóa các trường không thuộc bảng Products
-  delete updateData.userId;
-  delete updateData.variants;
-  delete updateData.uomConversions;
-
   try {
-    const oldProduct = await prisma.products.findUnique({ where: { productId: id } });
-    if (!oldProduct || oldProduct.isDeleted) {
-      res.status(404).json({ message: "Sản phẩm không tồn tại hoặc đã bị xóa" });
-      return;
-    }
+    const { id } = req.params;
+    const updateData = { ...req.body };
+    const userId = getUserId(req);
+    delete updateData.userId;
 
-    if (updateData.price) updateData.price = Number(updateData.price);
-    if (updateData.purchasePrice) updateData.purchasePrice = Number(updateData.purchasePrice);
-    if (updateData.standardCost) updateData.standardCost = Number(updateData.standardCost);
+    if (updateData.price !== undefined) updateData.price = Number(updateData.price);
+    if (updateData.purchasePrice !== undefined) updateData.purchasePrice = Number(updateData.purchasePrice);
+    if (updateData.standardCost !== undefined) updateData.standardCost = Number(updateData.standardCost);
+    if (updateData.reorderPoint !== undefined) updateData.reorderPoint = Number(updateData.reorderPoint);
 
-    const updatedProduct = await prisma.products.update({
-      where: { productId: id },
-      data: updateData,
+    const updatedProduct = await prisma.$transaction(async (tx) => {
+      const existing = await tx.products.findUnique({ where: { productId: id } });
+      if (!existing || existing.isDeleted) throw new Error("Sản phẩm không tồn tại!");
+
+      return await tx.products.update({
+        where: { productId: id },
+        data: updateData
+      });
     });
 
-    await logAudit("Products", id, "UPDATE", oldProduct, updatedProduct, userId, req.ip);
-    res.json(updatedProduct);
+    await logAudit("Products", id, ActionType.UPDATE, null, updatedProduct, userId, req.ip);
+    res.json({ message: "Cập nhật sản phẩm thành công", product: updatedProduct });
   } catch (error: any) {
-    res.status(500).json({ message: "Lỗi cập nhật Sản phẩm", error: error.message });
+    res.status(400).json({ message: "Lỗi cập nhật sản phẩm", error: error.message });
   }
 };
 
-// ==========================================
-// 5. XÓA MỀM SẢN PHẨM (SOFT DELETE)
-// ==========================================
 export const deleteProduct = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
-  const userId = getUserId(req);
-
   try {
+    const { id } = req.params;
+    const userId = getUserId(req);
+
     await prisma.$transaction(async (tx) => {
-      // 1. Kiểm tra tồn kho
-      const balances = await tx.inventoryBalance.findMany({
-        where: { productId: id, quantity: { gt: 0 } }
-      });
-      if (balances.length > 0) {
-        throw new Error("Không thể xóa sản phẩm đang còn tồn kho thực tế!");
-      }
+      const existing = await tx.products.findUnique({ where: { productId: id } });
+      if (!existing || existing.isDeleted) throw new Error("Sản phẩm không tồn tại!");
 
-      // 2. Xóa mềm Variant
-      await tx.productVariant.updateMany({
-        where: { productId: id },
-        data: { isDeleted: true }
-      });
-
-      // 3. Xóa mềm Product
-      const deletedProduct = await tx.products.update({
+      await tx.products.update({
         where: { productId: id },
         data: { isDeleted: true, status: "INACTIVE" }
       });
-
-      await logAudit("Products", id, "DELETE", null, { isDeleted: true }, userId, req.ip);
     });
 
-    res.json({ message: "Đã vô hiệu hóa (xóa mềm) sản phẩm thành công!" });
+    await logAudit("Products", id, ActionType.DELETE, null, { isDeleted: true }, userId, req.ip);
+    res.json({ message: "Xóa sản phẩm thành công" });
   } catch (error: any) {
-    res.status(400).json({ message: "Lỗi xóa Sản phẩm", error: error.message });
+    res.status(400).json({ message: "Lỗi xóa sản phẩm", error: error.message });
   }
 };
 
 // ==========================================
-// 6. LẤY DANH SÁCH BIẾN THỂ (CHO WMS)
+// 2. PRODUCT VARIANTS (BIẾN THỂ SẢN PHẨM - NEW ✨)
 // ==========================================
+
 export const getProductVariants = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params; // productId
   try {
+    const { id } = req.params; // ID của sản phẩm cha
     const variants = await prisma.productVariant.findMany({
       where: { productId: id, isDeleted: false },
-      include: {
-        balances: {
-          where: { quantity: { gt: 0 } },
-          select: { warehouseId: true, binId: true, batchId: true, quantity: true, lockedQty: true }
-        }
-      },
       orderBy: { sku: 'asc' }
     });
     res.json(variants);
   } catch (error: any) {
-    res.status(500).json({ message: "Lỗi truy xuất danh sách biến thể", error: error.message });
+    res.status(500).json({ message: "Lỗi truy xuất biến thể", error: error.message });
+  }
+};
+
+export const createProductVariant = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { productId, sku, attributes, additionalPrice } = req.body;
+    const userId = getUserId(req);
+
+    const variant = await prisma.$transaction(async (tx) => {
+      const product = await tx.products.findUnique({ where: { productId } });
+      if (!product) throw new Error("Sản phẩm gốc không tồn tại!");
+      
+      // Auto kích hoạt flag biến thể của sản phẩm cha nếu nó đang tắt
+      if (!product.hasVariants) {
+        await tx.products.update({ where: { productId }, data: { hasVariants: true } });
+      }
+
+      const existingSku = await tx.productVariant.findUnique({ where: { sku } });
+      if (existingSku) throw new Error("Mã SKU biến thể đã tồn tại trong hệ thống!");
+
+      return await tx.productVariant.create({
+        data: {
+          productId, sku, attributes,
+          additionalPrice: Number(additionalPrice || 0)
+        }
+      });
+    });
+
+    await logAudit("ProductVariant", variant.variantId, ActionType.CREATE, null, variant, userId, req.ip);
+    res.status(201).json(variant);
+  } catch (error: any) {
+    res.status(400).json({ message: "Lỗi tạo biến thể sản phẩm", error: error.message });
+  }
+};
+
+export const updateProductVariant = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { variantId } = req.params;
+    const { sku, attributes, additionalPrice } = req.body;
+    const userId = getUserId(req);
+
+    const variant = await prisma.$transaction(async (tx) => {
+      const existing = await tx.productVariant.findUnique({ where: { variantId } });
+      if (!existing || existing.isDeleted) throw new Error("Biến thể không tồn tại!");
+
+      if (sku && sku !== existing.sku) {
+         const skuCheck = await tx.productVariant.findUnique({ where: { sku } });
+         if (skuCheck) throw new Error("Mã SKU này đã được sử dụng bởi biến thể khác!");
+      }
+
+      return await tx.productVariant.update({
+        where: { variantId },
+        data: {
+          sku: sku || existing.sku,
+          attributes: attributes || existing.attributes,
+          additionalPrice: additionalPrice !== undefined ? Number(additionalPrice) : existing.additionalPrice
+        }
+      });
+    });
+
+    await logAudit("ProductVariant", variantId, ActionType.UPDATE, null, variant, userId, req.ip);
+    res.json({ message: "Cập nhật biến thể thành công!", variant });
+  } catch (error: any) {
+    res.status(400).json({ message: "Lỗi cập nhật biến thể", error: error.message });
+  }
+};
+
+export const deleteProductVariant = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { variantId } = req.params;
+    const userId = getUserId(req);
+
+    await prisma.$transaction(async (tx) => {
+      const existing = await tx.productVariant.findUnique({ where: { variantId } });
+      if (!existing || existing.isDeleted) throw new Error("Biến thể không tồn tại!");
+
+      // Chuẩn Kế toán: Nếu đã nhập/xuất kho thì chỉ được Xóa Mềm (Soft delete)
+      const hasTx = await tx.inventoryTransaction.findFirst({ where: { variantId } });
+      if (hasTx) {
+        await tx.productVariant.update({
+          where: { variantId },
+          data: { isDeleted: true }
+        });
+      } else {
+        await tx.productVariant.delete({ where: { variantId } });
+      }
+    });
+
+    await logAudit("ProductVariant", variantId, ActionType.DELETE, null, { deleted: true }, userId, req.ip);
+    res.json({ message: "Xóa biến thể thành công!" });
+  } catch (error: any) {
+    res.status(400).json({ message: "Lỗi xóa biến thể", error: error.message });
   }
 };
 
 // ==========================================
-// 7. LẤY DANH SÁCH LÔ HÀNG (CHO WMS)
+// 3. PRODUCT BATCHES (LÔ HÀNG)
 // ==========================================
 export const getProductBatches = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params; // productId
   try {
+    const { id } = req.params; // productId
     const batches = await prisma.productBatch.findMany({
       where: { productId: id },
-      include: {
-        variant: { select: { sku: true, attributes: true } },
-        balances: {
-          where: { quantity: { gt: 0 } },
-          select: { warehouseId: true, binId: true, quantity: true }
-        }
-      },
+      include: { variant: { select: { sku: true, attributes: true } } },
       orderBy: { expiryDate: 'asc' }
     });
     res.json(batches);
   } catch (error: any) {
-    res.status(500).json({ message: "Lỗi truy xuất danh sách lô hàng", error: error.message });
+    res.status(500).json({ message: "Lỗi truy xuất lô hàng", error: error.message });
+  }
+};
+
+export const createProductBatch = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { productId, variantId, batchNumber, manufactureDate, expiryDate } = req.body;
+    const userId = getUserId(req);
+
+    const batch = await prisma.$transaction(async (tx) => {
+      const check = await tx.productBatch.findFirst({
+        where: { productId, batchNumber, variantId: variantId || null }
+      });
+      if (check) throw new Error(`Lô hàng ${batchNumber} đã tồn tại cho sản phẩm/biến thể này!`);
+
+      return await tx.productBatch.create({
+        data: {
+          productId,
+          variantId: variantId || null,
+          batchNumber,
+          manufactureDate: manufactureDate ? new Date(manufactureDate) : null,
+          expiryDate: expiryDate ? new Date(expiryDate) : null
+        }
+      });
+    });
+
+    await logAudit("ProductBatch", batch.batchId, ActionType.CREATE, null, batch, userId, req.ip);
+    res.status(201).json(batch);
+  } catch (error: any) {
+    res.status(400).json({ message: "Lỗi tạo lô hàng", error: error.message });
+  }
+};
+
+export const updateProductBatch = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { batchId } = req.params;
+    const { manufactureDate, expiryDate } = req.body;
+    const userId = getUserId(req);
+
+    const batch = await prisma.$transaction(async (tx) => {
+      const existing = await tx.productBatch.findUnique({ where: { batchId } });
+      if (!existing) throw new Error("Lô hàng không tồn tại!");
+
+      return await tx.productBatch.update({
+        where: { batchId },
+        data: {
+          manufactureDate: manufactureDate ? new Date(manufactureDate) : existing.manufactureDate,
+          expiryDate: expiryDate ? new Date(expiryDate) : existing.expiryDate
+        }
+      });
+    });
+
+    await logAudit("ProductBatch", batchId, ActionType.UPDATE, null, batch, userId, req.ip);
+    res.json({ message: "Cập nhật lô hàng thành công!", batch });
+  } catch (error: any) {
+    res.status(400).json({ message: "Lỗi cập nhật lô hàng", error: error.message });
+  }
+};
+
+export const deleteProductBatch = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { batchId } = req.params;
+    const userId = getUserId(req);
+
+    await prisma.$transaction(async (tx) => {
+      const hasTx = await tx.inventoryTransaction.findFirst({ where: { batchId } });
+      if (hasTx) throw new Error("Không thể xóa Lô hàng đã có lịch sử giao dịch! Vui lòng dùng lệnh Điều chỉnh kho nếu cần dọn rác.");
+
+      await tx.productBatch.delete({ where: { batchId } });
+    });
+
+    await logAudit("ProductBatch", batchId, ActionType.DELETE, null, { deleted: true }, userId, req.ip);
+    res.json({ message: "Xóa lô hàng thành công!" });
+  } catch (error: any) {
+    res.status(400).json({ message: "Lỗi xóa lô hàng", error: error.message });
   }
 };
 
 // ==========================================
-// 8. QUẢN LÝ BIẾN THỂ (VARIANTS) - CRUD ĐỘC LẬP
-// ==========================================
-export const createProductVariant = async (req: Request, res: Response): Promise<void> => {
-  const { productId, sku, attributes, additionalPrice } = req.body;
-  try {
-    const variant = await prisma.productVariant.create({
-      data: { productId, sku, attributes: JSON.stringify(attributes), additionalPrice: Number(additionalPrice) }
-    });
-    res.status(201).json(variant);
-  } catch (error: any) { res.status(400).json({ message: "Lỗi tạo Biến thể", error: error.message }); }
-};
-
-export const updateProductVariant = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params; const { sku, attributes, additionalPrice } = req.body;
-  try {
-    const variant = await prisma.productVariant.update({
-      where: { variantId: id },
-      data: { sku, attributes: JSON.stringify(attributes), additionalPrice: Number(additionalPrice) }
-    });
-    res.json(variant);
-  } catch (error: any) { res.status(400).json({ message: "Lỗi cập nhật", error: error.message }); }
-};
-
-export const deleteProductVariant = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
-  try {
-    await prisma.productVariant.update({ where: { variantId: id }, data: { isDeleted: true } });
-    res.json({ message: "Xóa biến thể thành công" });
-  } catch (error: any) { res.status(400).json({ message: "Lỗi xóa", error: error.message }); }
-};
-
-// ==========================================
-// 9. QUẢN LÝ LÔ HÀNG (BATCHES) - CRUD ĐỘC LẬP
-// ==========================================
-export const createProductBatch = async (req: Request, res: Response): Promise<void> => {
-  const { productId, variantId, batchNumber, manufactureDate, expiryDate } = req.body;
-  try {
-    const batch = await prisma.productBatch.create({
-      data: { 
-        productId, variantId: variantId || null, batchNumber, 
-        manufactureDate: manufactureDate ? new Date(manufactureDate) : null,
-        expiryDate: expiryDate ? new Date(expiryDate) : null
-      }
-    });
-    res.status(201).json(batch);
-  } catch (error: any) { res.status(400).json({ message: "Lỗi tạo Lô hàng", error: error.message }); }
-};
-
-export const updateProductBatch = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params; const { batchNumber, manufactureDate, expiryDate } = req.body;
-  try {
-    const batch = await prisma.productBatch.update({
-      where: { batchId: id },
-      data: { 
-        batchNumber,
-        manufactureDate: manufactureDate ? new Date(manufactureDate) : undefined,
-        expiryDate: expiryDate ? new Date(expiryDate) : undefined
-      }
-    });
-    res.json(batch);
-  } catch (error: any) { res.status(400).json({ message: "Lỗi cập nhật lô hàng", error: error.message }); }
-};
-
-export const deleteProductBatch = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
-  try {
-    // Xóa vật lý vì Lô rỗng không cần giữ lại, nếu đã có Transaction thì DB sẽ chặn lại (Cascade / Restrict)
-    await prisma.productBatch.delete({ where: { batchId: id } });
-    res.json({ message: "Xóa lô hàng thành công" });
-  } catch (error: any) { res.status(400).json({ message: "Không thể xóa Lô hàng đã có giao dịch kho!", error: error.message }); }
-};
-
-// ==========================================
-// 10. QUẢN LÝ QUY ĐỔI ĐVT (UOM CONVERSIONS)
+// 4. PRODUCT UOM CONVERSIONS (QUY ĐỔI ĐƠN VỊ TÍNH)
 // ==========================================
 export const getUomConversions = async (req: Request, res: Response): Promise<void> => {
-  const { productId } = req.query;
   try {
+    const { productId } = req.query;
     const conversions = await prisma.productUomConversion.findMany({
       where: { ...(productId && { productId: String(productId) }) },
-      include: { fromUom: true, toUom: true }
+      include: {
+        product: { select: { name: true, uomId: true } },
+        fromUom: { select: { name: true, code: true } },
+        toUom: { select: { name: true, code: true } }
+      }
     });
     res.json(conversions);
-  } catch (error: any) { res.status(500).json({ message: "Lỗi", error: error.message }); }
+  } catch (error: any) {
+    res.status(500).json({ message: "Lỗi truy xuất quy đổi ĐVT", error: error.message });
+  }
 };
 
 export const createUomConversion = async (req: Request, res: Response): Promise<void> => {
-  const { productId, fromUomId, toUomId, conversionFactor } = req.body;
   try {
-    const conv = await prisma.productUomConversion.create({
-      data: { productId, fromUomId, toUomId, conversionFactor: Number(conversionFactor) }
+    const { productId, fromUomId, toUomId, conversionFactor } = req.body;
+    const userId = getUserId(req);
+
+    if (fromUomId === toUomId) {
+      res.status(400).json({ message: "Đơn vị gốc và đơn vị đích không được trùng nhau!" });
+      return;
+    }
+
+    if (Number(conversionFactor) <= 0) {
+      res.status(400).json({ message: "Hệ số quy đổi phải lớn hơn 0!" });
+      return;
+    }
+
+    const conversion = await prisma.$transaction(async (tx) => {
+      const existing = await tx.productUomConversion.findFirst({
+        where: { productId, fromUomId, toUomId }
+      });
+      if (existing) throw new Error("Quy tắc quy đổi này đã tồn tại!");
+
+      return await tx.productUomConversion.create({
+        data: {
+          productId, fromUomId, toUomId,
+          conversionFactor: Number(conversionFactor)
+        }
+      });
     });
-    res.status(201).json(conv);
-  } catch (error: any) { res.status(400).json({ message: "Lỗi tạo quy đổi (Có thể đã tồn tại)", error: error.message }); }
+
+    await logAudit("ProductUomConversion", conversion.conversionId, ActionType.CREATE, null, conversion, userId, req.ip);
+    res.status(201).json(conversion);
+  } catch (error: any) {
+    res.status(400).json({ message: "Lỗi tạo quy đổi ĐVT", error: error.message });
+  }
 };
 
 export const updateUomConversion = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params; const { conversionFactor } = req.body;
   try {
-    const conv = await prisma.productUomConversion.update({
+    const { id } = req.params; 
+    const { conversionFactor } = req.body;
+    const userId = getUserId(req);
+
+    if (Number(conversionFactor) <= 0) {
+      res.status(400).json({ message: "Hệ số quy đổi phải lớn hơn 0!" });
+      return;
+    }
+
+    const conversion = await prisma.productUomConversion.update({
       where: { conversionId: id },
       data: { conversionFactor: Number(conversionFactor) }
     });
-    res.json(conv);
-  } catch (error: any) { res.status(400).json({ message: "Lỗi cập nhật", error: error.message }); }
+
+    await logAudit("ProductUomConversion", id, ActionType.UPDATE, null, conversion, userId, req.ip);
+    res.json({ message: "Cập nhật hệ số quy đổi thành công!", conversion });
+  } catch (error: any) {
+    res.status(400).json({ message: "Lỗi cập nhật quy đổi ĐVT", error: error.message });
+  }
 };
 
 export const deleteUomConversion = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
   try {
+    const { id } = req.params;
+    const userId = getUserId(req);
+
     await prisma.productUomConversion.delete({ where: { conversionId: id } });
-    res.json({ message: "Xóa quy đổi thành công" });
-  } catch (error: any) { res.status(400).json({ message: "Lỗi xóa", error: error.message }); }
+
+    await logAudit("ProductUomConversion", id, ActionType.DELETE, null, { deleted: true }, userId, req.ip);
+    res.json({ message: "Xóa quy tắc quy đổi thành công!" });
+  } catch (error: any) {
+    res.status(400).json({ message: "Lỗi xóa quy đổi ĐVT", error: error.message });
+  }
 };

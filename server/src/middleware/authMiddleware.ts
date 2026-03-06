@@ -1,19 +1,22 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
+// [GIẢI PHÁP CHUẨN KIẾN TRÚC] Import Prisma Client dùng chung (Singleton)
+import prisma from "../prismaClient";
+
 const JWT_SECRET = process.env.JWT_SECRET || "erp_v7_super_secret_key_access";
 
 // ==========================================
 // MỞ RỘNG INTERFACE CỦA EXPRESS REQUEST
 // ==========================================
+// Kích hoạt export chuẩn xác để 17 file Controller/Route nhận diện được
 export interface AuthRequest extends Request {
   user?: {
     userId: string;
-    email: string;
+    email?: string;
+    [key: string]: any;
   };
-  // ĐÃ THÊM: Lưu sẵn quyền và vai trò vào Request để các hàm sau không cần gọi DB nữa
+  // Lưu sẵn quyền và vai trò vào Request để các hàm sau không cần gọi DB nữa
   userRoles?: string[];
   userPermissions?: string[];
 }
@@ -69,7 +72,7 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
     let cachedData = userSecurityCache.get(userId);
 
     if (!cachedData || cachedData.exp < now) {
-      // Nâng cấp: Lấy luôn Roles và Permissions trong 1 lần query duy nhất
+      // Dùng chung Connection Pool từ prismaClient.ts, không gây sập DB nữa
       const user = await prisma.users.findUnique({
         where: { userId },
         include: {
@@ -129,15 +132,13 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
  */
 export const requirePermission = (requiredPermission: string) => {
   return (req: AuthRequest, res: Response, next: NextFunction): void => {
-    // Nếu mảng quyền không tồn tại hoặc không chứa mã quyền yêu cầu -> Chặn
     if (!req.userPermissions || !req.userPermissions.includes(requiredPermission)) {
       res.status(403).json({ 
         message: `Lỗi phân quyền: Bạn không có quyền thực hiện thao tác này! (Mã quyền yêu cầu: ${requiredPermission})` 
       });
       return;
     }
-    
-    next(); // Có quyền -> Đi tiếp
+    next(); 
   };
 };
 
@@ -150,14 +151,12 @@ export const requirePermission = (requiredPermission: string) => {
  */
 export const requireRole = (requiredRole: string) => {
   return (req: AuthRequest, res: Response, next: NextFunction): void => {
-    // Nếu mảng vai trò không tồn tại hoặc không chứa vai trò yêu cầu -> Chặn
     if (!req.userRoles || !req.userRoles.includes(requiredRole)) {
       res.status(403).json({ 
         message: `Lỗi truy cập: Chức năng này chỉ dành riêng cho vai trò [${requiredRole}]!` 
       });
       return;
     }
-
     next();
   };
 };

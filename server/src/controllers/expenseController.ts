@@ -1,8 +1,7 @@
 import { Request, Response } from "express";
-import { PrismaClient, PostingStatus, ActionType } from "@prisma/client";
+import { PostingStatus, ActionType } from "@prisma/client";
+import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
-
-const prisma = new PrismaClient();
 
 // Hàm Helper trích xuất userId an toàn
 const getUserId = (req: Request) => (req as any).user?.userId || req.body.userId;

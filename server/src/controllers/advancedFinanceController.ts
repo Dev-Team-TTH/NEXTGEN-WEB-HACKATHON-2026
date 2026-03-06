@@ -1,8 +1,7 @@
 import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
 
-const prisma = new PrismaClient();
 
 // ==========================================
 // 1. QUẢN LÝ THUẾ (TAX CODES)
@@ -300,5 +299,77 @@ export const deleteBudget = async (req: Request, res: Response): Promise<void> =
     res.json({ message: "Xóa Ngân sách thành công!" });
   } catch (error: any) {
     res.status(400).json({ message: "Lỗi xóa Ngân sách", error: error.message });
+  }
+};
+
+// ==========================================
+// ĐỘNG CƠ TÍNH GIÁ ĐỘNG (DYNAMIC PRICING ENGINE)
+// ==========================================
+export const calculateDynamicPrice = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { partnerId, partnerType, productId, variantId, quantity } = req.body;
+    
+    // 1. Lấy thông tin Sản phẩm (Giá gốc)
+    const product = await prisma.products.findUnique({ where: { productId } });
+    if (!product) throw new Error("Sản phẩm không tồn tại");
+
+    let basePrice = partnerType === "SUPPLIER" ? Number(product.purchasePrice || 0) : Number(product.price || 0);
+    
+    // Nếu có biến thể, cộng thêm giá trị của biến thể
+    if (variantId) {
+      const variant = await prisma.productVariant.findUnique({ where: { variantId } });
+      if (variant) basePrice += Number(variant.additionalPrice || 0);
+    }
+
+    if (!partnerId) {
+      res.json({ finalPrice: basePrice, appliedPriceList: null });
+      return;
+    }
+
+    // 2. Lấy thông tin Đối tác để tìm Bảng giá (PriceList) được áp dụng
+    let priceListId = null;
+    if (partnerType === "SUPPLIER") {
+      const supplier = await prisma.supplier.findUnique({ where: { supplierId: partnerId } });
+      priceListId = supplier?.priceListId;
+    } else {
+      const customer = await prisma.customer.findUnique({ where: { customerId: partnerId } });
+      priceListId = customer?.priceListId;
+    }
+
+    // Nếu đối tác không áp dụng Bảng giá riêng -> Trả về giá gốc
+    if (!priceListId) {
+      res.json({ finalPrice: basePrice, appliedPriceList: null });
+      return;
+    }
+
+    const today = new Date();
+
+    // 3. Quét Bảng giá để tìm mức chiết khấu/giá tốt nhất theo số lượng (Tiered Pricing)
+    const priceListItems = await prisma.priceListItem.findMany({
+      where: {
+        priceListId,
+        productId,
+        ...(variantId ? { variantId } : {}),
+        minQuantity: { lte: Number(quantity) }, // Chỉ lấy các mốc số lượng <= số lượng mua
+        OR: [
+          { validFrom: null, validTo: null },
+          { validFrom: { lte: today }, validTo: { gte: today } },
+          { validFrom: null, validTo: { gte: today } },
+          { validFrom: { lte: today }, validTo: null }
+        ]
+      },
+      orderBy: { minQuantity: 'desc' } // Ưu tiên mốc số lượng lớn nhất thỏa mãn
+    });
+
+    if (priceListItems.length > 0) {
+      // Đã tìm thấy giá ưu đãi!
+      res.json({ finalPrice: Number(priceListItems[0].price), appliedPriceList: priceListId });
+    } else {
+      // Bảng giá có tồn tại nhưng không chứa sản phẩm này hoặc chưa đủ điều kiện -> Trả giá gốc
+      res.json({ finalPrice: basePrice, appliedPriceList: null });
+    }
+
+  } catch (error: any) {
+    res.status(400).json({ message: "Lỗi tính toán giá", error: error.message });
   }
 };

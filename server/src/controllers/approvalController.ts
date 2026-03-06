@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
-import { PrismaClient, ApprovalStatus, TransactionStatus, ActionType } from "@prisma/client";
+import { ApprovalStatus, TransactionStatus, ActionType } from "@prisma/client";
+import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
 
-const prisma = new PrismaClient();
 
 // Hàm Helper trích xuất userId an toàn
 const getUserId = (req: Request) => (req as any).user?.userId || req.body.userId;
@@ -23,7 +23,7 @@ export const submitForApproval = async (req: Request, res: Response): Promise<vo
         throw new Error("Chỉ có thể gửi duyệt các chứng từ đang ở trạng thái Nháp (DRAFT) hoặc Bị từ chối (REJECTED)!");
       }
 
-      // 2. Tìm Quy trình duyệt (Workflow) tương ứng với Loại chứng từ (Document Type)
+      // 2. Tìm Quy trình duyệt (Workflow) tương ứng với Loại chứng từ
       const workflow = await tx.approvalWorkflow.findFirst({
         where: { 
           module: doc.type, 
@@ -36,15 +36,15 @@ export const submitForApproval = async (req: Request, res: Response): Promise<vo
         throw new Error(`Chưa có Quy trình phê duyệt nào được kích hoạt cho loại chứng từ [${doc.type}]. Vui lòng liên hệ Admin!`);
       }
 
-      // 3. Tạo Yêu cầu phê duyệt (Approval Request)
+      // 3. Tạo Yêu cầu phê duyệt
       const request = await tx.approvalRequest.create({
         data: {
           workflowId: workflow.workflowId,
           documentId: doc.documentId,
           requesterId: userId,
           status: ApprovalStatus.PENDING,
-          currentStep: 1, // Bắt đầu từ bước 1
-          requestSnapshot: JSON.parse(JSON.stringify(doc)) // Lưu lại trạng thái dữ liệu lúc gửi
+          currentStep: 1, 
+          requestSnapshot: JSON.parse(JSON.stringify(doc)) 
         }
       });
 
@@ -59,7 +59,7 @@ export const submitForApproval = async (req: Request, res: Response): Promise<vo
         data: {
           requestId: request.requestId,
           actionerId: userId,
-          action: "SUBMIT",
+          action: ActionType.SUBMIT,
           comments: comment || "Trình duyệt chứng từ", 
           stepOrder: 0
         }
@@ -94,7 +94,7 @@ export const getPendingApprovals = async (req: Request, res: Response): Promise<
       return;
     }
 
-    // 2. Tối ưu Query: Tìm tất cả các cấu hình Bước duyệt (ApprovalStep) mà User có quyền xử lý
+    // 2. Tìm tất cả các cấu hình Bước duyệt mà User có quyền xử lý
     const validSteps = await prisma.approvalStep.findMany({
       where: { roleId: { in: roleIds } },
       select: { workflowId: true, stepOrder: true }
@@ -105,13 +105,13 @@ export const getPendingApprovals = async (req: Request, res: Response): Promise<
       return;
     }
 
-    // 3. Xây dựng mảng điều kiện OR: Yêu cầu phải thuộc Workflow đó VÀ đang dừng ở đúng Bước (stepOrder) đó
+    // 3. Xây dựng mảng điều kiện OR
     const stepConditions = validSteps.map(step => ({
       workflowId: step.workflowId,
       currentStep: step.stepOrder
     }));
 
-    // 4. Lấy danh sách Request đang chờ duyệt khớp với điều kiện trên
+    // 4. Khai thác sức mạnh chuẩn của Schema: gọi thẳng "requester"
     const pendingRequests = await prisma.approvalRequest.findMany({
       where: {
         status: ApprovalStatus.PENDING,
@@ -119,8 +119,8 @@ export const getPendingApprovals = async (req: Request, res: Response): Promise<
       },
       include: {
         document: { select: { documentNumber: true, type: true, totalAmount: true, createdAt: true } },
-        requester: { select: { fullName: true, email: true } },
-        workflow: { select: { name: true } } // Đã xóa trường description vì không tồn tại trong DB
+        workflow: { select: { name: true } },
+        requester: { select: { fullName: true, email: true } }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -146,7 +146,7 @@ export const getMyRequests = async (req: Request, res: Response): Promise<void> 
         logs: { 
           orderBy: { createdAt: 'desc' }, 
           take: 1, // Lấy hành động mới nhất
-          include: { actioner: { select: { fullName: true } } }
+          include: { actioner: { select: { fullName: true } } } // Ánh xạ chuẩn từ schema
         }
       },
       orderBy: { createdAt: 'desc' }
@@ -168,9 +168,12 @@ export const getApprovalById = async (req: Request, res: Response): Promise<void
       where: { requestId: id },
       include: {
         document: { include: { transactions: { include: { product: true } }, taxes: true, landedCosts: true } },
-        requester: { select: { fullName: true, email: true } },
         workflow: { include: { steps: { include: { role: { select: { roleName: true } } }, orderBy: { stepOrder: 'asc' } } } },
-        logs: { include: { actioner: { select: { fullName: true } } }, orderBy: { createdAt: 'desc' } }
+        requester: { select: { fullName: true, email: true } },
+        logs: { 
+          orderBy: { createdAt: 'desc' },
+          include: { actioner: { select: { fullName: true, email: true } } }
+        }
       }
     });
 
@@ -189,7 +192,7 @@ export const getApprovalById = async (req: Request, res: Response): Promise<void
 // ==========================================
 export const processApproval = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { action, comment } = req.body; // action: 'APPROVE' | 'REJECT'
+  const { action, comment } = req.body; 
   const actionerId = getUserId(req);
 
   try {
@@ -202,7 +205,7 @@ export const processApproval = async (req: Request, res: Response): Promise<void
       if (!request) throw new Error("Yêu cầu phê duyệt không tồn tại!");
       if (request.status !== ApprovalStatus.PENDING) throw new Error("Yêu cầu này đã được xử lý trước đó (Không còn ở trạng thái PENDING)!");
 
-      // 1. Kiểm tra quyền của người duyệt (Có khớp Role của Step hiện tại không)
+      // 1. Kiểm tra quyền của người duyệt
       const currentStepDef = request.workflow?.steps.find(s => s.stepOrder === request.currentStep);
       if (!currentStepDef) throw new Error("Cấu hình bước duyệt bị lỗi hoặc không tồn tại!");
 
@@ -221,7 +224,6 @@ export const processApproval = async (req: Request, res: Response): Promise<void
         });
 
         if (request.documentId) {
-          // Phiếu bị từ chối, trả về trạng thái REJECTED (Người tạo có thể sửa và Submit lại)
           await tx.document.update({
             where: { documentId: request.documentId },
             data: { status: TransactionStatus.REJECTED }
@@ -229,7 +231,7 @@ export const processApproval = async (req: Request, res: Response): Promise<void
         }
 
         await tx.approvalLog.create({
-          data: { requestId: id, actionerId, action: "REJECT", comments: comment || "Từ chối phê duyệt", stepOrder: request.currentStep } 
+          data: { requestId: id, actionerId, action: ActionType.REJECT, comments: comment || "Từ chối phê duyệt", stepOrder: request.currentStep } 
         });
 
         return { status: "REJECTED" };
@@ -240,28 +242,26 @@ export const processApproval = async (req: Request, res: Response): Promise<void
       // ------------------------------------
       if (action === "APPROVE") {
         await tx.approvalLog.create({
-          data: { requestId: id, actionerId, action: "APPROVE", comments: comment || "Đồng ý phê duyệt", stepOrder: request.currentStep } 
+          data: { requestId: id, actionerId, action: ActionType.APPROVE, comments: comment || "Đồng ý phê duyệt", stepOrder: request.currentStep } 
         });
 
         const totalSteps = request.workflow?.steps.length || 0;
 
-        // Trường hợp A: Vẫn còn bước duyệt tiếp theo (Ví dụ: Trưởng phòng duyệt xong -> Chuyển lên Giám đốc)
+        // Trường hợp A: Vẫn còn bước duyệt tiếp theo
         if (request.currentStep < totalSteps) {
           await tx.approvalRequest.update({
             where: { requestId: id },
-            data: { currentStep: request.currentStep + 1 } // Tăng stepOrder lên 1
+            data: { currentStep: request.currentStep + 1 }
           });
           return { status: "PENDING_NEXT_STEP" };
         } 
-        
-        // Trường hợp B: ĐÂY LÀ BƯỚC CUỐI CÙNG (Duyệt thành công toàn bộ)
+        // Trường hợp B: ĐÂY LÀ BƯỚC CUỐI CÙNG
         else {
           await tx.approvalRequest.update({
             where: { requestId: id },
             data: { status: ApprovalStatus.APPROVED } 
           });
 
-          // Cập nhật trạng thái chứng từ gốc thành COMPLETED
           if (request.documentId) {
             await tx.document.update({
               where: { documentId: request.documentId },
@@ -272,7 +272,6 @@ export const processApproval = async (req: Request, res: Response): Promise<void
                 isLocked: true 
               }
             });
-            // Ghi chú: Nếu là phiếu kho, Frontend/Backend có thể tự động gọi tiếp API Ghi sổ kế toán ở transactionController
           }
           return { status: "FULLY_APPROVED" };
         }
@@ -305,13 +304,11 @@ export const cancelApprovalRequest = async (req: Request, res: Response): Promis
         throw new Error("Chỉ có thể thu hồi yêu cầu khi nó đang chờ duyệt (PENDING)!");
       }
 
-      // Hủy yêu cầu duyệt
       const cancelledRequest = await tx.approvalRequest.update({
         where: { requestId: id },
         data: { status: ApprovalStatus.CANCELLED }
       });
 
-      // Mở khóa chứng từ, trả về trạng thái DRAFT để sửa
       if (request.documentId) {
         await tx.document.update({
           where: { documentId: request.documentId },
@@ -320,7 +317,7 @@ export const cancelApprovalRequest = async (req: Request, res: Response): Promis
       }
 
       await tx.approvalLog.create({
-        data: { requestId: id, actionerId: userId, action: "CANCEL", comments: "Người tạo chủ động thu hồi", stepOrder: request.currentStep } 
+        data: { requestId: id, actionerId: userId, action: ActionType.CANCEL, comments: "Người tạo chủ động thu hồi", stepOrder: request.currentStep } 
       });
 
       return cancelledRequest;

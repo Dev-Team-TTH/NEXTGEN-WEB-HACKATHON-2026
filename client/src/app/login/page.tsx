@@ -13,7 +13,7 @@ import toast from "react-hot-toast";
 // Import Redux & RTK Query Hooks
 import { useAppDispatch } from "@/app/redux";
 import { useLoginMutation, useVerify2FALoginMutation } from "@/state/api";
-import { setAuthTokens, setCurrentUser } from "@/state/index"; // Đã thêm /index để rõ ràng đường dẫn
+import { setAuthTokens, setCurrentUser } from "@/state/index";
 
 // ==========================================
 // CÁC TRẠNG THÁI CỦA MÀN HÌNH ĐĂNG NHẬP
@@ -77,22 +77,18 @@ export default function Login() {
   // HÀM XỬ LÝ CHUNG: KHI XÁC THỰC THÀNH CÔNG
   // ==========================================
   const handleSuccessfulAuth = useCallback((response: any) => {
-    // 🔥 ĐÃ SỬA: Lấy token chính xác từ object response.tokens của backend
-    // Backend trả về: { message: "...", user: {...}, tokens: { accessToken, refreshToken } }
     const tokensObj = response.tokens || response.data?.tokens || response.metadata?.tokens;
     const accessToken = tokensObj?.accessToken || response.accessToken || response.data?.accessToken;
     const refreshToken = tokensObj?.refreshToken || response.refreshToken || response.data?.refreshToken;
     
     const userData = response.user || response.data?.user || response.metadata?.user;
 
-    // 🔥 ĐÃ SỬA: Kiểm tra cả 2 token để khớp với Interface trong Redux
     if (accessToken && refreshToken) {
       if (typeof window !== "undefined") {
         if (rememberMe) localStorage.setItem("rememberedEmail", email);
         else localStorage.removeItem("rememberedEmail");
       }
 
-      // Dispatch chính xác action với đầy đủ accessToken và refreshToken
       dispatch(setAuthTokens({ accessToken, refreshToken }));
       
       if (userData) {
@@ -103,7 +99,7 @@ export default function Login() {
       router.push("/dashboard");
     } else {
       console.error("Lỗi trích xuất Token. Response nhận được:", response);
-      toast.error("Lỗi trích xuất Token từ máy chủ. Dữ liệu không đầy đủ.");
+      toast.error("Lỗi cấu trúc dữ liệu từ máy chủ (Thiếu Token).");
     }
   }, [dispatch, email, rememberMe, router]);
 
@@ -131,7 +127,6 @@ export default function Login() {
         setTempToken(tToken);
         setStep("2FA");
         toast("Vui lòng nhập mã bảo mật 2 lớp", { icon: "🔐" });
-        // Tự động focus vào ô OTP đầu tiên sau khi chuyển trang
         setTimeout(() => otpRefs.current[0]?.focus(), 100);
         return;
       }
@@ -139,7 +134,9 @@ export default function Login() {
       handleSuccessfulAuth(response);
 
     } catch (err: any) {
-      console.error("Lỗi đăng nhập:", err);
+      console.error("[Login Flow Error]:", err);
+      
+      // Xử lý luồng 2FA (Nếu backend trả lỗi 403 kèm cờ requires2FA)
       if (err?.status === 403 && (err?.data?.requires2FA || err?.data?.metadata?.requires2FA)) {
         setTempToken(err?.data?.tempToken || email);
         setStep("2FA");
@@ -147,7 +144,15 @@ export default function Login() {
         setTimeout(() => otpRefs.current[0]?.focus(), 100);
         return;
       }
-      const errorMessage = err?.data?.message || err?.data?.error || "Đăng nhập thất bại. Kiểm tra lại thông tin!";
+
+      // TỰ VỆ THÔNG MINH TRƯỚC MỌI DẠNG ERROR CỦA RTK QUERY
+      const errorMessage = 
+        err?.data?.message || 
+        err?.data?.error || 
+        (typeof err?.data === 'string' ? err.data : null) || 
+        (err?.error) || // Lỗi kết nối mạng (FETCH_ERROR)
+        "Đăng nhập thất bại. Máy chủ không phản hồi!";
+        
       toast.error(errorMessage);
     }
   };
@@ -159,27 +164,31 @@ export default function Login() {
     if (e) e.preventDefault();
     
     const otpCode = otp.join("");
-    if (otpCode.length !== 6) return; // Bảo vệ an toàn
+    if (otpCode.length !== 6) return;
 
     try {
       const response = await verify2FA({ 
-        userId: tempToken, // Đã sửa: Theo backend authController (verify2FALogin) cần userId
+        userId: tempToken, 
         token: otpCode 
       }).unwrap();
 
       handleSuccessfulAuth(response);
 
     } catch (err: any) {
-      // TỰ ĐỘNG XÓA TRẮNG VÀ FOCUS LẠI Ô ĐẦU TIÊN KHI SAI OTP
+      console.error("[2FA Flow Error]:", err);
       setOtp(["", "", "", "", "", ""]);
       otpRefs.current[0]?.focus();
       
-      const errorMessage = err?.data?.message || err?.data?.error || "Mã OTP không hợp lệ hoặc đã hết hạn!";
+      const errorMessage = 
+        err?.data?.message || 
+        err?.data?.error || 
+        (typeof err?.data === 'string' ? err.data : null) || 
+        "Mã OTP không hợp lệ hoặc máy chủ mất kết nối!";
+        
       toast.error(errorMessage);
     }
   }, [otp, verify2FA, tempToken, handleSuccessfulAuth]);
 
-  // TỰ ĐỘNG GỌI API KHI NHẬP ĐỦ 6 SỐ (AUTO-SUBMIT)
   useEffect(() => {
     if (otp.join("").length === 6 && !isVerifying2FA) {
       handleVerify2FA();
@@ -201,7 +210,7 @@ export default function Login() {
       setStep("LOGIN");
       setForgotEmail("");
     } catch (error) {
-      toast.error("Có lỗi xảy ra, thử lại sau.");
+      toast.error("Có lỗi xảy ra khi kết nối máy chủ, thử lại sau.");
     } finally {
       setIsResetting(false);
     }
@@ -213,7 +222,7 @@ export default function Login() {
   const handleOtpChange = (index: number, value: string) => {
     if (isNaN(Number(value))) return; 
     const newOtp = [...otp];
-    newOtp[index] = value.substring(value.length - 1); // Đảm bảo chỉ lấy 1 ký tự cuối
+    newOtp[index] = value.substring(value.length - 1); 
     setOtp(newOtp);
 
     if (value !== "" && index < 5) {
@@ -241,7 +250,6 @@ export default function Login() {
     });
     setOtp(newOtp);
     
-    // NẾU PASTE ĐỦ 6 SỐ, BLUR KHỎI INPUT ĐỂ XEM ANIMATION SUBMIT
     if (pastedData.length === 6) {
       otpRefs.current[5]?.blur();
     } else {
@@ -259,20 +267,15 @@ export default function Login() {
   };
 
   return (
-    // NỀN TẢNG (BACKGROUND): Thiết kế theo phong cách Aurora siêu cấp (Đen sâu thẳm / Trắng ngọc trai)
     <div className="relative flex items-center justify-center min-h-screen w-full bg-slate-50 dark:bg-[#0B0F19] overflow-hidden selection:bg-blue-500/30">
       
-      {/* HIỆU ỨNG ÁNH SÁNG CỰC QUANG (AURORA BLOB) */}
       <div className="absolute top-[-20%] left-[-10%] w-[60vw] h-[60vw] rounded-full bg-blue-400/20 dark:bg-blue-600/10 blur-[120px] mix-blend-multiply dark:mix-blend-screen pointer-events-none animate-pulse duration-10000"></div>
       <div className="absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-indigo-400/20 dark:bg-indigo-600/10 blur-[120px] mix-blend-multiply dark:mix-blend-screen pointer-events-none animate-pulse duration-7000"></div>
       
-      {/* VÂN LƯỚI ẨN (SUBTLE GRID) Dành cho cảm giác Tech/Data */}
       <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))] dark:opacity-10 opacity-5 pointer-events-none"></div>
 
-      {/* KHUNG FORM SIÊU CẤP (ULTRA PREMIUM CARD) */}
       <div className="relative z-10 w-full max-w-[440px] p-8 sm:p-12 m-4 bg-white/70 dark:bg-gray-900/50 backdrop-blur-2xl border border-white/40 dark:border-gray-700/50 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] rounded-[2.5rem] min-h-[540px] flex flex-col justify-center">
         
-        {/* LOGO & TIÊU ĐỀ */}
         <div className="flex flex-col items-center text-center mb-8">
           <motion.div 
             initial={{ scale: 0.5, opacity: 0 }}
@@ -287,12 +290,8 @@ export default function Login() {
           </h2>
         </div>
 
-        {/* BỘ CHỨA CÁC BƯỚC */}
         <AnimatePresence mode="wait">
           
-          {/* ==============================================
-              BƯỚC 1: ĐĂNG NHẬP
-              ============================================== */}
           {step === "LOGIN" && (
             <motion.div
               key="login"
@@ -302,7 +301,6 @@ export default function Login() {
             >
               <form onSubmit={handleLogin} className="space-y-5">
                 
-                {/* TRƯỜNG NHẬP LIỆU CAO CẤP */}
                 <div className="space-y-2">
                   <label htmlFor="email" className="block text-sm font-semibold text-gray-700 dark:text-gray-200">
                     Địa chỉ Email
@@ -347,7 +345,6 @@ export default function Login() {
                       onKeyDown={handleCheckCapsLock}
                       onClick={handleCheckCapsLock}
                       disabled={isLoggingIn}
-                      // VÁ LỖ HỔNG DOUBLE EYE CỦA BROWSER: [&::-ms-reveal]:hidden
                       className={`block w-full pl-11 pr-12 py-3 bg-gray-50/50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-2xl text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-sm [&::-ms-reveal]:hidden [&::-ms-clear]:hidden [&::-webkit-contacts-auto-fill-button]:hidden ${capsLockActive ? "ring-2 ring-amber-500/50 border-amber-500" : ""}`}
                       placeholder="••••••••" 
                       required
@@ -357,7 +354,6 @@ export default function Login() {
                     </button>
                   </div>
                   
-                  {/* CẢNH BÁO CAPS LOCK CAO CẤP */}
                   <AnimatePresence>
                     {capsLockActive && (
                       <motion.div 
@@ -392,9 +388,6 @@ export default function Login() {
             </motion.div>
           )}
 
-          {/* ==============================================
-              BƯỚC 2: XÁC THỰC 2 LỚP (2FA OTP)
-              ============================================== */}
           {step === "2FA" && (
             <motion.div
               key="2fa"
@@ -412,7 +405,6 @@ export default function Login() {
               </p>
 
               <form onSubmit={handleVerify2FA} className="w-full">
-                {/* 6 Ô NHẬP OTP THEO CHUẨN VERCEL */}
                 <div className="flex justify-between gap-2 mb-8" onPaste={handleOtpPaste}>
                   {otp.map((data, index) => (
                     <input
@@ -447,9 +439,6 @@ export default function Login() {
             </motion.div>
           )}
 
-          {/* ==============================================
-              BƯỚC 3: QUÊN MẬT KHẨU
-              ============================================== */}
           {step === "FORGOT_PASSWORD" && (
             <motion.div
               key="forgot"
@@ -504,7 +493,6 @@ export default function Login() {
 
         </AnimatePresence>
 
-        {/* Footer bảo mật chung */}
         <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-800 flex justify-center items-center text-xs font-semibold text-gray-500 dark:text-gray-400">
           <ShieldCheck className="w-4 h-4 mr-1.5 text-green-500 drop-shadow-sm" />
           Hệ thống bảo mật cấp độ Doanh nghiệp

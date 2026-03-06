@@ -4,7 +4,8 @@ import {
   getCurrencies, createCurrency, updateCurrency, deleteCurrency,
   addExchangeRate, deleteExchangeRate,
   getPriceLists, createPriceList, updatePriceList, deletePriceList,
-  getBudgets, createBudget, updateBudget, deleteBudget
+  getBudgets, createBudget, updateBudget, deleteBudget,
+  calculateDynamicPrice
 } from "../controllers/advancedFinanceController";
 import { authenticateToken } from "../middleware/authMiddleware"; // Bảo mật Route
 
@@ -31,6 +32,7 @@ router.delete("/currencies/:currencyCode", deleteCurrency);
 
 router.post("/exchange-rates", addExchangeRate);
 router.delete("/exchange-rates/:rateId", deleteExchangeRate);
+router.post("/calculate-price", calculateDynamicPrice);
 
 // ------------------------------------------------------------------
 // 3. BẢNG GIÁ (PRICE LISTS)

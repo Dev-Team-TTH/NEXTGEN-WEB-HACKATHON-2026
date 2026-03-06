@@ -1,8 +1,7 @@
 import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
 
-const prisma = new PrismaClient();
 
 // ==========================================
 // 1. QUẢN LÝ HỆ THỐNG TÀI KHOẢN (CHART OF ACCOUNTS)
@@ -233,5 +232,19 @@ export const toggleFiscalPeriodStatus = async (req: Request, res: Response): Pro
     res.json({ message: isClosed ? "Đã Khóa sổ Kỳ kế toán!" : "Đã Mở lại Kỳ kế toán!", period: updatedPeriod });
   } catch (error: any) {
     res.status(400).json({ message: "Lỗi cập nhật trạng thái Kỳ kế toán", error: error.message });
+  }
+};
+
+// Thêm hàm này vào server/src/controllers/financeSetupController.ts
+export const getActiveExchangeRates = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Lấy các tỷ giá mới nhất (có validTo = null tức là đang hiệu lực hiện tại)
+    const rates = await prisma.exchangeRate.findMany({
+      where: { validTo: null },
+      include: { currency: true }
+    });
+    res.json(rates);
+  } catch (error: any) {
+    res.status(500).json({ message: "Lỗi lấy tỷ giá hối đoái", error: error.message });
   }
 };

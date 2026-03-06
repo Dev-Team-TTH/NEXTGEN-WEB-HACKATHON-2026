@@ -27,7 +27,7 @@ interface RolePermissionModalProps {
 
 export default function RolePermissionModal({ isOpen, onClose, existingRole }: RolePermissionModalProps) {
   // --- API HOOKS ---
-  const { data: rawPermissions = [], isLoading: isLoadingPerms } = useGetPermissionsQuery(undefined, { skip: !isOpen });
+  const { data: rawPermissionsData, isLoading: isLoadingPerms } = useGetPermissionsQuery(undefined, { skip: !isOpen });
   const [createRole, { isLoading: isCreating }] = useCreateRoleMutation();
   const [updateRole, { isLoading: isUpdating }] = useUpdateRoleMutation();
 
@@ -43,9 +43,18 @@ export default function RolePermissionModal({ isOpen, onClose, existingRole }: R
   useEffect(() => {
     if (isOpen) {
       if (existingRole) {
-        setRoleName(existingRole.name || "");
+        setRoleName(existingRole.name || existingRole.roleName || "");
         setDescription(existingRole.description || "");
-        setSelectedPerms(existingRole.permissions || []);
+        
+        // Trích xuất mã quyền (permissions) từ cấu trúc dữ liệu lồng nhau của Prisma
+        let initialPerms: string[] = [];
+        if (Array.isArray(existingRole.permissions)) {
+          initialPerms = existingRole.permissions.map((p: any) => 
+            typeof p === 'string' ? p : (p.permission?.code || p.code || p.id)
+          ).filter(Boolean);
+        }
+        setSelectedPerms(initialPerms);
+
       } else {
         setRoleName("");
         setDescription("");
@@ -54,29 +63,43 @@ export default function RolePermissionModal({ isOpen, onClose, existingRole }: R
     }
   }, [isOpen, existingRole]);
 
-  // --- THUẬT TOÁN DATA VIZ & NHÓM QUYỀN (GROUPING) ---
-  // Giả định backend trả về mảng chuỗi quyền dạng "MODULE:ACTION" (VD: "INVENTORY:READ", "ACCOUNTING:WRITE")
-  // Hoặc mảng object { code: "INVENTORY:READ", name: "Xem kho" }. Thuật toán này xử lý cả 2 trường hợp.
-  const groupedPermissions = useMemo(() => {
+  // --- THUẬT TOÁN DATA VIZ & NHÓM QUYỀN (GROUPING) THÔNG MINH ---
+  // Chống lỗi "forEach is not a function" bằng Pipeline chuẩn hóa dữ liệu
+  const { groupedPermissions, totalPermsCount } = useMemo(() => {
     const groups: Record<string, any[]> = {};
-    
-    rawPermissions.forEach((p: any) => {
+    let safeArray: any[] = [];
+
+    // 1. Chuẩn hóa dữ liệu đầu vào (Defensive Parsing)
+    if (Array.isArray(rawPermissionsData)) {
+      safeArray = rawPermissionsData;
+    } else if (rawPermissionsData && typeof rawPermissionsData === 'object') {
+      // Nếu API cũ vẫn trả về { flat: [...], grouped: {...} }
+      safeArray = rawPermissionsData.flat || Object.values(rawPermissionsData).find(Array.isArray) || [];
+    }
+
+    // 2. Nhóm quyền
+    safeArray.forEach((p: any) => {
       const code = typeof p === 'string' ? p : (p.code || p.id || "");
+      if (!code) return; // Bỏ qua dữ liệu rỗng
+
       const desc = typeof p === 'string' ? code : (p.description || p.name || code);
+      const forcedModule = p.module || null; // Lấy module chuẩn từ database nếu có
       
-      // Cắt chuỗi để lấy Tên Module (Prefix trước dấu hai chấm, hoặc gạch dưới)
+      // Nội suy Tên Module nếu CSDL không cung cấp
       const parts = code.split(/[:_]/);
-      const moduleName = parts.length > 1 ? parts[0].toUpperCase() : "GENERAL";
+      const moduleName = forcedModule || (parts.length > 1 ? parts[0].toUpperCase() : "GENERAL");
 
       if (!groups[moduleName]) groups[moduleName] = [];
       groups[moduleName].push({ code, desc });
     });
 
-    return groups;
-  }, [rawPermissions]);
+    return { 
+      groupedPermissions: groups, 
+      totalPermsCount: safeArray.length || 1 
+    };
+  }, [rawPermissionsData]);
 
   // Tính toán % quyền lực
-  const totalPermsCount = rawPermissions.length || 1;
   const selectedCount = selectedPerms.length;
   const powerPercentage = Math.round((selectedCount / totalPermsCount) * 100);
 
@@ -109,10 +132,25 @@ export default function RolePermissionModal({ isOpen, onClose, existingRole }: R
       return;
     }
 
+    // MAP PAYLOAD LÊN SCHEMA CHUẨN CỦA BACKEND
+    // Do cấu trúc Schema, ta có bảng trung gian RolePermission, API update cần mảng permissionIds
+    // Nhưng vì Frontend đang quản lý theo `code`, ta có thể tìm ID thực tương ứng, 
+    // hoặc cấu trúc lại payload để backend tự nhận diện. Trong TH này ta giả định Backend API tạo/sửa đã hỗ trợ danh sách `code` hoặc `ID`.
+    // Nếu API backend mong muốn permissionIds, ta cần map ngược từ `code` ra `id`.
+    
+    // Thuật toán: Tìm kiếm ngược `permissionId` dựa trên `code` đã chọn
+    let actualPermissionIds: string[] = [];
+    if (Array.isArray(rawPermissionsData)) {
+       actualPermissionIds = selectedPerms.map(code => {
+           const match = rawPermissionsData.find((p: any) => p.code === code);
+           return match ? match.permissionId || match.id : code;
+       });
+    }
+
     const payload = {
-      name: roleName,
+      roleName: roleName, // Map với roleName trong schema.prisma
       description,
-      permissions: selectedPerms
+      permissionIds: actualPermissionIds.length > 0 ? actualPermissionIds : selectedPerms
     };
 
     try {
@@ -230,6 +268,11 @@ export default function RolePermissionModal({ isOpen, onClose, existingRole }: R
                   <div className="flex items-center justify-center py-10 opacity-50">
                     <Loader2 className="w-6 h-6 animate-spin text-purple-500 mr-2" /> Tải danh sách quyền...
                   </div>
+                ) : Object.keys(groupedPermissions).length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 opacity-50 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700">
+                    <Info className="w-8 h-8 text-slate-400 mb-2" />
+                    <p className="text-sm font-bold">Chưa có dữ liệu Quyền (Permissions).</p>
+                  </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {Object.entries(groupedPermissions).map(([moduleName, perms]) => {
@@ -259,8 +302,17 @@ export default function RolePermissionModal({ isOpen, onClose, existingRole }: R
                                   key={p.code} 
                                   className={`flex items-start gap-3 p-2 rounded-xl cursor-pointer transition-all ${isChecked ? 'bg-purple-50/50 dark:bg-purple-500/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
                                 >
-                                  <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${isChecked ? 'bg-purple-500 border-purple-500 text-white' : 'border-slate-300 dark:border-slate-600 bg-transparent'}`}>
-                                    {isChecked && <CheckCircle2 className="w-3 h-3" />}
+                                  {/* Fake Checkbox logic click - Tích hợp với thẻ Label */}
+                                  <div className="relative flex items-center pt-0.5">
+                                    <input 
+                                      type="checkbox" 
+                                      checked={isChecked}
+                                      onChange={() => togglePermission(p.code)}
+                                      className="sr-only" // Ẩn checkbox thật
+                                    />
+                                    <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${isChecked ? 'bg-purple-500 border-purple-500 text-white' : 'border-slate-300 dark:border-slate-600 bg-transparent'}`}>
+                                      {isChecked && <CheckCircle2 className="w-3 h-3" />}
+                                    </div>
                                   </div>
                                   <div className="flex flex-col">
                                     <span className={`text-xs font-bold font-mono ${isChecked ? 'text-purple-700 dark:text-purple-400' : 'text-slate-700 dark:text-slate-300'}`}>
