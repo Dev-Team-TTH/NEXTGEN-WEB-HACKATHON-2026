@@ -8,29 +8,37 @@ import {
   UserCircle, Shield, Camera, Save, 
   Mail, Phone, MapPin, Building, 
   Briefcase, Calendar, Fingerprint, Globe, 
-  Activity, Users, Sparkles, CheckCircle2
+  Activity, Users, Sparkles, CheckCircle2, Loader2
 } from "lucide-react";
+import { toast } from "react-hot-toast";
 
-import { useAppSelector } from "@/app/redux";
+// --- REDUX & API ---
+import { useAppSelector, useAppDispatch } from "@/app/redux";
+import { setCurrentUser } from "@/state/index";
+import { useUpdateUserMutation } from "@/state/api";
 
 export default function ProfilePage() {
   const pathname = usePathname();
   const currentUser = useAppSelector((state) => state.global.currentUser);
+  const dispatch = useAppDispatch();
 
   const [isMounted, setIsMounted] = useState(false);
+  
+  // 👉 SỬ DỤNG ĐỘNG CƠ CẬP NHẬT THỰC TẾ TỪ RTK QUERY
+  const [updateUser, { isLoading: isSaving }] = useUpdateUserMutation();
   
   // State quản lý Form
   const [formData, setFormData] = useState({
     fullName: "",
     gender: "Male",
     dob: "1995-08-15",
-    jobTitle: "Chuyên viên Kế toán",
-    empId: "EMP-202601",
-    department: "Tài chính - Kế toán",
+    jobTitle: "Chuyên viên hệ thống",
+    empId: "EMP-2026",
+    department: "Vận hành",
     nationality: "Việt Nam",
     email: "",
-    phone: "0987.654.321",
-    address: "Tòa nhà Bitexco, Quận 1, TP. Hồ Chí Minh"
+    phone: "",
+    address: ""
   });
 
   useEffect(() => {
@@ -40,6 +48,9 @@ export default function ProfilePage() {
         ...prev,
         fullName: currentUser.fullName || "",
         email: currentUser.email || "",
+        // FIX LỖI TS2339: Sử dụng ép kiểu an toàn (as any) để tránh lỗi Interface thiếu trường
+        phone: (currentUser as any).phone || (currentUser as any).phoneNumber || "",
+        address: (currentUser as any).address || ""
       }));
     }
   }, [currentUser]);
@@ -49,19 +60,48 @@ export default function ProfilePage() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  // 👉 HÀM GHI DỮ LIỆU THẬT VÀO DATABASE
+  const handleSaveProfile = async () => {
+    if (!currentUser?.userId) {
+      toast.error("Không xác định được ID người dùng!");
+      return;
+    }
+
+    try {
+      // Gọi API thực tế
+      const updatedUser = await updateUser({ 
+        id: currentUser.userId, 
+        // Ép kiểu as any để truyền được các field linh động
+        data: {
+          fullName: formData.fullName,
+          phone: formData.phone,
+          address: formData.address
+          // Không cho phép sửa email đăng nhập ở đây
+        } as any
+      }).unwrap();
+
+      // Cập nhật lại Redux Store Global để header/menu nhận diện tên mới ngay lập tức
+      dispatch(setCurrentUser(updatedUser));
+      
+      toast.success("Hồ sơ cá nhân đã được đồng bộ lên máy chủ!");
+    } catch (error: any) {
+      toast.error(error?.data?.message || "Lỗi giao tiếp máy chủ khi cập nhật hồ sơ.");
+    }
+  };
+
   if (!isMounted) return null;
 
   return (
     <div className="w-full max-w-7xl mx-auto pb-24 px-4 sm:px-6 lg:px-8 mt-6">
       
-      {/* 1. HEADER & SUB-NAVIGATION TỐI ƯU */}
+      {/* 1. HEADER & SUB-NAVIGATION */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
         <div>
           <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
             Hồ sơ <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600">Cá nhân</span>
             <Sparkles className="w-6 h-6 text-purple-500 animate-pulse" />
           </h1>
-          <p className="text-sm font-medium text-slate-500 mt-2">Quản lý thông tin định danh và liên hệ của bạn.</p>
+          <p className="text-sm font-medium text-slate-500 mt-2">Quản lý thông tin định danh và liên hệ của bạn trên hệ thống.</p>
         </div>
         
         {/* Sub-Nav Tabs Dạng Viên Thuốc (Pill) */}
@@ -76,12 +116,11 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* 2. HERO BANNER & AVATAR (THIẾT KẾ ĐỘT PHÁ) */}
+      {/* 2. HERO BANNER & AVATAR */}
       <div className="relative w-full rounded-3xl bg-white dark:bg-[#0B0F19] border border-slate-200/50 dark:border-white/10 shadow-[0_20px_40px_rgba(0,0,0,0.04)] mb-8 overflow-hidden">
         {/* Cover Photo Gradient Mesh */}
         <div className="absolute top-0 left-0 right-0 h-48 sm:h-64 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 overflow-hidden z-0">
           <div className="absolute inset-0 bg-[url('/noise.png')] opacity-20 mix-blend-overlay" />
-          {/* Vòng tròn trang trí mờ ảo */}
           <div className="absolute -top-24 -right-24 w-96 h-96 bg-white/10 rounded-full blur-3xl pointer-events-none" />
           <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-purple-500/20 rounded-full blur-3xl pointer-events-none" />
         </div>
@@ -89,7 +128,7 @@ export default function ProfilePage() {
         {/* Nội dung đè lên Cover */}
         <div className="relative z-10 pt-32 sm:pt-44 px-6 sm:px-12 pb-8 flex flex-col sm:flex-row items-center sm:items-end gap-6 sm:gap-8">
           
-          {/* Avatar Lồi Cực Quang */}
+          {/* Avatar */}
           <div className="relative group cursor-pointer shrink-0">
             <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-slate-900/50 backdrop-blur-2xl border-4 sm:border-8 border-white dark:border-[#0B0F19] shadow-[0_12px_40px_rgba(0,0,0,0.2)] flex items-center justify-center text-5xl font-black text-white overflow-hidden relative z-10">
               {formData.fullName.charAt(0).toUpperCase() || "U"}
@@ -110,7 +149,6 @@ export default function ProfilePage() {
           <div className="flex-1 text-center sm:text-left pb-2 sm:pb-4">
             <h2 className="text-2xl sm:text-4xl font-black text-slate-900 dark:text-white flex items-center justify-center sm:justify-start gap-3">
               {formData.fullName} 
-              {/* ĐÃ FIX: Bọc Icon trong thẻ span chứa title để tương thích TS */}
               <span title="Tài khoản đã xác thực" className="flex items-center">
                 <CheckCircle2 className="w-6 h-6 text-blue-500" />
               </span>
@@ -120,17 +158,22 @@ export default function ProfilePage() {
 
           {/* Nút Hành động */}
           <div className="pb-2 sm:pb-4 flex w-full sm:w-auto">
-            <button className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-2xl font-black text-sm shadow-[0_8px_20px_rgba(37,99,235,0.3)] hover:shadow-[0_12px_24px_rgba(37,99,235,0.4)] transition-all duration-300 hover:-translate-y-1 active:translate-y-0 transform-gpu">
-              <Save className="w-5 h-5" /> Lưu Thay Đổi
+            <button 
+              onClick={handleSaveProfile}
+              disabled={isSaving}
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-2xl font-black text-sm shadow-[0_8px_20px_rgba(37,99,235,0.3)] hover:shadow-[0_12px_24px_rgba(37,99,235,0.4)] transition-all duration-300 hover:-translate-y-1 active:translate-y-0 transform-gpu disabled:opacity-70 disabled:hover:translate-y-0"
+            >
+              {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+              Ghi nhận Đồng bộ
             </button>
           </div>
         </div>
       </div>
 
-      {/* 3. BENTO GRID FORM (THIẾT KẾ PHÂN LUỒNG MỚI) */}
+      {/* 3. BENTO GRID FORM */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
         
-        {/* KHỐI 1: THÔNG TIN LIÊN HỆ (CỘT NHỎ) */}
+        {/* KHỐI 1: THÔNG TIN LIÊN HỆ */}
         <div className="lg:col-span-1 flex flex-col gap-6 sm:gap-8">
           <div className="bg-white/70 dark:bg-[#0B0F19]/70 backdrop-blur-2xl border border-slate-200/50 dark:border-white/10 rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.04)] p-6 sm:p-8">
             <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mb-6 flex items-center gap-3">
@@ -145,17 +188,17 @@ export default function ProfilePage() {
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5"><Phone className="w-3.5 h-3.5"/> Số điện thoại</label>
-                <input type="text" name="phone" value={formData.phone} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-black/40 border border-slate-200/80 dark:border-white/10 rounded-2xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white outline-none focus:bg-white dark:focus:bg-[#0B0F19] focus:ring-2 focus:ring-emerald-500/50 transition-all shadow-sm" />
+                <input type="text" name="phone" value={formData.phone} onChange={handleInputChange} placeholder="09xxxx..." className="w-full bg-slate-50 dark:bg-black/40 border border-slate-200/80 dark:border-white/10 rounded-2xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white outline-none focus:bg-white dark:focus:bg-[#0B0F19] focus:ring-2 focus:ring-emerald-500/50 transition-all shadow-sm" />
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5"/> Địa chỉ hiện tại</label>
-                <textarea name="address" value={formData.address} onChange={handleInputChange} rows={4} className="w-full bg-slate-50 dark:bg-black/40 border border-slate-200/80 dark:border-white/10 rounded-2xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white outline-none focus:bg-white dark:focus:bg-[#0B0F19] focus:ring-2 focus:ring-emerald-500/50 transition-all shadow-sm resize-none" />
+                <textarea name="address" value={formData.address} onChange={handleInputChange} rows={4} placeholder="Nhập địa chỉ..." className="w-full bg-slate-50 dark:bg-black/40 border border-slate-200/80 dark:border-white/10 rounded-2xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white outline-none focus:bg-white dark:focus:bg-[#0B0F19] focus:ring-2 focus:ring-emerald-500/50 transition-all shadow-sm resize-none" />
               </div>
             </div>
           </div>
         </div>
 
-        {/* KHỐI 2 & 3: CÁ NHÂN & CÔNG VIỆC (CỘT LỚN) */}
+        {/* KHỐI 2 & 3: CÁ NHÂN & CÔNG VIỆC */}
         <div className="lg:col-span-2 flex flex-col gap-6 sm:gap-8">
           
           {/* CÁ NHÂN */}

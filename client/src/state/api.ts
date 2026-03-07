@@ -6,11 +6,22 @@ import { updateAccessToken, setAuthTokens, logout } from "./index";
 // 1. ĐỊNH NGHĨA KIỂU DỮ LIỆU (INTERFACES)
 // ==========================================
 
+export interface PaginatedResponse<T> {
+  data: T[];
+  meta: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+}
+
 export interface User {
   userId: string;
   email: string;
   fullName: string;
   phone?: string;
+  address?: string;
   departmentId?: string;
   status: string;
   permissions?: string[];
@@ -116,6 +127,16 @@ export interface AutoPickResponse {
   shortage?: number;
   totalPicked?: number;
   picks: PickItem[];
+}
+
+export interface LowStockAlert {
+  productId: string;
+  productCode: string;
+  productName: string;
+  imageUrl?: string;
+  reorderPoint: number;
+  currentAvailableQty: number;
+  deficit: number;
 }
 
 export interface AssetMaintenance {
@@ -701,7 +722,10 @@ export const api = createApi({
     verify2FALogin: build.mutation<any, any>({ query: (body) => ({ url: "/auth/verify-2fa", method: "POST", body }), invalidatesTags: ["Auth", "Session"] }),
     getMe: build.query<User, void>({ query: () => "/auth/me", providesTags: ["Auth"] }),
     refreshToken: build.mutation<any, { refreshToken: string }>({ query: (body) => ({ url: "/auth/refresh-token", method: "POST", body }), invalidatesTags: ["Auth", "Session"] }),
-    logout: build.mutation<any, void>({ query: () => ({ url: "/auth/logout", method: "POST" }), invalidatesTags: ["Auth", "Session"] }),
+    logout: build.mutation<any, { refreshToken: string }>({ 
+      query: (body) => ({ url: "/auth/logout", method: "POST", body }), 
+      invalidatesTags: ["Auth", "Session"] 
+    }),
     logoutAllDevices: build.mutation<any, void>({ query: () => ({ url: "/auth/logout-all", method: "POST" }), invalidatesTags: ["Auth", "Session"] }),
     getMyLoginHistory: build.query<LoginHistoryRecord[], void>({ 
       query: () => "/auth/login-history", 
@@ -724,6 +748,14 @@ export const api = createApi({
     createUser: build.mutation<User, Partial<User>>({ query: (body) => ({ url: "/auth/users", method: "POST", body }), invalidatesTags: ["Users"] }),
     updateUser: build.mutation<User, { id: string; data: Partial<User> }>({ query: ({ id, data }) => ({ url: `/org-rbac/users/${id}`, method: "PUT", body: data }), invalidatesTags: ["Users", "Auth"] }),
     deleteUser: build.mutation<void, string>({ query: (id) => ({ url: `/org-rbac/users/${id}`, method: "DELETE" }), invalidatesTags: ["Users"] }),
+    resetUserPassword: build.mutation<{ message: string; newPassword: string }, { userId: string; adminPin: string }>({
+      query: ({ userId, adminPin }) => ({
+        url: `/users/${userId}/reset-password`, // Đảm bảo URL này khớp với bên routes (orgAndRbacRoutes.ts)
+        method: "POST",
+        body: { adminPin },
+      }),
+      invalidatesTags: ["Users"], // Cập nhật lại cache nếu cần
+    }),
     
     getPermissions: build.query<any, void>({ query: () => "/org-rbac/permissions", providesTags: ["Permissions"] }),
     getRoles: build.query<any[], void>({ query: () => "/org-rbac/roles", providesTags: ["Roles"] }),
@@ -776,9 +808,9 @@ export const api = createApi({
     // ------------------------------------------
     // D. INVENTORY
     // ------------------------------------------
-    getInventoryBalances: build.query<InventoryBalance[], any>({ query: (params) => ({ url: "/inventory/balances", params }), providesTags: ["Inventory"] }),
-    getInventoryTransactions: build.query<InventoryTransaction[], any>({ query: (params) => ({ url: "/inventory/transactions", params }), providesTags: ["Inventory"] }),
-    
+    getInventoryBalances: build.query<PaginatedResponse<InventoryBalance>, any>({ query: (params) => ({ url: "/inventory/balances", params }), providesTags: ["Inventory"] }),
+    getInventoryTransactions: build.query<PaginatedResponse<InventoryTransaction>, any>({ query: (params) => ({ url: "/inventory/transactions", params }), providesTags: ["Inventory"] }),
+
     adjustStock: build.mutation<any, any>({ 
       query: (body) => ({ url: "/inventory/adjust", method: "POST", body }), 
       invalidatesTags: ["Inventory", "Products", "Dashboard", "Transactions", "Finance", "Accounting", "FinancialReports"] 
@@ -790,6 +822,19 @@ export const api = createApi({
 
     autoPickStock: build.mutation<AutoPickResponse, AutoPickRequest>({
       query: (body) => ({ url: "/inventory/auto-pick", method: "POST", body })
+    }),
+
+    getLowStockAlerts: build.query<LowStockAlert[], void>({ 
+      query: () => "/inventory/alerts/low-stock", 
+      providesTags: ["Inventory", "Dashboard"] 
+    }),
+    getExpiringBatches: build.query<InventoryBalance[], { days?: number }>({ 
+      query: (params) => ({ url: "/inventory/alerts/expiring", params }), 
+      providesTags: ["Inventory", "Dashboard"] 
+    }),
+    bulkStockTake: build.mutation<any, any>({ 
+      query: (body) => ({ url: "/inventory/bulk-stock-take", method: "POST", body }), 
+      invalidatesTags: ["Inventory", "Products", "Dashboard", "Transactions", "Finance", "Accounting", "FinancialReports"] 
     }),
 
     // ------------------------------------------
@@ -1001,6 +1046,10 @@ export const api = createApi({
     calculateDynamicPrice: build.mutation<{ finalPrice: number, appliedPriceList: string | null }, { partnerId: string, partnerType: "CUSTOMER" | "SUPPLIER", productId: string, variantId?: string, quantity: number }>({
       query: (body) => ({ url: "/advanced-finance/calculate-price", method: "POST", body })
     }),
+
+    getGlobalSearch: build.query<{ users: any[]; products: any[]; transactions: any[] }, string>({
+      query: (searchTerm) => `/search?q=${encodeURIComponent(searchTerm)}`,
+    }),
   }),
 });
 
@@ -1063,6 +1112,7 @@ export const {
   useCreateRoleMutation,
   useUpdateRoleMutation,
   useDeleteRoleMutation,
+  useResetUserPasswordMutation,
   useGetOrganizationStructureQuery,
   useGetSystemAuditLogsQuery, 
   useGetAuditLogsByRecordQuery,
@@ -1098,6 +1148,9 @@ export const {
   useAdjustStockMutation,
   useTransferStockMutation,
   useAutoPickStockMutation,
+  useGetLowStockAlertsQuery,
+  useGetExpiringBatchesQuery,
+  useBulkStockTakeMutation,
 
   // --- E. Assets & Asset Master ---
   useGetAssetCategoriesQuery,
@@ -1198,5 +1251,7 @@ export const {
   useGetPriceListsQuery, useCreatePriceListMutation, useUpdatePriceListMutation, useDeletePriceListMutation,
   useGetBudgetsQuery, useCreateBudgetMutation, useUpdateBudgetMutation, useDeleteBudgetMutation,
   useCalculateDynamicPriceMutation,
+
+  useGetGlobalSearchQuery,
 
 } = api;

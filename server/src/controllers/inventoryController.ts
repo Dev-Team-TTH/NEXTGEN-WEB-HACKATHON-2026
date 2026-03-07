@@ -2,38 +2,60 @@ import { Request, Response } from "express";
 import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
 
+// Custom Request Interface để loại bỏ (req as any)
+interface AuthRequest extends Request {
+  user?: { userId: string; [key: string]: any };
+}
 
 // ==========================================
 // 1. TRUY VẤN TỒN KHO TRỰC TIẾP (INVENTORY BALANCES)
 // ==========================================
-export const getInventoryBalances = async (req: Request, res: Response): Promise<void> => {
+export const getInventoryBalances = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { warehouseId, productId, binId, batchId, branchId } = req.query;
+    const { warehouseId, productId, binId, batchId, branchId, page = "1", limit = "50" } = req.query;
 
-    const balances = await prisma.inventoryBalance.findMany({
-      where: {
-        // Chỉ lấy tồn kho có số lượng hoặc giá trị > 0 (tránh rác dữ liệu)
-        OR: [{ quantity: { gt: 0 } }, { totalValue: { gt: 0 } }],
-        ...(warehouseId && { warehouseId: String(warehouseId) }),
-        ...(productId && { productId: String(productId) }),
-        ...(binId && { binId: String(binId) }),
-        ...(batchId && { batchId: String(batchId) }),
-        ...(branchId && { warehouse: { branchId: String(branchId) } })
-      },
-      include: {
-        warehouse: { select: { name: true, code: true, branch: { select: { name: true } } } },
-        bin: { select: { code: true, name: true } },
-        product: { select: { productCode: true, name: true, uom: { select: { name: true } } } },
-        batch: { select: { batchNumber: true, expiryDate: true } },
-        variant: { select: { sku: true, attributes: true } }
-      },
-      orderBy: [
-        { warehouse: { name: 'asc' } },
-        { product: { name: 'asc' } }
-      ]
+    const pageNumber = Math.max(1, Number(page) || 1);
+    const limitNumber = Math.max(1, Number(limit) || 50);
+    const skip = (pageNumber - 1) * limitNumber;
+
+    const whereCondition = {
+      OR: [{ quantity: { gt: 0 } }, { totalValue: { gt: 0 } }],
+      ...(warehouseId && { warehouseId: String(warehouseId) }),
+      ...(productId && { productId: String(productId) }),
+      ...(binId && { binId: String(binId) }),
+      ...(batchId && { batchId: String(batchId) }),
+      ...(branchId && { warehouse: { branchId: String(branchId) } })
+    };
+
+    const [totalRecords, balances] = await Promise.all([
+      prisma.inventoryBalance.count({ where: whereCondition }),
+      prisma.inventoryBalance.findMany({
+        where: whereCondition,
+        skip,
+        take: limitNumber,
+        include: {
+          warehouse: { select: { name: true, code: true, branch: { select: { name: true } } } },
+          bin: { select: { code: true, name: true } },
+          product: { select: { productCode: true, name: true, uom: { select: { name: true } } } },
+          batch: { select: { batchNumber: true, expiryDate: true } },
+          variant: { select: { sku: true, attributes: true } }
+        },
+        orderBy: [
+          { warehouse: { name: 'asc' } },
+          { product: { name: 'asc' } }
+        ]
+      })
+    ]);
+
+    res.json({
+      data: balances,
+      meta: {
+        total: totalRecords,
+        page: pageNumber,
+        limit: limitNumber,
+        totalPages: Math.ceil(totalRecords / limitNumber)
+      }
     });
-
-    res.json(balances);
   } catch (error: any) {
     res.status(500).json({ message: "Lỗi truy xuất tồn kho chi tiết", error: error.message });
   }
@@ -42,15 +64,18 @@ export const getInventoryBalances = async (req: Request, res: Response): Promise
 // ==========================================
 // 2. THẺ KHO / LỊCH SỬ GIAO DỊCH KHO (STOCK LEDGER)
 // ==========================================
-export const getInventoryTransactions = async (req: Request, res: Response): Promise<void> => {
+export const getInventoryTransactions = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { productId, warehouseId, documentId, startDate, endDate } = req.query;
+    const { productId, warehouseId, documentId, startDate, endDate, page = "1", limit = "50" } = req.query;
+
+    const pageNumber = Math.max(1, Number(page) || 1);
+    const limitNumber = Math.max(1, Number(limit) || 50);
+    const skip = (pageNumber - 1) * limitNumber;
 
     const whereCondition: any = {};
     if (productId) whereCondition.productId = String(productId);
     if (documentId) whereCondition.documentId = String(documentId);
     if (warehouseId) {
-      // Giao dịch liên quan đến kho này (có thể là nguồn xuất hoặc đích nhập)
       whereCondition.OR = [
         { fromWarehouseId: String(warehouseId) },
         { toWarehouseId: String(warehouseId) }
@@ -62,30 +87,43 @@ export const getInventoryTransactions = async (req: Request, res: Response): Pro
       if (endDate) whereCondition.timestamp.lte = new Date(String(endDate));
     }
 
-    const transactions = await prisma.inventoryTransaction.findMany({
-      where: whereCondition,
-      include: {
-        document: { select: { documentNumber: true, type: true, note: true } },
-        product: { select: { productCode: true, name: true } },
-        fromWarehouse: { select: { name: true } },
-        toWarehouse: { select: { name: true } },
-        batch: { select: { batchNumber: true } }
-      },
-      orderBy: { timestamp: 'desc' }
-    });
+    const [totalRecords, transactions] = await Promise.all([
+      prisma.inventoryTransaction.count({ where: whereCondition }),
+      prisma.inventoryTransaction.findMany({
+        where: whereCondition,
+        skip,
+        take: limitNumber,
+        include: {
+          document: { select: { documentNumber: true, type: true, note: true } },
+          product: { select: { productCode: true, name: true } },
+          fromWarehouse: { select: { name: true } },
+          toWarehouse: { select: { name: true } },
+          batch: { select: { batchNumber: true } }
+        },
+        orderBy: { timestamp: 'desc' }
+      })
+    ]);
 
-    res.json(transactions);
+    res.json({
+      data: transactions,
+      meta: {
+        total: totalRecords,
+        page: pageNumber,
+        limit: limitNumber,
+        totalPages: Math.ceil(totalRecords / limitNumber)
+      }
+    });
   } catch (error: any) {
     res.status(500).json({ message: "Lỗi truy xuất thẻ kho", error: error.message });
   }
 };
 
 // ==========================================
-// 3. ĐIỀU CHỈNH KHO / KIỂM KÊ (STOCK ADJUSTMENT)
+// 3. ĐIỀU CHỈNH KHO (SINGLE STOCK ADJUSTMENT)
 // ==========================================
-export const adjustStock = async (req: Request, res: Response): Promise<void> => {
+export const adjustStock = async (req: AuthRequest, res: Response): Promise<void> => {
   const { branchId, warehouseId, binId, productId, variantId, batchId, adjustQuantity, unitCost, note } = req.body;
-  const userId = (req as any).user?.userId || req.body.userId;
+  const userId = req.user?.userId || req.body.userId;
 
   try {
     const qty = Number(adjustQuantity);
@@ -95,28 +133,22 @@ export const adjustStock = async (req: Request, res: Response): Promise<void> =>
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Tạo Chứng từ Điều chỉnh (Document)
       const doc = await tx.document.create({
         data: {
           documentNumber: `ADJ-${Date.now()}`,
           branchId,
           type: "ADJUSTMENT",
-          status: "COMPLETED", // Điều chỉnh kho thường có hiệu lực ngay
-          note: note || "Kiểm kê / Điều chỉnh kho thủ công",
+          status: "COMPLETED",
+          note: note || "Điều chỉnh kho thủ công",
           createdById: userId,
           isLocked: true
         }
       });
 
-      // 2. Lấy số dư hiện tại
       const currentBalance = await tx.inventoryBalance.findUnique({
         where: {
           warehouseId_binId_productId_variantId_batchId: {
-            warehouseId,
-            binId: binId || null,
-            productId,
-            variantId: variantId || null,
-            batchId: batchId || null
+            warehouseId, binId: binId || null, productId, variantId: variantId || null, batchId: batchId || null
           }
         }
       });
@@ -124,26 +156,22 @@ export const adjustStock = async (req: Request, res: Response): Promise<void> =>
       const qtyBefore = currentBalance?.quantity || 0;
       const qtyAfter = qtyBefore + qty;
 
-      if (qtyAfter < 0) {
-        throw new Error(`Kho không đủ tồn để trừ! Tồn hiện tại: ${qtyBefore}`);
-      }
+      if (qtyAfter < 0) throw new Error(`Kho không đủ tồn để trừ! Tồn hiện tại: ${qtyBefore}`);
 
-      // 3. Xử lý giá trị Tồn kho & Giá vốn
       const cost = Number(unitCost) || Number(currentBalance?.avgCost || 0);
       const totalCostChange = Math.abs(qty) * cost;
       
       let newTotalValue = Number(currentBalance?.totalValue || 0);
       let newAvgCost = Number(currentBalance?.avgCost || 0);
 
-      if (qty > 0) { // Nhập kho (Cộng thêm)
+      if (qty > 0) { 
         newTotalValue += totalCostChange;
-        newAvgCost = newTotalValue / qtyAfter; // Tính Moving Average mới
-      } else { // Xuất kho (Trừ đi)
+        newAvgCost = qtyAfter > 0 ? (newTotalValue / qtyAfter) : 0; 
+      } else { 
         newTotalValue -= totalCostChange;
-        // Xuất kho thì giữ nguyên giá vốn bình quân (avgCost)
+        // Xuất kho không làm thay đổi giá trị trung bình mỗi unit
       }
 
-      // 4. Cập nhật hoặc Tạo mới Balance
       await tx.inventoryBalance.upsert({
         where: {
           warehouseId_binId_productId_variantId_batchId: {
@@ -155,27 +183,20 @@ export const adjustStock = async (req: Request, res: Response): Promise<void> =>
           quantity: qtyAfter, totalValue: newTotalValue, avgCost: newAvgCost
         },
         update: {
-          quantity: qtyAfter, totalValue: newTotalValue, avgCost: newAvgCost
+          quantity: { increment: qty }, 
+          totalValue: newTotalValue, 
+          avgCost: newAvgCost
         }
       });
 
-      // 5. Tạo dòng Lịch sử Giao dịch
       const txLine = await tx.inventoryTransaction.create({
         data: {
-          documentId: doc.documentId,
-          branchId,
-          movementDirection: qty > 0 ? "IN" : "OUT",
-          fromWarehouseId: qty < 0 ? warehouseId : null,
-          toWarehouseId: qty > 0 ? warehouseId : null,
-          fromBinId: qty < 0 ? binId || null : null,
-          toBinId: qty > 0 ? binId || null : null,
+          documentId: doc.documentId, branchId, movementDirection: qty > 0 ? "IN" : "OUT",
+          fromWarehouseId: qty < 0 ? warehouseId : null, toWarehouseId: qty > 0 ? warehouseId : null,
+          fromBinId: qty < 0 ? binId || null : null, toBinId: qty > 0 ? binId || null : null,
           productId, variantId: variantId || null, batchId: batchId || null,
-          quantity: Math.abs(qty),
-          quantityBefore: qtyBefore,
-          quantityAfter: qtyAfter,
-          unitCost: cost,
-          movingAvgCost: newAvgCost,
-          totalCost: totalCostChange
+          quantity: Math.abs(qty), quantityBefore: qtyBefore, quantityAfter: qtyAfter,
+          unitCost: cost, movingAvgCost: newAvgCost, totalCost: totalCostChange
         }
       });
 
@@ -192,9 +213,9 @@ export const adjustStock = async (req: Request, res: Response): Promise<void> =>
 // ==========================================
 // 4. CHUYỂN KHO NỘI BỘ (INTERNAL TRANSFER)
 // ==========================================
-export const transferStock = async (req: Request, res: Response): Promise<void> => {
+export const transferStock = async (req: AuthRequest, res: Response): Promise<void> => {
   const { branchId, fromWarehouseId, toWarehouseId, note, items } = req.body;
-  const userId = (req as any).user?.userId || req.body.userId;
+  const userId = req.user?.userId || req.body.userId;
 
   try {
     if (!items || items.length === 0) {
@@ -207,115 +228,96 @@ export const transferStock = async (req: Request, res: Response): Promise<void> 
     }
 
     const transferDoc = await prisma.$transaction(async (tx) => {
-      // 1. Tạo Document Header
       const doc = await tx.document.create({
         data: {
-          documentNumber: `TRF-${Date.now()}`,
-          branchId,
-          type: "INTERNAL_TRANSFER",
-          status: "COMPLETED", 
-          note: note || "Chuyển kho nội bộ",
-          createdById: userId,
-          isLocked: true
+          documentNumber: `TRF-${Date.now()}`, branchId, type: "INTERNAL_TRANSFER",
+          status: "COMPLETED", note: note || "Chuyển kho nội bộ", createdById: userId, isLocked: true
         }
       });
 
       let docTotalAmount = 0;
 
-      // 2. Xử lý từng Item chuyển kho
+      // Kỹ thuật PRE-FETCH để tránh lỗi N+1 Query
+      const sourceConditions = items.map((item: any) => ({
+        warehouseId: fromWarehouseId, binId: item.fromBinId || null, productId: item.productId,
+        variantId: item.variantId || null, batchId: item.batchId || null
+      }));
+
+      const destConditions = items.map((item: any) => ({
+        warehouseId: toWarehouseId, binId: item.toBinId || null, productId: item.productId,
+        variantId: item.variantId || null, batchId: item.batchId || null
+      }));
+
+      const [sourceBalances, destBalances] = await Promise.all([
+        tx.inventoryBalance.findMany({ where: { OR: sourceConditions } }),
+        tx.inventoryBalance.findMany({ where: { OR: destConditions } })
+      ]);
+
+      // Tạo Lookup Map (O(1) time complexity)
+      const getBalanceKey = (w: string, b: string | null, p: string, v: string | null, ba: string | null) => 
+        `${w}_${b || 'null'}_${p}_${v || 'null'}_${ba || 'null'}`;
+      
+      const sourceMap = new Map(sourceBalances.map(b => [getBalanceKey(b.warehouseId, b.binId, b.productId, b.variantId, b.batchId), b]));
+      const destMap = new Map(destBalances.map(b => [getBalanceKey(b.warehouseId, b.binId, b.productId, b.variantId, b.batchId), b]));
+
       for (const item of items) {
         const qty = Number(item.quantity);
         if (qty <= 0) throw new Error("Số lượng chuyển phải lớn hơn 0");
 
-        // --- BƯỚC A: TRỪ KHO XUẤT (SOURCE) ---
-        const sourceBalance = await tx.inventoryBalance.findUnique({
-          where: {
-            warehouseId_binId_productId_variantId_batchId: {
-              warehouseId: fromWarehouseId,
-              binId: item.fromBinId || null,
-              productId: item.productId,
-              variantId: item.variantId || null,
-              batchId: item.batchId || null
-            }
-          }
-        });
+        const sourceKey = getBalanceKey(fromWarehouseId, item.fromBinId, item.productId, item.variantId, item.batchId);
+        const sourceBalance = sourceMap.get(sourceKey);
 
         if (!sourceBalance || sourceBalance.quantity < qty) {
-          throw new Error(`Sản phẩm ${item.productId} không đủ tồn kho tại kho xuất! (Tồn: ${sourceBalance?.quantity || 0})`);
+          throw new Error(`Sản phẩm ${item.productId} không đủ tồn kho tại kho xuất!`);
         }
 
         const unitCost = Number(sourceBalance.avgCost);
         const totalLineCost = qty * unitCost;
         docTotalAmount += totalLineCost;
 
+        // Xử lý trừ kho xuất
         await tx.inventoryBalance.update({
           where: { balanceId: sourceBalance.balanceId },
-          data: {
-            quantity: sourceBalance.quantity - qty,
-            totalValue: Number(sourceBalance.totalValue) - totalLineCost
-          }
+          data: { quantity: { decrement: qty }, totalValue: { decrement: totalLineCost } }
         });
 
-        // --- BƯỚC B: CỘNG KHO NHẬP (DESTINATION) ---
-        const destBalance = await tx.inventoryBalance.findUnique({
-          where: {
-            warehouseId_binId_productId_variantId_batchId: {
-              warehouseId: toWarehouseId,
-              binId: item.toBinId || null,
-              productId: item.productId,
-              variantId: item.variantId || null,
-              batchId: item.batchId || null
-            }
-          }
-        });
+        // Xử lý cộng kho nhập
+        const destKey = getBalanceKey(toWarehouseId, item.toBinId, item.productId, item.variantId, item.batchId);
+        const destBalance = destMap.get(destKey);
 
         let newDestTotalValue = Number(destBalance?.totalValue || 0) + totalLineCost;
         let newDestQty = (destBalance?.quantity || 0) + qty;
-        let newDestAvgCost = newDestTotalValue / newDestQty;
+        let newDestAvgCost = newDestQty > 0 ? (newDestTotalValue / newDestQty) : unitCost;
 
         await tx.inventoryBalance.upsert({
           where: {
             warehouseId_binId_productId_variantId_batchId: {
-              warehouseId: toWarehouseId, binId: item.toBinId || null, productId: item.productId, variantId: item.variantId || null, batchId: item.batchId || null
+              warehouseId: toWarehouseId, binId: item.toBinId || null, productId: item.productId,
+              variantId: item.variantId || null, batchId: item.batchId || null
             }
           },
           create: {
-            warehouseId: toWarehouseId, binId: item.toBinId || null, productId: item.productId, variantId: item.variantId || null, batchId: item.batchId || null,
-            quantity: newDestQty, totalValue: newDestTotalValue, avgCost: newDestAvgCost
+            warehouseId: toWarehouseId, binId: item.toBinId || null, productId: item.productId,
+            variantId: item.variantId || null, batchId: item.batchId || null,
+            quantity: qty, totalValue: totalLineCost, avgCost: unitCost
           },
           update: {
-            quantity: newDestQty, totalValue: newDestTotalValue, avgCost: newDestAvgCost
+            quantity: { increment: qty }, totalValue: { increment: totalLineCost }, avgCost: newDestAvgCost
           }
         });
 
-        // --- BƯỚC C: GHI LỊCH SỬ GIAO DỊCH (TRANSACTION) ---
         await tx.inventoryTransaction.create({
           data: {
-            documentId: doc.documentId,
-            branchId,
-            movementDirection: "OUT", 
-            fromWarehouseId,
-            toWarehouseId,
-            fromBinId: item.fromBinId || null,
-            toBinId: item.toBinId || null,
-            productId: item.productId,
-            variantId: item.variantId || null,
-            batchId: item.batchId || null,
-            quantity: qty,
-            quantityBefore: sourceBalance.quantity,
-            quantityAfter: sourceBalance.quantity - qty,
-            unitCost: unitCost,
-            movingAvgCost: sourceBalance.avgCost, 
-            totalCost: totalLineCost
+            documentId: doc.documentId, branchId, movementDirection: "OUT", 
+            fromWarehouseId, toWarehouseId, fromBinId: item.fromBinId || null, toBinId: item.toBinId || null,
+            productId: item.productId, variantId: item.variantId || null, batchId: item.batchId || null,
+            quantity: qty, quantityBefore: sourceBalance.quantity, quantityAfter: sourceBalance.quantity - qty,
+            unitCost: unitCost, movingAvgCost: sourceBalance.avgCost, totalCost: totalLineCost
           }
         });
       }
 
-      await tx.document.update({
-        where: { documentId: doc.documentId },
-        data: { totalAmount: docTotalAmount }
-      });
-
+      await tx.document.update({ where: { documentId: doc.documentId }, data: { totalAmount: docTotalAmount } });
       return doc;
     });
 
@@ -327,7 +329,7 @@ export const transferStock = async (req: Request, res: Response): Promise<void> 
 };
 
 // ==========================================
-// [TÍNH NĂNG MỚI] 5. THUẬT TOÁN TỰ ĐỘNG NHẶT HÀNG (FIFO / FEFO)
+// 5. THUẬT TOÁN TỰ ĐỘNG NHẶT HÀNG (FIFO / FEFO)
 // ==========================================
 export const autoPickStock = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -339,7 +341,6 @@ export const autoPickStock = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // 1. Kiểm tra cấu hình Sản phẩm để chọn chiến lược (FEFO hay FIFO)
     const product = await prisma.products.findUnique({
       where: { productId: String(productId) },
       select: { hasBatches: true, name: true, productCode: true }
@@ -350,21 +351,15 @@ export const autoPickStock = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // 2. Quét tất cả tồn kho của sản phẩm này tại Kho chỉ định
     const availableBalances = await prisma.inventoryBalance.findMany({
       where: {
-        warehouseId: String(warehouseId),
-        productId: String(productId),
+        warehouseId: String(warehouseId), productId: String(productId),
         ...(variantId && { variantId: String(variantId) }),
-        quantity: { gt: 0 } // Chỉ lấy dòng có hàng
+        quantity: { gt: 0 }
       },
-      include: {
-        batch: true,
-        bin: true
-      }
+      include: { batch: true, bin: true }
     });
 
-    // 3. Tính toán Hàng khả dụng thực tế (Trừ đi lượng đang bị giam/khóa bởi đơn khác)
     const validBalances = availableBalances.filter(b => (b.quantity - b.lockedQty) > 0);
 
     if (validBalances.length === 0) {
@@ -372,23 +367,16 @@ export const autoPickStock = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // 4. CHẠY THUẬT TOÁN SẮP XẾP ƯU TIÊN (SORT)
     validBalances.sort((a, b) => {
       if (product.hasBatches) {
-        // [CHIẾN LƯỢC FEFO] - First Expire First Out (Ưu tiên xuất lô sắp hết hạn trước)
         const dateA = a.batch?.expiryDate ? new Date(a.batch.expiryDate).getTime() : Infinity;
         const dateB = b.batch?.expiryDate ? new Date(b.batch.expiryDate).getTime() : Infinity;
-        
         if (dateA !== dateB) return dateA - dateB;
         
-        // Nếu ngày hết hạn giống nhau, xét đến Ngày sản xuất (Cũ hơn xuất trước)
         const mfgA = a.batch?.manufactureDate ? new Date(a.batch.manufactureDate).getTime() : Infinity;
         const mfgB = b.batch?.manufactureDate ? new Date(b.batch.manufactureDate).getTime() : Infinity;
         return mfgA - mfgB;
       } else {
-        // [CHIẾN LƯỢC FIFO] - Basic (Ưu tiên lấy ở kệ có số lượng ít để tối ưu không gian, hoặc theo Tên kệ)
-        // Lưu ý: Trong WMS nâng cao, FIFO có thể dựa vào ngày nhập kệ (nếu có lưu timestamp).
-        // Ở đây ta ưu tiên lấy sạch những kệ có ít hàng trước để dọn kho.
         const availA = a.quantity - a.lockedQty;
         const availB = b.quantity - b.lockedQty;
         if (availA !== availB) return availA - availB;
@@ -399,52 +387,213 @@ export const autoPickStock = async (req: Request, res: Response): Promise<void> 
       }
     });
 
-    // 5. THỰC THI NHẶT HÀNG (ALLOCATION ROUTINE)
     let remainingToPick = qtyNeeded;
     const picks = [];
 
     for (const bal of validBalances) {
       if (remainingToPick <= 0) break;
-
       const availableQty = bal.quantity - bal.lockedQty;
       const pickQty = Math.min(availableQty, remainingToPick);
 
       picks.push({
-        balanceId: bal.balanceId,
-        warehouseId: bal.warehouseId,
-        productId: bal.productId,
-        variantId: bal.variantId,
-        binId: bal.binId,
-        binCode: bal.bin?.code || "Mặc định",
-        batchId: bal.batchId,
-        batchNumber: bal.batch?.batchNumber || null,
-        expiryDate: bal.batch?.expiryDate || null,
-        availableQty: availableQty,
-        quantity: pickQty, // Đây là quantity sẽ map vào transaction
-        unitCost: bal.avgCost
+        balanceId: bal.balanceId, warehouseId: bal.warehouseId, productId: bal.productId,
+        variantId: bal.variantId, binId: bal.binId, binCode: bal.bin?.code || "Mặc định",
+        batchId: bal.batchId, batchNumber: bal.batch?.batchNumber || null, expiryDate: bal.batch?.expiryDate || null,
+        availableQty: availableQty, quantity: pickQty, unitCost: bal.avgCost
       });
-
       remainingToPick -= pickQty;
     }
 
-    // 6. Trả kết quả
     if (remainingToPick > 0) {
       res.status(400).json({ 
-        message: `Cảnh báo: Kho không đủ hàng! Bạn yêu cầu ${qtyNeeded}, nhưng hệ thống chỉ gom được ${qtyNeeded - remainingToPick} sản phẩm.`,
-        isFulfilled: false,
-        shortage: remainingToPick,
-        picks
+        message: `Cảnh báo: Kho không đủ hàng! Thiếu ${remainingToPick} sản phẩm.`, isFulfilled: false, shortage: remainingToPick, picks
       });
       return;
     }
 
-    res.json({
-      message: `Đã tự động nhặt thành công ${qtyNeeded} sản phẩm theo quy tắc ${product.hasBatches ? 'FEFO' : 'FIFO'}!`,
-      isFulfilled: true,
-      totalPicked: qtyNeeded,
-      picks
-    });
+    res.json({ message: `Nhặt thành công ${qtyNeeded} sản phẩm (${product.hasBatches ? 'FEFO' : 'FIFO'})!`, isFulfilled: true, totalPicked: qtyNeeded, picks });
   } catch (error: any) {
     res.status(500).json({ message: "Lỗi thuật toán tự động nhặt hàng", error: error.message });
+  }
+};
+
+// ==========================================
+// 6. CẢNH BÁO TỒN KHO AN TOÀN (LOW STOCK ALERTS)
+// ==========================================
+export const getLowStockAlerts = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const groupedBalances = await prisma.inventoryBalance.groupBy({
+      by: ['productId'],
+      _sum: { quantity: true, lockedQty: true },
+      where: { quantity: { gt: 0 } }
+    });
+
+    const products = await prisma.products.findMany({
+      where: { reorderPoint: { gt: 0 }, isDeleted: false, status: "ACTIVE" },
+      select: { productId: true, productCode: true, name: true, reorderPoint: true, imageUrl: true }
+    });
+
+    const alerts = [];
+    for (const prod of products) {
+      const balanceData = groupedBalances.find(b => b.productId === prod.productId);
+      const totalAvailable = balanceData ? (Number(balanceData._sum.quantity) - Number(balanceData._sum.lockedQty)) : 0;
+
+      if (totalAvailable <= prod.reorderPoint) {
+        alerts.push({
+          productId: prod.productId,
+          productCode: prod.productCode,
+          productName: prod.name,
+          imageUrl: prod.imageUrl,
+          reorderPoint: prod.reorderPoint,
+          currentAvailableQty: totalAvailable,
+          deficit: prod.reorderPoint - totalAvailable
+        });
+      }
+    }
+
+    res.json(alerts.sort((a, b) => b.deficit - a.deficit)); 
+  } catch (error: any) {
+    res.status(500).json({ message: "Lỗi lấy cảnh báo tồn kho", error: error.message });
+  }
+};
+
+// ==========================================
+// 7. CẢNH BÁO HÀNG SẮP HẾT HẠN (EXPIRING BATCHES)
+// ==========================================
+export const getExpiringBatches = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const daysThreshold = Number(req.query.days) || 30; 
+    
+    const thresholdDate = new Date();
+    thresholdDate.setDate(thresholdDate.getDate() + daysThreshold);
+
+    const expiringInventory = await prisma.inventoryBalance.findMany({
+      where: {
+        quantity: { gt: 0 },
+        batch: {
+          expiryDate: { lte: thresholdDate, not: null }
+        }
+      },
+      include: {
+        product: { select: { productCode: true, name: true, imageUrl: true } },
+        warehouse: { select: { name: true } },
+        bin: { select: { code: true } },
+        batch: { select: { batchNumber: true, expiryDate: true } }
+      },
+      orderBy: { batch: { expiryDate: 'asc' } } 
+    });
+
+    res.json(expiringInventory);
+  } catch (error: any) {
+    res.status(500).json({ message: "Lỗi lấy cảnh báo hàng hết hạn", error: error.message });
+  }
+};
+
+// ==========================================
+// 8. KIỂM KÊ HÀNG LOẠT (BULK STOCK TAKE) - HIGH PERFORMANCE
+// ==========================================
+export const bulkStockTake = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { branchId, warehouseId, note, items } = req.body;
+  const userId = req.user?.userId || req.body.userId;
+
+  try {
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      res.status(400).json({ message: "Dữ liệu kiểm kê trống!" });
+      return;
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const doc = await tx.document.create({
+        data: {
+          documentNumber: `STK-${Date.now()}`,
+          branchId,
+          type: "ADJUSTMENT",
+          status: "COMPLETED",
+          note: note || "Kiểm kê kho định kỳ (Bulk)",
+          createdById: userId,
+          isLocked: true
+        }
+      });
+
+      let totalCostVariance = 0;
+
+      // KIẾN TRÚC ENTERPRISE: Fetch toàn bộ balances 1 lần duy nhất thay vì query trong vòng lặp (N+1 Issue)
+      const balanceConditions = items.map((item: any) => ({
+        warehouseId, binId: item.binId || null, productId: item.productId, 
+        variantId: item.variantId || null, batchId: item.batchId || null
+      }));
+
+      const existingBalances = await tx.inventoryBalance.findMany({
+        where: { OR: balanceConditions }
+      });
+
+      const getBalanceKey = (w: string, b: string | null, p: string, v: string | null, ba: string | null) => 
+        `${w}_${b || 'null'}_${p}_${v || 'null'}_${ba || 'null'}`;
+      
+      const balanceMap = new Map(existingBalances.map(b => [getBalanceKey(b.warehouseId, b.binId, b.productId, b.variantId, b.batchId), b]));
+
+      for (const item of items) {
+        const countedQty = Number(item.countedQuantity); 
+        const key = getBalanceKey(warehouseId, item.binId, item.productId, item.variantId, item.batchId);
+        const currentBalance = balanceMap.get(key);
+
+        const qtyBefore = currentBalance?.quantity || 0;
+        const varianceQty = countedQty - qtyBefore; 
+
+        if (varianceQty === 0) continue; 
+
+        const unitCost = Number(currentBalance?.avgCost || item.defaultUnitCost || 0);
+        const varianceCost = Math.abs(varianceQty) * unitCost;
+        
+        if (varianceQty > 0) totalCostVariance += varianceCost; 
+        else totalCostVariance -= varianceCost; 
+
+        let newTotalValue = Number(currentBalance?.totalValue || 0);
+        if (varianceQty > 0) newTotalValue += varianceCost;
+        else newTotalValue -= varianceCost;
+
+        const newAvgCost = countedQty > 0 ? (newTotalValue / countedQty) : unitCost;
+
+        await tx.inventoryBalance.upsert({
+          where: {
+            warehouseId_binId_productId_variantId_batchId: {
+              warehouseId, binId: item.binId || null, productId: item.productId, 
+              variantId: item.variantId || null, batchId: item.batchId || null
+            }
+          },
+          create: {
+            warehouseId, binId: item.binId || null, productId: item.productId, 
+            variantId: item.variantId || null, batchId: item.batchId || null,
+            quantity: countedQty, totalValue: newTotalValue, avgCost: newAvgCost
+          },
+          update: {
+            quantity: countedQty, totalValue: newTotalValue, avgCost: newAvgCost
+          }
+        });
+
+        await tx.inventoryTransaction.create({
+          data: {
+            documentId: doc.documentId, branchId, movementDirection: varianceQty > 0 ? "IN" : "OUT",
+            fromWarehouseId: varianceQty < 0 ? warehouseId : null, toWarehouseId: varianceQty > 0 ? warehouseId : null,
+            fromBinId: varianceQty < 0 ? item.binId || null : null, toBinId: varianceQty > 0 ? item.binId || null : null,
+            productId: item.productId, variantId: item.variantId || null, batchId: item.batchId || null,
+            quantity: Math.abs(varianceQty), quantityBefore: qtyBefore, quantityAfter: countedQty,
+            unitCost: unitCost, movingAvgCost: newAvgCost, totalCost: varianceCost
+          }
+        });
+      }
+
+      await tx.document.update({
+        where: { documentId: doc.documentId },
+        data: { totalAmount: Math.abs(totalCostVariance) } 
+      });
+
+      return doc;
+    });
+
+    await logAudit("Document (StockTake)", result.documentId, "CREATE", null, result, userId, req.ip);
+    res.status(201).json({ message: "Chốt sổ kiểm kê hàng loạt thành công!", document: result });
+  } catch (error: any) {
+    res.status(400).json({ message: "Lỗi xử lý kiểm kê hàng loạt", error: error.message });
   }
 };

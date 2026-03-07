@@ -1,15 +1,16 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { 
-  Target, DollarSign, TrendingDown, TrendingUp, AlertTriangle, 
+  Target, DollarSign, TrendingDown, AlertTriangle, 
   Plus, Search, Loader2, RefreshCcw, Building, Calendar, 
-  Trash2, Edit3, X, CheckCircle2, Activity
+  Trash2, CheckCircle2, Download
 } from "lucide-react";
-import dayjs from "dayjs";
 import { toast } from "react-hot-toast";
+import dayjs from "dayjs";
+import 'dayjs/locale/vi';
 
 // --- REDUX & API ---
 import { 
@@ -22,14 +23,17 @@ import {
   Budget
 } from "@/state/api";
 
-// --- COMPONENTS ---
+// --- COMPONENTS & UTILS ---
 import Header from "@/app/(components)/Header";
+import Modal from "@/app/(components)/Modal";
+import { formatVND } from "@/utils/formatters";
+import { exportToCSV } from "@/utils/exportUtils";
+
+dayjs.locale('vi');
 
 // ==========================================
 // 1. HELPERS & FORMATTERS (DATA VIZ)
 // ==========================================
-const formatVND = (val: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
-
 // Thuật toán tính toán Tốc độ đốt tiền (Burn Rate) và Cảnh báo màu sắc
 const calculateBurnRate = (used: number, total: number) => {
   if (!total || total === 0) return { percent: 0, color: "bg-slate-300", text: "text-slate-500", status: "Chưa phân bổ" };
@@ -111,7 +115,7 @@ export default function BudgetsPage() {
         departmentId: formData.departmentId,
         periodId: formData.periodId,
         totalAmount: Number(formData.totalAmount),
-        usedAmount: editingBudget ? editingBudget.usedAmount : 0, // Khi tạo mới, đã dùng = 0
+        usedAmount: editingBudget ? editingBudget.usedAmount : 0, 
         isActive: formData.isActive
       };
 
@@ -129,7 +133,7 @@ export default function BudgetsPage() {
   };
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // Ngăn chặn trigger sự kiện click của thẻ Card
+    e.stopPropagation(); 
     if (window.confirm("Bạn chắc chắn muốn xóa ngân sách này? Mọi cảnh báo chi tiêu của phòng ban này sẽ bị hủy bỏ.")) {
       try {
         await deleteBudget(id).unwrap();
@@ -143,7 +147,6 @@ export default function BudgetsPage() {
   // --- LỌC & MAP DỮ LIỆU ĐỂ HIỂN THỊ (DATA VIZ) ---
   const mappedBudgets = useMemo(() => {
     return budgets.map(b => {
-      // Map ID sang Name cho đẹp
       const deptName = departments.find(d => d.departmentId === b.departmentId)?.name || `Dept ID: ${b.departmentId}`;
       const periodName = periods.find(p => p.periodId === b.periodId)?.periodName || `Period ID: ${b.periodId}`;
       return { ...b, deptName, periodName };
@@ -166,14 +169,31 @@ export default function BudgetsPage() {
     return { totalAllocated, totalBurned, overBudgetDepts };
   }, [mappedBudgets]);
 
+  // --- HANDLER EXPORT ---
+  const handleExportData = () => {
+    if (mappedBudgets.length === 0) {
+      toast.error("Không có dữ liệu ngân sách để xuất!"); return;
+    }
+    const exportData = mappedBudgets.map(b => {
+      const viz = calculateBurnRate(b.usedAmount, b.totalAmount);
+      return {
+        "Phòng ban": b.deptName,
+        "Kỳ kế toán": b.periodName,
+        "Ngân sách cấp": b.totalAmount,
+        "Đã sử dụng": b.usedAmount,
+        "Tỷ lệ tiêu hao (%)": viz.percent,
+        "Trạng thái": viz.status,
+        "Cảnh báo": viz.isAlert ? "Nguy hiểm" : "An toàn",
+        "Khóa/Mở": b.isActive ? "Đang hoạt động" : "Đã khóa"
+      };
+    });
+    exportToCSV(exportData, "Danh_Sach_Ngan_Sach");
+    toast.success("Đã xuất báo cáo ngân sách!");
+  };
+
   // --- ANIMATION CONFIG ---
   const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.05 } } };
   const itemVariants: Variants = { hidden: { opacity: 0, scale: 0.95, y: 20 }, show: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } };
-  const modalVariants: Variants = {
-    hidden: { opacity: 0, scale: 0.95 },
-    visible: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 300, damping: 25 } },
-    exit: { opacity: 0, scale: 0.95 }
-  };
 
   if (isError) {
     return (
@@ -187,6 +207,19 @@ export default function BudgetsPage() {
     );
   }
 
+  // --- FOOTER RENDER CHO MODAL ---
+  const modalFooter = (
+    <>
+      <button type="button" onClick={() => setIsModalOpen(false)} disabled={isSubmitting} className="px-5 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors disabled:opacity-50">
+        Hủy
+      </button>
+      <button type="submit" form="budget-form" disabled={isSubmitting} className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-emerald-500/30 transition-all active:scale-95 disabled:opacity-50">
+        {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+        {editingBudget ? "Lưu Thay Đổi" : "Khởi tạo Ngân sách"}
+      </button>
+    </>
+  );
+
   return (
     <div className="w-full flex flex-col gap-6 pb-10">
       
@@ -195,13 +228,22 @@ export default function BudgetsPage() {
         title={t("Quản lý Ngân sách Chi tiêu")} 
         subtitle={t("Thiết lập hạn mức, kiểm soát dòng tiền và cảnh báo vượt ngân sách theo phòng ban.")}
         rightNode={
-          <button 
-            onClick={() => handleOpenForm()}
-            className="px-5 py-2.5 flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-emerald-500/30 transition-all active:scale-95"
-          >
-            <Plus className="w-5 h-5" />
-            <span className="hidden sm:inline">Cấp Ngân sách</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={handleExportData}
+              className="px-4 py-2.5 flex items-center gap-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-xl border border-slate-200 dark:border-slate-700 transition-all active:scale-95"
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline">Xuất Dữ liệu</span>
+            </button>
+            <button 
+              onClick={() => handleOpenForm()}
+              className="px-5 py-2.5 flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-emerald-500/30 transition-all active:scale-95"
+            >
+              <Plus className="w-5 h-5" />
+              <span className="hidden sm:inline">Cấp Ngân sách</span>
+            </button>
+          </div>
         }
       />
 
@@ -316,100 +358,66 @@ export default function BudgetsPage() {
         </motion.div>
       )}
 
-      {/* ==========================================
-          5. INLINE MODAL: TẠO/SỬA NGÂN SÁCH
-          ========================================== */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <motion.div 
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
-          >
-            <div className="absolute inset-0" onClick={!isSubmitting ? () => setIsModalOpen(false) : undefined} />
-            
-            <motion.div 
-              variants={modalVariants} initial="hidden" animate="visible" exit="exit"
-              className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-emerald-500/20 overflow-hidden z-10"
+      {/* 5. MODAL: TẠO/SỬA NGÂN SÁCH BẰNG CORE MODAL */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title={editingBudget ? "Điều chỉnh Ngân sách" : "Cấp Ngân sách Mới"}
+        subtitle="Thiết lập giới hạn chi tiêu và cảnh báo cho phòng ban."
+        icon={<Target className="w-6 h-6 text-emerald-500" />}
+        maxWidth="max-w-lg"
+        disableOutsideClick={isSubmitting}
+        footer={modalFooter}
+      >
+        <form id="budget-form" onSubmit={handleSubmit} className="p-6 space-y-5">
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-500 uppercase">Phòng ban thụ hưởng *</label>
+            <select 
+              value={formData.departmentId} onChange={(e) => setFormData({...formData, departmentId: e.target.value})}
+              disabled={!!editingBudget} // Không cho đổi phòng ban khi đang sửa
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white disabled:opacity-50"
             >
-              <div className="flex justify-between items-center px-6 py-5 border-b border-slate-100 dark:border-white/5 bg-emerald-50/50 dark:bg-emerald-900/10">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-xl">
-                    <Target className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                      {editingBudget ? "Điều chỉnh Ngân sách" : "Cấp Ngân sách Mới"}
-                    </h2>
-                  </div>
-                </div>
-                <button onClick={() => setIsModalOpen(false)} disabled={isSubmitting} className="p-2 text-slate-400 hover:text-rose-500 transition-colors">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+              <option value="">-- Chọn Phòng ban --</option>
+              {departments.map(d => <option key={d.departmentId} value={d.departmentId}>{d.name}</option>)}
+            </select>
+          </div>
 
-              <form onSubmit={handleSubmit} className="p-6 space-y-5">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Phòng ban thụ hưởng *</label>
-                  <select 
-                    value={formData.departmentId} onChange={(e) => setFormData({...formData, departmentId: e.target.value})}
-                    disabled={!!editingBudget} // Không cho đổi phòng ban khi đang sửa
-                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white disabled:opacity-50"
-                  >
-                    <option value="">-- Chọn Phòng ban --</option>
-                    {departments.map(d => <option key={d.departmentId} value={d.departmentId}>{d.name}</option>)}
-                  </select>
-                </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-500 uppercase">Kỳ Kế toán *</label>
+            <select 
+              value={formData.periodId} onChange={(e) => setFormData({...formData, periodId: e.target.value})}
+              disabled={!!editingBudget} // Không cho đổi kỳ khi đang sửa
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white disabled:opacity-50"
+            >
+              <option value="">-- Chọn Kỳ --</option>
+              {periods.map(p => <option key={p.periodId} value={p.periodId}>{p.periodName} ({dayjs(p.startDate).format('MM/YY')})</option>)}
+            </select>
+          </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Kỳ Kế toán *</label>
-                  <select 
-                    value={formData.periodId} onChange={(e) => setFormData({...formData, periodId: e.target.value})}
-                    disabled={!!editingBudget} // Không cho đổi kỳ khi đang sửa
-                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white disabled:opacity-50"
-                  >
-                    <option value="">-- Chọn Kỳ --</option>
-                    {periods.map(p => <option key={p.periodId} value={p.periodId}>{p.periodName} ({dayjs(p.startDate).format('MM/YY')})</option>)}
-                  </select>
-                </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-500 uppercase">Hạn mức Tiền (VND) *</label>
+            <div className="relative">
+              <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-emerald-500" />
+              <input 
+                type="number" min="0" required
+                value={formData.totalAmount} onChange={(e) => setFormData({...formData, totalAmount: e.target.value})}
+                placeholder="VD: 100000000"
+                className="w-full pl-10 pr-4 py-3 bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-500/30 rounded-xl text-lg font-black text-emerald-700 dark:text-emerald-400 focus:ring-2 focus:ring-emerald-500 outline-none"
+              />
+            </div>
+          </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Hạn mức Tiền (VND) *</label>
-                  <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-emerald-500" />
-                    <input 
-                      type="number" min="0" required
-                      value={formData.totalAmount} onChange={(e) => setFormData({...formData, totalAmount: e.target.value})}
-                      placeholder="VD: 100000000"
-                      className="w-full pl-10 pr-4 py-3 bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-500/30 rounded-xl text-lg font-black text-emerald-700 dark:text-emerald-400 focus:ring-2 focus:ring-emerald-500 outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-2">
-                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Trạng thái Hoạt động</label>
-                  <div 
-                    onClick={() => setFormData({...formData, isActive: !formData.isActive})}
-                    className={`w-12 h-6 flex items-center bg-slate-300 rounded-full p-1 cursor-pointer transition-colors ${formData.isActive ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}
-                  >
-                    <motion.div layout className="w-4 h-4 bg-white rounded-full shadow-md" style={{ x: formData.isActive ? 24 : 0 }} />
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-3 pt-6 border-t border-slate-100 dark:border-white/5">
-                  <button type="button" onClick={() => setIsModalOpen(false)} disabled={isSubmitting} className="px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-50">
-                    Hủy
-                  </button>
-                  <button type="submit" disabled={isSubmitting} className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50">
-                    {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                    {editingBudget ? "Lưu Thay Đổi" : "Khởi tạo Ngân sách"}
-                  </button>
-                </div>
-              </form>
-
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          <div className="flex items-center justify-between pt-2">
+            <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Trạng thái Hoạt động</label>
+            <div 
+              onClick={() => setFormData({...formData, isActive: !formData.isActive})}
+              className={`w-12 h-6 flex items-center bg-slate-300 rounded-full p-1 cursor-pointer transition-colors ${formData.isActive ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+            >
+              <motion.div layout className="w-4 h-4 bg-white rounded-full shadow-md" style={{ x: formData.isActive ? 24 : 0 }} />
+            </div>
+          </div>
+        </form>
+      </Modal>
 
     </div>
   );

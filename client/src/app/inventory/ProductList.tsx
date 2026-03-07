@@ -5,7 +5,7 @@ import { motion, AnimatePresence, Variants } from "framer-motion";
 import { 
   Package, Search, Filter, Plus, Edit, Trash2, 
   AlertTriangle, TrendingUp, Box, Settings, 
-  Tag, ShieldAlert, CheckCircle2, Loader2, ArrowRightLeft
+  Tag, ShieldAlert, CheckCircle2, Loader2, Download
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -23,13 +23,12 @@ import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
 import CreateProductModal from "./CreateProductModal";
 import AdvancedProductOpsModal from "./AdvancedProductOpsModal";
 
-// ==========================================
-// 1. HELPERS & FORMATTERS
-// ==========================================
-const formatVND = (val: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val || 0);
+// --- UTILS ---
+import { formatVND } from "@/utils/formatters";
+import { exportToCSV } from "@/utils/exportUtils";
 
 // ==========================================
-// 2. SKELETON LOADING
+// 1. SKELETON LOADING
 // ==========================================
 const ProductListSkeleton = () => (
   <div className="flex flex-col gap-6 w-full animate-pulse mt-4">
@@ -107,6 +106,26 @@ export default function ProductList() {
         toast.error(err?.data?.message || "Không thể xóa do sản phẩm đang tồn tại trong kho hoặc có chứng từ liên kết!");
       }
     }
+  };
+
+  const handleExportData = () => {
+    if (products.length === 0) {
+      toast.error("Không có dữ liệu sản phẩm để xuất!");
+      return;
+    }
+    const exportData = products.map(p => ({
+      "Mã SKU": p.productCode,
+      "Tên sản phẩm": p.name,
+      "Danh mục": categories.find(c => c.categoryId === p.categoryId)?.name || "N/A",
+      "Đơn vị tính": uoms.find(u => u.uomId === p.uomId)?.name || "N/A",
+      "Giá nhập (VND)": p.purchasePrice,
+      "Giá bán (VND)": p.price,
+      "Tồn kho tổng": p.totalStock || 0,
+      "Trạng thái": p.status === "ACTIVE" ? "Đang kinh doanh" : "Ngừng bán",
+      "Quản lý Lô": p.hasBatches ? "Có" : "Không"
+    }));
+    exportToCSV(exportData, "Danh_Muc_San_Pham");
+    toast.success("Xuất Danh mục Sản phẩm thành công!");
   };
 
   // --- CỘT DATATABLE ---
@@ -198,7 +217,6 @@ export default function ProductList() {
               </span>
               <span className="text-[10px] font-bold text-slate-400" title="Điểm tái đặt hàng (Reorder Point)">Min: {reorder}</span>
             </div>
-            {/* Tồn kho Data Viz */}
             <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
               <motion.div 
                 initial={{ width: 0 }} animate={{ width: `${percent}%` }} transition={{ duration: 1 }}
@@ -215,7 +233,6 @@ export default function ProductList() {
       align: "right",
       cell: (row) => (
         <div className="flex items-center justify-end gap-1.5">
-          {/* Nút Nghiệp vụ nâng cao (Batches, UoM) */}
           <button 
             onClick={() => setSelectedProductForAdvOps(row)} 
             title="Cấu hình Lô & Quy đổi UoM" 
@@ -259,25 +276,32 @@ export default function ProductList() {
   return (
     <div className="w-full flex flex-col gap-6">
       
-      {/* 1. KHU VỰC ĐIỀU KHIỂN TRÊN CÙNG */}
-      <div className="flex items-center justify-between">
+      {/* KHU VỰC ĐIỀU KHIỂN TRÊN CÙNG */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <h2 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-2">
           <Box className="w-6 h-6 text-indigo-500" /> Danh mục Sản phẩm (Master)
         </h2>
-        <button 
-          onClick={() => setIsCreateModalOpen(true)}
-          className="px-4 py-2.5 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-500/30 transition-all active:scale-95 whitespace-nowrap"
-        >
-          <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Thêm SKU Mới</span>
-        </button>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+           <button 
+            onClick={handleExportData}
+            className="flex-1 sm:flex-none px-4 py-2.5 flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-xl border border-slate-200 dark:border-slate-700 transition-all active:scale-95"
+          >
+            <Download className="w-4 h-4" /> Xuất File
+          </button>
+          <button 
+            onClick={() => setIsCreateModalOpen(true)}
+            className="flex-1 sm:flex-none px-4 py-2.5 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-500/30 transition-all active:scale-95 whitespace-nowrap"
+          >
+            <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Thêm SKU Mới</span>
+          </button>
+        </div>
       </div>
 
       {isLoading ? <ProductListSkeleton /> : (
         <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-5 w-full">
           
-          {/* 2. KPI CARDS (BỨC TRANH TOÀN CẢNH) */}
+          {/* KPI CARDS (BỨC TRANH TOÀN CẢNH) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            
             <motion.div variants={itemVariants} className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm relative overflow-hidden group">
               <div className="absolute right-0 top-0 p-3 opacity-[0.03] group-hover:scale-110 transition-transform"><Package className="w-16 h-16 text-indigo-500"/></div>
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Tổng Danh Mục (SKUs)</p>
@@ -305,10 +329,9 @@ export default function ProductList() {
                 {kpis.outOfStockCount > 0 && <ShieldAlert className="w-5 h-5 text-rose-500" />}
               </div>
             </motion.div>
-
           </div>
 
-          {/* 3. THANH TÌM KIẾM & LỌC */}
+          {/* THANH TÌM KIẾM & LỌC */}
           <motion.div variants={itemVariants} className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm z-10">
             <div className="relative w-full sm:w-80">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -338,7 +361,7 @@ export default function ProductList() {
             </div>
           </motion.div>
 
-          {/* 4. BẢNG DỮ LIỆU ĐỘNG */}
+          {/* BẢNG DỮ LIỆU ĐỘNG */}
           <motion.div variants={itemVariants} className="glass-panel rounded-3xl overflow-hidden shadow-sm border border-slate-200 dark:border-white/10">
             {products.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-slate-400">
@@ -360,20 +383,9 @@ export default function ProductList() {
         </motion.div>
       )}
 
-      {/* ==========================================
-          5. KHU VỰC TÍCH HỢP MODALS
-          ========================================== */}
-      
-      <CreateProductModal 
-        isOpen={isCreateModalOpen} 
-        onClose={() => setIsCreateModalOpen(false)} 
-      />
-
-      <AdvancedProductOpsModal 
-        isOpen={!!selectedProductForAdvOps} 
-        onClose={() => setSelectedProductForAdvOps(null)} 
-        product={selectedProductForAdvOps} 
-      />
+      {/* KHU VỰC TÍCH HỢP MODALS */}
+      <CreateProductModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} />
+      <AdvancedProductOpsModal isOpen={!!selectedProductForAdvOps} onClose={() => setSelectedProductForAdvOps(null)} product={selectedProductForAdvOps} />
 
     </div>
   );

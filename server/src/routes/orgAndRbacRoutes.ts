@@ -1,11 +1,11 @@
 import { Router } from "express";
 import { 
-  getUsers, getUserById, updateUser, deleteUser, 
+  getUsers, getUserById, createUser, updateUser, deleteUser, resetUserPassword,
   getPermissions,
   getRoles, createRole, updateRole, deleteRole,
   getOrganizationStructure, createCostCenter, getSystemAuditLogs, getAuditLogsByRecord
 } from "../controllers/orgAndRbacController";
-import { authenticateToken } from "../middleware/authMiddleware";
+import { authenticateToken, requirePermission } from "../middleware/authMiddleware";
 
 const router = Router();
 
@@ -13,12 +13,19 @@ const router = Router();
 router.use(authenticateToken);
 
 // ------------------------------------------------------------------
-// 1. NHÂN VIÊN (USERS)
+// 1. NHÂN VIÊN & ĐỊNH DANH (USERS)
 // ------------------------------------------------------------------
 router.get("/users", getUsers);
 router.get("/users/:id", getUserById);
+
+// Đã bổ sung Route tạo mới người dùng
+router.post("/users", createUser); 
+
 router.put("/users/:id", updateUser);
 router.delete("/users/:id", deleteUser);
+
+// Route bảo mật đặc biệt: Reset Mật khẩu (Yêu cầu quyền MANAGE_USERS)
+router.post("/users/:id/reset-password", requirePermission("MANAGE_USERS"), resetUserPassword);
 
 // ------------------------------------------------------------------
 // 2. PHÂN QUYỀN (ROLES & PERMISSIONS)
@@ -31,7 +38,7 @@ router.put("/roles/:id", updateRole);
 router.delete("/roles/:id", deleteRole);
 
 // ------------------------------------------------------------------
-// 3. CẤU TRÚC DOANH NGHIỆP (ORG STRUCTURE SUMMARY)
+// 3. CẤU TRÚC DOANH NGHIỆP & KIỂM TOÁN (ORG STRUCTURE & AUDIT LOGS)
 // ------------------------------------------------------------------
 router.get("/organization", getOrganizationStructure);
 router.post("/cost-centers", createCostCenter);

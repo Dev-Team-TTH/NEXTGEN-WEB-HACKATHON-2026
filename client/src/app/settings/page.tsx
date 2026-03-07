@@ -5,8 +5,8 @@ import { motion, AnimatePresence, Variants } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { 
   Settings, GitMerge, ShieldAlert, Plus, Edit3, Trash2, 
-  ArrowRight, Loader2, RefreshCcw, Save, X, GripVertical, 
-  Building2, Globe2, Briefcase, CheckCircle2 // ĐÃ FIX: Thêm CheckCircle2 vào đây
+  ArrowRight, Loader2, RefreshCcw, Save, GripVertical, 
+  Building2, Globe2, Briefcase, CheckCircle2 
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -21,6 +21,7 @@ import {
 
 // --- COMPONENTS ---
 import Header from "@/app/(components)/Header";
+import Modal from "@/app/(components)/Modal"; // IMPORT CORE MODAL
 
 // ==========================================
 // 1. INTERFACES CHO WORKFLOW BUILDER
@@ -160,14 +161,30 @@ export default function SettingsPage() {
     return roles.find(r => r.id === roleId || r.roleId === roleId)?.name || "Đang tải...";
   };
 
+  // --- FOOTER CHO CORE MODAL ---
+  const builderFooter = (
+    <div className="flex w-full items-center justify-between">
+      <p className="text-[11px] font-bold text-slate-400 hidden sm:block">
+        Lưu ý: Mọi sự thay đổi sẽ tác động ngay lập tức đến các chứng từ mới.
+      </p>
+      <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+        <button type="button" onClick={() => setIsModalOpen(false)} disabled={isSubmitting} className="px-6 py-3 text-sm font-bold text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-800 rounded-xl transition-colors">
+          Hủy bỏ
+        </button>
+        <button 
+          form="workflow-form" type="submit" disabled={isSubmitting}
+          className="flex items-center gap-2 px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-black rounded-xl shadow-[0_8px_20px_rgba(79,70,229,0.3)] transition-all active:scale-95 disabled:opacity-50"
+        >
+          {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+          Ban hành Luồng
+        </button>
+      </div>
+    </div>
+  );
+
   // --- ANIMATION CONFIG ---
   const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
   const itemVariants: Variants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } };
-  const modalVariants: Variants = {
-    hidden: { opacity: 0, scale: 0.95, y: 20 },
-    visible: { opacity: 1, scale: 1, y: 0, transition: { type: "spring" as const, stiffness: 300, damping: 25 } },
-    exit: { opacity: 0, scale: 0.95, y: 20, transition: { duration: 0.2 } }
-  };
 
   return (
     <div className="w-full max-w-[1600px] mx-auto pb-24 flex flex-col gap-6 sm:gap-8 mt-2">
@@ -366,144 +383,98 @@ export default function SettingsPage() {
       </div>
 
       {/* ==========================================
-          3. MODAL BUILDER: TẠO/SỬA WORKFLOW (NEO-BRUTALISM)
+          3. SỬ DỤNG CORE MODAL ĐỂ TẠO WORKFLOW BUILDER
           ========================================== */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <motion.div
-            variants={{ hidden: { opacity: 0 }, visible: { opacity: 1 } }} initial="hidden" animate="visible" exit="hidden"
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-[#0B0F19]/80 backdrop-blur-sm"
-          >
-            <div className="absolute inset-0" onClick={!isSubmitting ? () => setIsModalOpen(false) : undefined} />
-            
-            <motion.div
-              variants={modalVariants} initial="hidden" animate="visible" exit="exit"
-              className="relative w-full max-w-3xl bg-slate-50 dark:bg-slate-900 rounded-[2rem] shadow-2xl border border-indigo-200 dark:border-indigo-500/30 overflow-hidden z-10 flex flex-col max-h-[90vh] transform-gpu"
-            >
-              {/* Header Modal */}
-              <div className="flex items-center justify-between px-6 py-5 border-b border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 shrink-0">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center shadow-inner">
-                    <GitMerge className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                      {editingId ? "Tái cấu trúc Quy trình" : "Xây dựng Bản đồ Phê duyệt"}
-                    </h2>
-                    <p className="text-xs font-semibold text-slate-500 mt-0.5">Xác định ai là người cầm trịch tờ trình tại mỗi bước.</p>
-                  </div>
-                </div>
-                <button onClick={() => setIsModalOpen(false)} disabled={isSubmitting} className="p-2.5 bg-slate-100 dark:bg-white/5 rounded-full text-slate-400 hover:text-rose-500 transition-colors">
-                  <X className="w-5 h-5" />
-                </button>
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title={editingId ? "Tái cấu trúc Quy trình" : "Xây dựng Bản đồ Phê duyệt"}
+        subtitle="Xác định ai là người cầm trịch tờ trình tại mỗi bước."
+        icon={<GitMerge className="w-6 h-6 text-indigo-500" />}
+        maxWidth="max-w-3xl"
+        disableOutsideClick={isSubmitting}
+        footer={builderFooter}
+      >
+        <form id="workflow-form" onSubmit={handleSubmit} className="p-6 md:p-8 flex flex-col gap-8">
+          {/* Info Block */}
+          <div className="grid grid-cols-1 gap-5">
+            <div className="space-y-2">
+              <label className="text-[11px] font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><ShieldAlert className="w-3.5 h-3.5" /> Mã Quy trình (Tên) *</label>
+              <input 
+                type="text" required value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})}
+                placeholder="VD: Duyệt mua sắm Vật tư > 50 Triệu"
+                className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-2xl text-base focus:ring-2 focus:ring-indigo-500 outline-none font-black text-slate-900 dark:text-white shadow-inner"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">Mô tả cơ sở áp dụng</label>
+              <input 
+                type="text" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})}
+                placeholder="Quy định áp dụng cho phòng ban kỹ thuật khi mua thiết bị..."
+                className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none text-slate-700 dark:text-slate-300"
+              />
+            </div>
+          </div>
+
+          {/* Node Builder Area */}
+          <div>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h4 className="text-base font-black text-slate-800 dark:text-white">Bản đồ Chuỗi Phê duyệt</h4>
+                <p className="text-xs font-semibold text-slate-500 mt-1">Dữ liệu sẽ chạy từ Node 1 cho đến Node cuối cùng.</p>
               </div>
+              <button 
+                type="button" onClick={handleAddStep}
+                className="text-xs font-black text-indigo-700 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-500/20 hover:bg-indigo-200 px-4 py-2.5 rounded-xl flex items-center gap-1.5 transition-colors shadow-sm"
+              >
+                <Plus className="w-4 h-4" /> Thêm Node
+              </button>
+            </div>
 
-              {/* Body Modal */}
-              <div className="p-6 md:p-8 overflow-y-auto scrollbar-thin flex flex-col gap-8 bg-slate-50/50 dark:bg-transparent">
-                
-                {/* Info Block */}
-                <div className="grid grid-cols-1 gap-5 bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm">
-                  <div className="space-y-2">
-                    <label className="text-[11px] font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><ShieldAlert className="w-3.5 h-3.5" /> Mã Quy trình (Tên) *</label>
-                    <input 
-                      type="text" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})}
-                      placeholder="VD: Duyệt mua sắm Vật tư > 50 Triệu"
-                      className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-2xl text-base focus:ring-2 focus:ring-indigo-500 outline-none font-black text-slate-900 dark:text-white shadow-inner"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">Mô tả cơ sở áp dụng</label>
-                    <input 
-                      type="text" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})}
-                      placeholder="Quy định áp dụng cho phòng ban kỹ thuật khi mua thiết bị..."
-                      className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none text-slate-700 dark:text-slate-300"
-                    />
-                  </div>
-                </div>
-
-                {/* Node Builder Area */}
-                <div>
-                  <div className="flex items-center justify-between mb-6">
-                    <div>
-                      <h4 className="text-base font-black text-slate-800 dark:text-white">Bản đồ Chuỗi Phê duyệt</h4>
-                      <p className="text-xs font-semibold text-slate-500 mt-1">Dữ liệu sẽ chạy từ Node 1 cho đến Node cuối cùng.</p>
-                    </div>
-                    <button 
-                      type="button" onClick={handleAddStep}
-                      className="text-xs font-black text-indigo-700 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-500/20 hover:bg-indigo-200 px-4 py-2.5 rounded-xl flex items-center gap-1.5 transition-colors shadow-sm"
-                    >
-                      <Plus className="w-4 h-4" /> Thêm Node Duyệt
-                    </button>
-                  </div>
-
-                  <div className="flex flex-col gap-4 relative before:absolute before:top-6 before:bottom-6 before:left-6 before:w-1 before:bg-indigo-100 dark:before:bg-indigo-900/50 before:-z-10">
-                    <AnimatePresence initial={false}>
-                      {formData.steps.map((step, index) => (
-                        <motion.div 
-                          key={index}
-                          initial={{ opacity: 0, height: 0, y: -20 }} animate={{ opacity: 1, height: 'auto', y: 0 }} exit={{ opacity: 0, height: 0, scale: 0.9 }}
-                          transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                          className="relative flex items-center gap-4 z-10"
-                        >
-                          {/* Node Number */}
-                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 border-2 border-white dark:border-slate-900 flex items-center justify-center text-white font-black text-lg shadow-lg shrink-0">
-                            {index + 1}
-                          </div>
-                          
-                          {/* Khối chọn Role (Glass Form) */}
-                          <div className="flex-1 flex items-center gap-3 p-2.5 pr-4 bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-white/5 hover:border-indigo-300 dark:hover:border-indigo-500/50 rounded-2xl shadow-sm transition-colors group">
-                            <div className="p-2 bg-slate-50 dark:bg-white/5 rounded-xl cursor-grab active:cursor-grabbing"><GripVertical className="w-4 h-4 text-slate-400" /></div>
-                            
-                            <div className="flex-1 flex flex-col">
-                              <span className="text-[10px] font-extrabold text-slate-400 uppercase">Giao quyền cho Chức vụ</span>
-                              <select
-                                value={step.roleId} onChange={(e) => handleStepRoleChange(index, e.target.value)}
-                                className={`w-full bg-transparent text-sm font-bold outline-none cursor-pointer mt-0.5 ${!step.roleId ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}
-                              >
-                                <option value="" disabled className="text-slate-400">-- Vui lòng chọn một Chức vụ bắt buộc --</option>
-                                {roles.map(r => <option key={r.id || r.roleId} value={r.id || r.roleId} className="text-slate-900">{r.name}</option>)}
-                              </select>
-                            </div>
-
-                            <button 
-                              type="button" onClick={() => handleRemoveStep(index)}
-                              className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 dark:bg-white/5 text-slate-400 hover:bg-rose-100 hover:text-rose-600 transition-colors"
-                              title="Loại bỏ Node này"
-                            >
-                              <Trash2 className="w-4.5 h-4.5" />
-                            </button>
-                          </div>
-                        </motion.div>
-                      ))}
-                    </AnimatePresence>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Footer Modal */}
-              <div className="px-6 py-4 md:py-5 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-white/10 flex justify-between items-center shrink-0">
-                <p className="text-[11px] font-bold text-slate-400 hidden sm:block">
-                  Lưu ý: Mọi sự thay đổi sẽ tác động ngay lập tức đến các chứng từ mới.
-                </p>
-                <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-                  <button type="button" onClick={() => setIsModalOpen(false)} disabled={isSubmitting} className="px-6 py-3 text-sm font-bold text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-800 rounded-xl transition-colors">
-                    Hủy bỏ
-                  </button>
-                  <button 
-                    onClick={handleSubmit} disabled={isSubmitting}
-                    className="flex items-center gap-2 px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-black rounded-xl shadow-[0_8px_20px_rgba(79,70,229,0.3)] transition-all active:scale-95 disabled:opacity-50"
+            <div className="flex flex-col gap-4 relative before:absolute before:top-6 before:bottom-6 before:left-6 before:w-1 before:bg-indigo-100 dark:before:bg-indigo-900/50 before:-z-10">
+              <AnimatePresence initial={false}>
+                {formData.steps.map((step, index) => (
+                  <motion.div 
+                    key={index}
+                    initial={{ opacity: 0, height: 0, y: -20 }} animate={{ opacity: 1, height: 'auto', y: 0 }} exit={{ opacity: 0, height: 0, scale: 0.9 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                    className="relative flex items-center gap-4 z-10"
                   >
-                    {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                    Ban hành Luồng
-                  </button>
-                </div>
-              </div>
+                    {/* Node Number */}
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 border-2 border-white dark:border-slate-800 flex items-center justify-center text-white font-black text-lg shadow-lg shrink-0">
+                      {index + 1}
+                    </div>
+                    
+                    {/* Khối chọn Role */}
+                    <div className="flex-1 flex items-center gap-3 p-2.5 pr-4 bg-white dark:bg-slate-800/80 border-2 border-slate-100 dark:border-white/5 hover:border-indigo-300 dark:hover:border-indigo-500/50 rounded-2xl shadow-sm transition-colors group">
+                      <div className="p-2 bg-slate-50 dark:bg-white/5 rounded-xl cursor-grab active:cursor-grabbing"><GripVertical className="w-4 h-4 text-slate-400" /></div>
+                      
+                      <div className="flex-1 flex flex-col">
+                        <span className="text-[10px] font-extrabold text-slate-400 uppercase">Giao quyền cho Chức vụ</span>
+                        <select
+                          required value={step.roleId} onChange={(e) => handleStepRoleChange(index, e.target.value)}
+                          className={`w-full bg-transparent text-sm font-bold outline-none cursor-pointer mt-0.5 ${!step.roleId ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}
+                        >
+                          <option value="" disabled className="text-slate-400">-- Vui lòng chọn một Chức vụ --</option>
+                          {roles.map(r => <option key={r.id || r.roleId} value={r.id || r.roleId} className="text-slate-900 dark:text-white bg-white dark:bg-slate-800">{r.name}</option>)}
+                        </select>
+                      </div>
 
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+                      <button 
+                        type="button" onClick={() => handleRemoveStep(index)}
+                        className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 dark:bg-white/5 text-slate-400 hover:bg-rose-100 hover:text-rose-600 transition-colors"
+                        title="Loại bỏ Node này"
+                      >
+                        <Trash2 className="w-4.5 h-4.5" />
+                      </button>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          </div>
+        </form>
+      </Modal>
 
     </div>
   );

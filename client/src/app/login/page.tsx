@@ -89,6 +89,7 @@ export default function Login() {
         else localStorage.removeItem("rememberedEmail");
       }
 
+      // Lưu Token vào Redux (Nó sẽ tự persist)
       dispatch(setAuthTokens({ accessToken, refreshToken }));
       
       if (userData) {
@@ -131,6 +132,7 @@ export default function Login() {
         return;
       }
 
+      // Nếu không dính 2FA -> Đăng nhập thành công luôn
       handleSuccessfulAuth(response);
 
     } catch (err: any) {
@@ -183,12 +185,13 @@ export default function Login() {
         err?.data?.message || 
         err?.data?.error || 
         (typeof err?.data === 'string' ? err.data : null) || 
-        "Mã OTP không hợp lệ hoặc máy chủ mất kết nối!";
+        "Mã OTP không hợp lệ hoặc đã hết hạn!";
         
       toast.error(errorMessage);
     }
   }, [otp, verify2FA, tempToken, handleSuccessfulAuth]);
 
+  // Tự động submit khi nhập đủ 6 số
   useEffect(() => {
     if (otp.join("").length === 6 && !isVerifying2FA) {
       handleVerify2FA();
@@ -205,8 +208,9 @@ export default function Login() {
 
     setIsResetting(true);
     try {
+      // Giả lập API call
       await new Promise((resolve) => setTimeout(resolve, 1500)); 
-      toast.success("Liên kết khôi phục đã được gửi vào Email!");
+      toast.success("Liên kết khôi phục đã được gửi vào Email của bạn!");
       setStep("LOGIN");
       setForgotEmail("");
     } catch (error) {
@@ -269,9 +273,11 @@ export default function Login() {
   return (
     <div className="relative flex items-center justify-center min-h-screen w-full bg-slate-50 dark:bg-[#0B0F19] overflow-hidden selection:bg-blue-500/30">
       
+      {/* Background Orbs */}
       <div className="absolute top-[-20%] left-[-10%] w-[60vw] h-[60vw] rounded-full bg-blue-400/20 dark:bg-blue-600/10 blur-[120px] mix-blend-multiply dark:mix-blend-screen pointer-events-none animate-pulse duration-10000"></div>
       <div className="absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-indigo-400/20 dark:bg-indigo-600/10 blur-[120px] mix-blend-multiply dark:mix-blend-screen pointer-events-none animate-pulse duration-7000"></div>
       
+      {/* Grid Pattern */}
       <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))] dark:opacity-10 opacity-5 pointer-events-none"></div>
 
       <div className="relative z-10 w-full max-w-[440px] p-8 sm:p-12 m-4 bg-white/70 dark:bg-gray-900/50 backdrop-blur-2xl border border-white/40 dark:border-gray-700/50 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] rounded-[2.5rem] min-h-[540px] flex flex-col justify-center">
@@ -328,7 +334,7 @@ export default function Login() {
                     <label htmlFor="password" className="block text-sm font-semibold text-gray-700 dark:text-gray-200">
                       Mật khẩu
                     </label>
-                    <button type="button" onClick={() => setStep("FORGOT_PASSWORD")} className="text-xs font-semibold text-blue-600 hover:text-blue-500 dark:text-blue-400 transition-colors">
+                    <button type="button" onClick={() => setStep("FORGOT_PASSWORD")} className="text-xs font-semibold text-blue-600 hover:text-blue-500 dark:text-blue-400 transition-colors outline-none">
                       Quên mật khẩu?
                     </button>
                   </div>

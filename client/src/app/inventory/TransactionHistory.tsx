@@ -2,39 +2,35 @@
 
 import React, { useState, useMemo } from "react";
 import { motion, Variants } from "framer-motion";
-import { ArrowDownLeft, ArrowUpRight, ArrowRightLeft, Settings2, FileText, Search, AlertOctagon, RefreshCcw, PackageSearch } from "lucide-react";
+import { 
+  ArrowDownLeft, ArrowUpRight, ArrowRightLeft, 
+  Settings2, FileText, AlertOctagon, RefreshCcw, Download 
+} from "lucide-react";
 import dayjs from "dayjs";
 import 'dayjs/locale/vi';
+import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
 import { useGetInventoryTransactionsQuery, InventoryTransaction } from "@/state/api";
 
-// --- COMPONENTS ---
+// --- COMPONENTS & UTILS ---
 import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
+import { exportToCSV } from "@/utils/exportUtils";
 
 dayjs.locale('vi');
 
 // ==========================================
-// 1. HELPER: FORMATTERS & UI MAPPERS
+// 1. HELPER: UI MAPPERS
 // ==========================================
-const formatVND = (val: number) => 
-  new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
-const formatQty = (val: number) => 
-  new Intl.NumberFormat('vi-VN').format(Math.abs(val));
+const formatQty = (val: number) => new Intl.NumberFormat('vi-VN').format(Math.abs(val));
 
-// Trình bày hướng dịch chuyển (Movement Direction)
 const getDirectionUI = (direction: string) => {
   switch (direction) {
-    case "IN":
-      return { label: "Nhập kho", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-100 dark:bg-emerald-500/20", icon: ArrowDownLeft };
-    case "OUT":
-      return { label: "Xuất kho", color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-100 dark:bg-rose-500/20", icon: ArrowUpRight };
-    case "TRANSFER":
-      return { label: "Chuyển kho", color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-100 dark:bg-indigo-500/20", icon: ArrowRightLeft };
-    case "ADJUSTMENT":
-      return { label: "Điều chỉnh", color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-100 dark:bg-amber-500/20", icon: Settings2 };
-    default:
-      return { label: "Khác", color: "text-slate-600 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-500/20", icon: FileText };
+    case "IN": return { label: "Nhập kho", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-100 dark:bg-emerald-500/20", icon: ArrowDownLeft };
+    case "OUT": return { label: "Xuất kho", color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-100 dark:bg-rose-500/20", icon: ArrowUpRight };
+    case "TRANSFER": return { label: "Chuyển kho", color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-100 dark:bg-indigo-500/20", icon: ArrowRightLeft };
+    case "ADJUSTMENT": return { label: "Điều chỉnh", color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-100 dark:bg-amber-500/20", icon: Settings2 };
+    default: return { label: "Khác", color: "text-slate-600 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-500/20", icon: FileText };
   }
 };
 
@@ -44,7 +40,6 @@ const getDirectionUI = (direction: string) => {
 const HistorySkeleton = () => (
   <div className="w-full animate-pulse flex flex-col gap-6 mt-4">
     <div className="flex gap-4">
-      <div className="h-10 w-32 bg-slate-200 dark:bg-slate-800 rounded-full"></div>
       <div className="h-10 w-32 bg-slate-200 dark:bg-slate-800 rounded-full"></div>
       <div className="h-10 w-32 bg-slate-200 dark:bg-slate-800 rounded-full"></div>
     </div>
@@ -59,13 +54,42 @@ export default function TransactionHistory() {
   const [filterDirection, setFilterDirection] = useState<string | "ALL">("ALL");
 
   // 👉 FETCH DATA THẬT
-  const { data: transactions = [], isLoading, isError, refetch, isFetching } = useGetInventoryTransactionsQuery({});
+  const { data: responseData, isLoading, isError, refetch, isFetching } = useGetInventoryTransactionsQuery({});
 
-  // Lọc dữ liệu Local dựa vào Tabs
+  // 🚀 FIX LỖI TS: Bóc tách mảng data từ PaginatedResponse một cách an toàn
+  const transactions: InventoryTransaction[] = useMemo(() => {
+    if (!responseData) return [];
+    if (Array.isArray(responseData)) return responseData;
+    return (responseData as any).data || [];
+  }, [responseData]);
+
+  // Lọc dữ liệu (Ép kiểu rõ ràng cho tham số tx)
   const filteredData = useMemo(() => {
     if (filterDirection === "ALL") return transactions;
-    return transactions.filter(tx => tx.movementDirection === filterDirection);
+    return transactions.filter((tx: InventoryTransaction) => tx.movementDirection === filterDirection);
   }, [transactions, filterDirection]);
+
+  // --- HANDLER EXPORT THẺ KHO ---
+  const handleExportData = () => {
+    if (filteredData.length === 0) {
+      toast.error("Không có dữ liệu thẻ kho để xuất!"); return;
+    }
+    
+    // Ép kiểu rõ ràng cho tham số tx
+    const exportData = filteredData.map((tx: InventoryTransaction) => ({
+      "Thời gian": dayjs(tx.timestamp).format('DD/MM/YYYY HH:mm:ss'),
+      "Loại giao dịch": getDirectionUI(tx.movementDirection).label,
+      "Mã Sản phẩm": tx.product?.productCode || "N/A",
+      "Tên Sản phẩm": tx.product?.name || "N/A",
+      "Số lượng biến động": tx.quantity > 0 ? `+${tx.quantity}` : tx.quantity,
+      "Kho thao tác": tx.fromWarehouse?.name || tx.toWarehouse?.name || "Hệ thống",
+      "Mã chứng từ (Ref)": tx.document?.documentNumber || tx.documentId,
+      "Ghi chú": tx.document?.note || ""
+    }));
+    
+    exportToCSV(exportData, "Lich_Su_The_Kho_Giao_Dich");
+    toast.success("Xuất Lịch sử Thẻ kho thành công!");
+  };
 
   // --- ĐỊNH NGHĨA CỘT CHO DATATABLE ---
   const columns: ColumnDef<InventoryTransaction>[] = [
@@ -91,8 +115,7 @@ export default function TransactionHistory() {
         const { label, color, bg, icon: Icon } = getDirectionUI(row.movementDirection);
         return (
           <div className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold ${bg} ${color}`}>
-            <Icon className="w-4 h-4" />
-            {label}
+            <Icon className="w-4 h-4" /> {label}
           </div>
         );
       }
@@ -102,12 +125,8 @@ export default function TransactionHistory() {
       accessorKey: "product",
       cell: (row) => (
         <div className="flex flex-col max-w-[200px]">
-          <span className="font-bold text-slate-900 dark:text-white truncate" title={row.product?.name}>
-            {row.product?.name || "N/A"}
-          </span>
-          <span className="text-[10px] text-slate-500 font-mono">
-            {row.product?.productCode}
-          </span>
+          <span className="font-bold text-slate-900 dark:text-white truncate" title={row.product?.name}>{row.product?.name || "N/A"}</span>
+          <span className="text-[10px] text-slate-500 font-mono">{row.product?.productCode}</span>
         </div>
       )
     },
@@ -118,11 +137,7 @@ export default function TransactionHistory() {
       cell: (row) => {
         const isPositive = row.quantity > 0;
         return (
-          <span className={`font-extrabold text-base ${
-            row.movementDirection === 'OUT' ? 'text-rose-500' : 
-            row.movementDirection === 'IN' ? 'text-emerald-500' : 
-            'text-slate-700 dark:text-slate-300'
-          }`}>
+          <span className={`font-extrabold text-base ${row.movementDirection === 'OUT' ? 'text-rose-500' : row.movementDirection === 'IN' ? 'text-emerald-500' : 'text-slate-700 dark:text-slate-300'}`}>
             {isPositive ? "+" : ""}{formatQty(row.quantity)}
           </span>
         );
@@ -167,17 +182,9 @@ export default function TransactionHistory() {
   ];
 
   // --- CẤU HÌNH MOTION ---
-  const containerVariants: Variants = {
-    hidden: { opacity: 0 },
-    show: { opacity: 1, transition: { staggerChildren: 0.1 } }
-  };
+  const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
+  const itemVariants: Variants = { hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } };
 
-  const itemVariants: Variants = {
-    hidden: { opacity: 0, y: 10 },
-    show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 300, damping: 24 } }
-  };
-
-  // --- RENDER LỖI MẠNG ---
   if (isError) {
     return (
       <div className="flex flex-col items-center justify-center py-12 w-full text-center glass rounded-3xl mt-6">
@@ -193,54 +200,25 @@ export default function TransactionHistory() {
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show" className="w-full flex flex-col gap-4 mt-6">
       
-      {/* KHU VỰC BỘ LỌC (FILTERS) */}
+      {/* KHU VỰC BỘ LỌC VÀ EXPORT */}
       <motion.div variants={itemVariants} className="flex flex-wrap items-center gap-2 mb-2">
-        {/* Chip: Tất cả */}
-        <button
-          onClick={() => setFilterDirection("ALL")}
-          className={`px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border ${
-            filterDirection === "ALL" 
-              ? "bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900" 
-              : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-          }`}
-        >
+        {/* Buttons Filter */}
+        <button onClick={() => setFilterDirection("ALL")} className={`px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border ${filterDirection === "ALL" ? "bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900" : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"}`}>
           Tất cả
         </button>
-
-        {/* Chip: Nhập kho */}
-        <button
-          onClick={() => setFilterDirection("IN")}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border ${
-            filterDirection === "IN" 
-              ? "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-500/20 dark:border-emerald-500/30" 
-              : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-          }`}
-        >
+        <button onClick={() => setFilterDirection("IN")} className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border ${filterDirection === "IN" ? "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-500/20 dark:border-emerald-500/30" : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"}`}>
           <ArrowDownLeft className="w-4 h-4" /> Nhập kho
         </button>
-
-        {/* Chip: Xuất kho */}
-        <button
-          onClick={() => setFilterDirection("OUT")}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border ${
-            filterDirection === "OUT" 
-              ? "bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-500/20 dark:border-rose-500/30" 
-              : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-          }`}
-        >
+        <button onClick={() => setFilterDirection("OUT")} className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border ${filterDirection === "OUT" ? "bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-500/20 dark:border-rose-500/30" : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"}`}>
           <ArrowUpRight className="w-4 h-4" /> Xuất kho
         </button>
-
-        {/* Chip: Điều chỉnh */}
-        <button
-          onClick={() => setFilterDirection("ADJUSTMENT")}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border ${
-            filterDirection === "ADJUSTMENT" 
-              ? "bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-500/20 dark:border-amber-500/30" 
-              : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-          }`}
-        >
+        <button onClick={() => setFilterDirection("ADJUSTMENT")} className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border ${filterDirection === "ADJUSTMENT" ? "bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-500/20 dark:border-amber-500/30" : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"}`}>
           <Settings2 className="w-4 h-4" /> Điều chỉnh
+        </button>
+
+        {/* Nút Export */}
+        <button onClick={handleExportData} className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-sm">
+          <Download className="w-4 h-4" /> <span className="hidden sm:inline">Xuất Dữ liệu</span>
         </button>
       </motion.div>
 

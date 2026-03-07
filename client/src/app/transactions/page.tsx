@@ -7,7 +7,7 @@ import {
   FileText, Plus, Search, Filter, Anchor, CreditCard, 
   Trash2, AlertOctagon, RefreshCcw, Loader2, TrendingUp, 
   TrendingDown, ShoppingCart, Truck, Receipt, CheckCircle2,
-  Clock, ArrowRightLeft, Building
+  Clock, ArrowRightLeft, Building, Download
 } from "lucide-react";
 import dayjs from "dayjs";
 import 'dayjs/locale/vi';
@@ -24,6 +24,10 @@ import {
 import Header from "@/app/(components)/Header";
 import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
 
+// --- UTILS (KIẾN TRÚC MỚI) ---
+import { formatVND } from "@/utils/formatters";
+import { exportToCSV } from "@/utils/exportUtils";
+
 // --- SIÊU COMPONENTS VỆ TINH (MODALS) ---
 import LandedCostModal from "./LandedCostModal";
 import CreateDocumentModal from "./CreateDocumentModal";
@@ -34,8 +38,6 @@ dayjs.locale('vi');
 // ==========================================
 // 1. HELPERS & FORMATTERS (DATA VIZ)
 // ==========================================
-const formatVND = (val: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val || 0);
-
 // Phân loại màu sắc Chứng từ
 const getDocTypeUI = (type: string) => {
   switch (type) {
@@ -97,7 +99,6 @@ export default function TransactionsPage() {
       const matchTab = activeTab === "ALL" || doc.type === activeTab;
       const searchStr = searchQuery.toLowerCase();
       
-      // Tìm kiếm thông minh lấy đối tác tùy theo loại phiếu
       const partnerName = (doc.supplier?.name || doc.customer?.name || doc.partner?.name || "").toLowerCase();
       const matchSearch = 
         (doc.documentNumber && doc.documentNumber.toLowerCase().includes(searchStr)) ||
@@ -147,13 +148,41 @@ export default function TransactionsPage() {
   const handleApprove = async (id: string, docNum: string) => {
     if (window.confirm(`Duyệt Nhanh Chứng từ [${docNum}]?\nHệ thống sẽ tự động sinh phiếu nhập/xuất kho và hạch toán kế toán.`)) {
       try {
-        // Gọi API duyệt trực tiếp
         await approveDocument({ id, data: { action: "APPROVE", comment: "Duyệt nhanh từ Dashboard" } }).unwrap();
         toast.success(`Đã duyệt chứng từ ${docNum}!`);
       } catch (err: any) {
         toast.error(err?.data?.message || "Lỗi khi duyệt chứng từ!");
       }
     }
+  };
+
+  // --- EXPORT DỮ LIỆU CHỨNG TỪ ---
+  const handleExportData = () => {
+    if (documents.length === 0) {
+      toast.error("Không có dữ liệu để xuất!");
+      return;
+    }
+    
+    const exportData = documents.map((doc: any) => {
+      const partnerName = doc.supplier?.name || doc.customer?.name || doc.partner?.name || "Khách lẻ / Ẩn danh";
+      const total = doc.totalAmount || 0;
+      const paid = doc.paidAmount || 0;
+      const remaining = total - paid;
+      
+      return {
+        "Số chứng từ": doc.documentNumber,
+        "Loại chứng từ": getDocTypeUI(doc.type).label,
+        "Đối tác": partnerName,
+        "Ngày tạo": dayjs(doc.issueDate || doc.createdAt).format('DD/MM/YYYY HH:mm'),
+        "Tổng giá trị": total,
+        "Đã thanh toán": paid,
+        "Còn nợ": remaining > 0 ? remaining : 0,
+        "Trạng thái tài liệu": doc.status,
+        "Tiến độ thanh toán": getPaymentStatusUI(paid, total).label
+      };
+    });
+
+    exportToCSV(exportData, "Danh_Sach_Chung_Tu_Giao_Dich");
   };
 
   // --- CỘT BẢNG (DATATABLE COLUMNS) ---
@@ -212,7 +241,6 @@ export default function TransactionsPage() {
               <span className="font-black text-slate-800 dark:text-white">{formatVND(total)}</span>
               <span className={`font-bold ${payUI.color}`}>{payUI.percent}%</span>
             </div>
-            {/* Thanh Progress Bar Data Viz */}
             <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700/50 rounded-full overflow-hidden shadow-inner">
               <motion.div 
                 initial={{ width: 0 }} animate={{ width: `${payUI.percent}%` }} transition={{ duration: 1, ease: "easeOut" }}
@@ -253,28 +281,28 @@ export default function TransactionsPage() {
         return (
           <div className="flex items-center justify-end gap-1.5">
             
-            {/* 1. Nút Duyệt Nhanh (Nếu đang chờ duyệt) */}
+            {/* Nút Duyệt Nhanh (Nếu đang chờ duyệt) */}
             {isPending && (
               <button onClick={() => handleApprove(docId, row.documentNumber)} disabled={isApproving} title="Duyệt Chứng từ" className="p-2 text-emerald-600 hover:text-white bg-emerald-50 hover:bg-emerald-600 dark:bg-emerald-500/10 dark:hover:bg-emerald-600 rounded-xl transition-colors shadow-sm">
                 <CheckCircle2 className="w-4 h-4" />
               </button>
             )}
 
-            {/* 2. Nút Landed Cost (Nếu là Phiếu nhập kho) */}
+            {/* Nút Landed Cost (Nếu là Phiếu nhập kho) */}
             {isGRPO && !isPending && (
               <button onClick={() => setSelectedDocForLandedCost(docId)} title="Phân bổ Landed Cost" className="p-2 text-orange-500 bg-orange-50 hover:bg-orange-100 dark:bg-orange-500/10 dark:hover:bg-orange-500/30 rounded-xl transition-colors shadow-sm">
                 <Anchor className="w-4 h-4" />
               </button>
             )}
             
-            {/* 3. Nút Thanh toán (Nếu còn nợ) */}
+            {/* Nút Thanh toán (Nếu còn nợ) */}
             {canPay && (
               <button onClick={() => setSelectedDocForPayment(docId)} title="Gạch nợ / Thanh toán" className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-500/10 dark:hover:bg-blue-500/30 rounded-xl transition-colors shadow-sm">
                 <CreditCard className="w-4 h-4" />
               </button>
             )}
 
-            {/* 4. Nút Xóa (Chỉ cho phép xóa nếu chưa duyệt) */}
+            {/* Nút Xóa */}
             {isPending && (
               <button onClick={() => handleDelete(docId, row.documentNumber)} disabled={isDeleting} title="Xóa chứng từ" className="p-2 text-rose-400 hover:text-white bg-rose-50 hover:bg-rose-500 dark:bg-rose-500/10 dark:hover:bg-rose-600 rounded-xl transition-colors shadow-sm">
                 <Trash2 className="w-4 h-4" />
@@ -310,13 +338,22 @@ export default function TransactionsPage() {
         title={t("Giao dịch & Mua bán")} 
         subtitle={t("Kiểm soát toàn bộ vòng đời Đơn hàng, Nhập xuất kho và Thanh toán Công nợ.")}
         rightNode={
-          <button 
-            onClick={() => setIsCreateModalOpen(true)}
-            className="px-6 py-3 flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-black rounded-xl shadow-xl shadow-blue-500/30 transition-all active:scale-95 whitespace-nowrap"
-          >
-            <Plus className="w-5 h-5" />
-            <span className="hidden sm:inline">Khởi tạo Chứng từ</span>
-          </button>
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+            <button 
+              onClick={handleExportData}
+              className="px-4 py-2.5 flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 whitespace-nowrap border border-slate-200 dark:border-slate-700 shadow-sm text-sm font-bold"
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline">Xuất Dữ liệu</span>
+            </button>
+            <button 
+              onClick={() => setIsCreateModalOpen(true)}
+              className="px-6 py-2.5 flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-black rounded-xl shadow-xl shadow-blue-500/30 transition-all active:scale-95 whitespace-nowrap"
+            >
+              <Plus className="w-5 h-5" />
+              <span className="hidden sm:inline">Khởi tạo Chứng từ</span>
+            </button>
+          </div>
         }
       />
 

@@ -24,7 +24,7 @@ import {
 
 // --- COMPONENTS ---
 import UniversalScanner from "@/app/(components)/UniversalScanner";
-import GlobalSearch from "@/app/(components)/GlobalSearch"; // IMPORT COMPONENT MỚI
+import GlobalSearch from "@/app/(components)/GlobalSearch";
 
 // --- HELPER: HÀM TÍNH THỜI GIAN THỰC TẾ ---
 const timeAgo = (dateString: string) => {
@@ -43,7 +43,7 @@ const timeAgo = (dateString: string) => {
 };
 
 // ==========================================
-// COMPONENT: NAVBAR ĐÃ TÁCH SEARCH
+// COMPONENT: NAVBAR
 // ==========================================
 export default function Navbar() {
   const router = useRouter();
@@ -52,6 +52,7 @@ export default function Navbar() {
   const { t, i18n } = useTranslation();
 
   const currentUser = useAppSelector((state) => state.global.currentUser);
+  const refreshToken = useAppSelector((state) => state.global.refreshToken);
   const [logoutApi] = useLogoutMutation();
 
   const { data: pendingApprovals = [] } = useGetPendingApprovalsQuery();
@@ -63,7 +64,6 @@ export default function Navbar() {
   const [isNotifOpen, setIsNotifOpen] = useState(false); 
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   
-  // STATE MỚI QUẢN LÝ GLOBAL SEARCH
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false); 
 
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
@@ -84,13 +84,14 @@ export default function Navbar() {
         iconBg: 'bg-amber-500/10'
       });
     });
-    recentLogs.forEach((log) => {
+    
+    recentLogs.forEach((log: any) => {
       notifs.push({
         id: `log_${log.logId}`,
         type: 'info',
-        content: (<span>{log.user?.fullName || 'Hệ thống'} đã thực hiện thao tác <span className="font-bold">{log.action}</span> trên {log.entityName}.</span>),
-        time: timeAgo(log.timestamp),
-        rawDate: new Date(log.timestamp).getTime(),
+        content: (<span>{log.user?.fullName || 'Hệ thống'} đã thực hiện thao tác <span className="font-bold">{log.action}</span> trên {log.tableName || log.module || 'hệ thống'}.</span>),
+        time: timeAgo(log.timestamp || log.createdAt),
+        rawDate: new Date(log.timestamp || log.createdAt || new Date()).getTime(),
         isRead: readIds.has(`log_${log.logId}`),
         href: `/users`, 
         icon: Info,
@@ -131,7 +132,6 @@ export default function Navbar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Lắng nghe Phím tắt Ctrl+K ĐỂ MỞ GLOBAL SEARCH
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -145,7 +145,9 @@ export default function Navbar() {
 
   const handleLogout = async () => {
     try {
-      await logoutApi().unwrap(); 
+      if (refreshToken) {
+        await logoutApi({ refreshToken }).unwrap(); 
+      }
     } catch (error) {
       console.error("Lỗi đăng xuất", error);
     } finally {
@@ -172,12 +174,7 @@ export default function Navbar() {
           <div style={{ transform: 'translateZ(0)' }} className="absolute inset-0 bg-[url('/noise.png')] opacity-[0.03] pointer-events-none mix-blend-overlay rounded-none lg:rounded-2xl z-0" />
           <div className="absolute inset-0 bg-gradient-to-b from-white/40 to-transparent dark:from-white/5 dark:to-transparent pointer-events-none rounded-none lg:rounded-2xl z-0" />
 
-          {/* =========================================
-              BÊN TRÁI: NÚT GỌI TÌM KIẾM TOÀN CỤC
-              ========================================= */}
           <div className="relative z-10 flex items-center gap-3 flex-1">
-            
-            {/* Thanh Tìm kiếm giả (Fake Input) cho PC */}
             <button 
               onClick={() => setIsGlobalSearchOpen(true)}
               className="hidden lg:flex w-full max-w-sm items-center justify-between pl-3.5 pr-2 py-2.5 bg-slate-100/50 dark:bg-black/20 border border-slate-200/50 dark:border-white/5 hover:border-blue-300 dark:hover:border-blue-500/50 rounded-xl transition-all group"
@@ -191,7 +188,6 @@ export default function Navbar() {
               </span>
             </button>
             
-            {/* Nút Tìm kiếm Mobile */}
             <button 
               onClick={() => setIsGlobalSearchOpen(true)}
               className="lg:hidden p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 active:scale-95 transition-all"
@@ -200,9 +196,6 @@ export default function Navbar() {
             </button>
           </div>
 
-          {/* =========================================
-              BÊN PHẢI: CÔNG CỤ VÀ HỒ SƠ (Giữ nguyên)
-              ========================================= */}
           <div className="relative z-10 flex items-center gap-1.5 sm:gap-2">
             
             <button
@@ -318,9 +311,14 @@ export default function Navbar() {
         </header>
       </div>
 
-      {/* RENDER CÁC COMPONENT OVERLAY */}
       <UniversalScanner isOpen={isScannerOpen} onClose={() => setIsScannerOpen(false)} />
-      <GlobalSearch isOpen={isGlobalSearchOpen} onClose={() => setIsGlobalSearchOpen(false)} />
+      
+      {/* ĐÃ FIX LỖI TS2322 & LỖI KẸT MODAL (BỌC ANIMATE PRESENCE VÀ ĐIỀU KIỆN RENDER) */}
+      <AnimatePresence>
+        {isGlobalSearchOpen && (
+          <GlobalSearch onClose={() => setIsGlobalSearchOpen(false)} />
+        )}
+      </AnimatePresence>
     </>
   );
 }

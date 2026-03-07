@@ -22,6 +22,7 @@ import assetMasterRoutes from "./routes/assetMasterRoutes";
 import approvalRoutes from "./routes/approvalRoutes";
 import approvalConfigRoutes from "./routes/approvalConfigRoutes";
 import dashboardRoutes from "./routes/dashboardRoutes";
+import searchRoutes from "./routes/searchRoutes";
 
 // ==========================================
 // 2. IMPORT CÁC CRONJOBS (TIẾN TRÌNH CHẠY NGẦM)
@@ -90,6 +91,8 @@ app.use(`${apiPrefix}/approvals`, approvalRoutes);
 
 // --- 4.8. Báo cáo & Thống kê (Dashboard & Analytics) ---
 app.use(`${apiPrefix}/dashboard`, dashboardRoutes);
+app.use("/api/v1/search", searchRoutes);
+
 
 // ==========================================
 // 5. HEALTH CHECK ENDPOINT
@@ -127,6 +130,7 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
     error: process.env.NODE_ENV === "development" ? err.stack : undefined 
   });
 });
+
 
 // ==========================================
 // 7. KÍCH HOẠT TIẾN TRÌNH & KHỞI ĐỘNG SERVER

@@ -1,27 +1,49 @@
 import { Router } from "express";
 import { 
-  getInventoryBalances,
-  getInventoryTransactions,
-  adjustStock,
-  transferStock
+  getInventoryBalances, 
+  getInventoryTransactions, 
+  adjustStock, 
+  transferStock, 
+  autoPickStock,
+  getLowStockAlerts,
+  getExpiringBatches,
+  bulkStockTake
 } from "../controllers/inventoryController";
-import { authenticateToken } from "../middleware/authMiddleware";
+import { authenticateToken, requirePermission } from "../middleware/authMiddleware";
 
 const router = Router();
 
-// BẮT BUỘC BẢO MẬT: Mọi thao tác kho đều phải qua xác thực
+// ==========================================
+// BẢO VỆ TẤT CẢ ROUTE BẰNG TOKEN
+// ==========================================
 router.use(authenticateToken);
 
-// ------------------------------------------------------------------
-// 1. TRUY VẤN DỮ LIỆU KHO (BÁO CÁO)
-// ------------------------------------------------------------------
-router.get("/balances", getInventoryBalances);           // Xem Tồn kho hiện tại
-router.get("/transactions", getInventoryTransactions);   // Xem Thẻ kho / Lịch sử
+// ==========================================
+// 1. TRUY VẤN VÀ BÁO CÁO (READ-ONLY)
+// ==========================================
+// Danh sách tồn kho (Có phân trang)
+router.get("/balances", requirePermission("VIEW_INVENTORY"), getInventoryBalances);
 
-// ------------------------------------------------------------------
-// 2. NGHIỆP VỤ KHO CHUYÊN SÂU (WMS)
-// ------------------------------------------------------------------
-router.post("/adjust", adjustStock);       // Kiểm kê / Điều chỉnh kho
-router.post("/transfer", transferStock);   // Chuyển kho nội bộ
+// Thẻ kho / Lịch sử xuất nhập (Có phân trang)
+router.get("/transactions", requirePermission("VIEW_INVENTORY"), getInventoryTransactions);
+
+// [DASHBOARD WIDGETS] Cảnh báo thông minh
+router.get("/alerts/low-stock", requirePermission("VIEW_INVENTORY"), getLowStockAlerts);
+router.get("/alerts/expiring", requirePermission("VIEW_INVENTORY"), getExpiringBatches);
+
+// ==========================================
+// 2. THAO TÁC KHO (OPERATIONS)
+// ==========================================
+// Điều chỉnh tồn kho đơn lẻ
+router.post("/adjust", requirePermission("MANAGE_INVENTORY"), adjustStock);
+
+// Chuyển kho nội bộ (Multi-items)
+router.post("/transfer", requirePermission("MANAGE_INVENTORY"), transferStock);
+
+// Kiểm kê kho hàng loạt (Bulk upload/scan)
+router.post("/bulk-stock-take", requirePermission("MANAGE_INVENTORY"), bulkStockTake);
+
+// Thuật toán nhặt hàng tự động (Phục vụ cho các Module khác như Bán hàng / Xuất vật tư)
+router.post("/auto-pick", requirePermission("VIEW_INVENTORY"), autoPickStock);
 
 export default router;

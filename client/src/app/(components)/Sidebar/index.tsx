@@ -10,6 +10,7 @@ import {
   LayoutDashboard, Package, ShoppingCart, WalletCards,
   MonitorSmartphone, ClipboardCheck, Database, Users,
   Settings, ChevronLeft, ChevronRight, Menu as MenuIcon, X,
+  Receipt, // [NEW] Thêm icon Receipt cho Chi phí
   LucideIcon
 } from "lucide-react";
 
@@ -42,6 +43,7 @@ const MENU_GROUPS: MenuGroup[] = [
       { id: "inventory", label: "Kho bãi & Vật tư", shortLabel: "Kho bãi", icon: Package, href: "/inventory", permissions: ["VIEW_INVENTORY", "SYSTEM_ADMIN"] },
       { id: "transactions", label: "Mua bán & Giao dịch", shortLabel: "Giao dịch", icon: ShoppingCart, href: "/transactions", permissions: ["VIEW_TRANSACTION", "SYSTEM_ADMIN"] },
       { id: "accounting", label: "Kế toán Tài chính", shortLabel: "Kế toán", icon: WalletCards, href: "/accounting", permissions: ["VIEW_ACCOUNTING", "SYSTEM_ADMIN"] },
+      { id: "expenses", label: "Quản lý Chi phí", shortLabel: "Chi phí", icon: Receipt, href: "/expenses", permissions: ["VIEW_EXPENSES", "SYSTEM_ADMIN"] }, // [NEW] Đã thêm trang Chi phí vào Sidebar
       { id: "assets", label: "Tài sản Cố định", shortLabel: "Tài sản", icon: MonitorSmartphone, href: "/assets", permissions: ["VIEW_ASSET", "SYSTEM_ADMIN"] },
     ]
   },

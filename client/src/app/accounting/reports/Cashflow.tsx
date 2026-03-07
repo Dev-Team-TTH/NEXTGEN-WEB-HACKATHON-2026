@@ -11,23 +11,21 @@ import {
 } from "recharts";
 import dayjs from "dayjs";
 import 'dayjs/locale/vi';
+import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
 import { useGetCashflowReportQuery, CashflowData } from "@/state/api";
 
-// --- COMPONENTS ---
+// --- COMPONENTS & UTILS ---
 import Header from "@/app/(components)/Header";
 import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
+import { formatVND } from "@/utils/formatters";
+import { exportToCSV } from "@/utils/exportUtils";
 
 dayjs.locale('vi');
 
 // ==========================================
-// 1. HELPERS & FORMATTERS
-// ==========================================
-const formatVND = (val: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
-
-// ==========================================
-// 2. SKELETON LOADING
+// 1. SKELETON LOADING
 // ==========================================
 const CashflowSkeleton = () => (
   <div className="flex flex-col gap-6 w-full animate-pulse mt-6">
@@ -40,21 +38,17 @@ const CashflowSkeleton = () => (
 );
 
 // ==========================================
-// COMPONENT CHÍNH: BÁO CÁO DÒNG TIỀN
+// COMPONENT CHÍNH
 // ==========================================
 export default function CashflowReport() {
-  // --- STATE LỌC THỜI GIAN ---
-  // Mặc định lấy 6 tháng gần nhất để biểu đồ vẽ đẹp
   const [startDate, setStartDate] = useState(dayjs().subtract(6, 'month').startOf('month').format('YYYY-MM-DD'));
   const [endDate, setEndDate] = useState(dayjs().endOf('month').format('YYYY-MM-DD'));
 
-  // 👉 FETCH DATA THẬT
   const { data: cashflowData = [], isLoading, isError, refetch, isFetching } = useGetCashflowReportQuery({
     startDate,
     endDate
   });
 
-  // --- TÍNH TOÁN KPI TỔNG QUAN (Từ mảng dữ liệu trả về) ---
   const summary = useMemo(() => {
     return cashflowData.reduce((acc, curr) => ({
       totalIn: acc.totalIn + (curr.cashIn || 0),
@@ -63,7 +57,22 @@ export default function CashflowReport() {
     }), { totalIn: 0, totalOut: 0, netCash: 0 });
   }, [cashflowData]);
 
-  // --- ĐỊNH NGHĨA CỘT CHO BẢNG CHI TIẾT ---
+  // --- HANDLER EXPORT DỮ LIỆU ---
+  const handleExportData = () => {
+    if (cashflowData.length === 0) {
+      toast.error("Không có dữ liệu để xuất!"); return;
+    }
+    const exportData = cashflowData.map(row => ({
+      "Kỳ báo cáo": row.period,
+      "Dòng tiền vào (VND)": row.cashIn || 0,
+      "Dòng tiền ra (VND)": row.cashOut || 0,
+      "Lưu chuyển thuần (VND)": row.netCash || 0
+    }));
+    exportToCSV(exportData, `Bao_Cao_Luu_Chuyen_Tien_Te_${startDate}_den_${endDate}`);
+    toast.success("Xuất báo cáo dòng tiền thành công!");
+  };
+
+  // --- ĐỊNH NGHĨA CỘT DATATABLE ---
   const columns: ColumnDef<CashflowData>[] = [
     {
       header: "Kỳ báo cáo",
@@ -116,17 +125,9 @@ export default function CashflowReport() {
     }
   ];
 
-  // --- CẤU HÌNH MOTION (60fps Stagger) ---
-  const containerVariants: Variants = {
-    hidden: { opacity: 0 },
-    show: { opacity: 1, transition: { staggerChildren: 0.1 } }
-  };
-  const itemVariants: Variants = {
-    hidden: { opacity: 0, y: 20 },
-    show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 300, damping: 24 } }
-  };
+  const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
+  const itemVariants: Variants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 300, damping: 24 } } };
 
-  // --- RENDER LỖI MẠNG ---
   if (isError) {
     return (
       <div className="flex flex-col items-center justify-center h-[70vh] w-full text-center">
@@ -143,19 +144,17 @@ export default function CashflowReport() {
   return (
     <div className="w-full flex flex-col gap-6 pb-10">
       
-      {/* 1. HEADER & ACTIONS */}
       <Header 
         title="Báo cáo Lưu chuyển Tiền tệ" 
         subtitle="Phân tích chi tiết Dòng tiền vào (Thu) và Dòng tiền ra (Chi) của doanh nghiệp."
         rightNode={
-          <button className="px-5 py-2.5 flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white dark:bg-white dark:hover:bg-slate-200 dark:text-slate-900 text-sm font-bold rounded-xl shadow-lg transition-all active:scale-95">
+          <button onClick={handleExportData} className="px-5 py-2.5 flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white dark:bg-white dark:hover:bg-slate-200 dark:text-slate-900 text-sm font-bold rounded-xl shadow-lg transition-all active:scale-95">
             <Download className="w-4 h-4" />
             <span className="hidden sm:inline">Xuất báo cáo</span>
           </button>
         }
       />
 
-      {/* 2. KHU VỰC BỘ LỌC (DATA FILTER) */}
       <div className="flex flex-wrap items-center gap-4 p-4 glass-panel rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm">
         <div className="flex items-center gap-2">
           <CalendarDays className="w-5 h-5 text-slate-400" />
@@ -184,7 +183,6 @@ export default function CashflowReport() {
       ) : (
         <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-6 w-full">
           
-          {/* 3. KHỐI THỐNG KÊ (KPI CARDS) */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <motion.div variants={itemVariants} className="glass p-6 rounded-3xl border-l-4 border-l-emerald-500">
               <div className="flex justify-between items-start mb-4">
@@ -219,13 +217,13 @@ export default function CashflowReport() {
             </motion.div>
           </div>
 
-          {/* 4. BIỂU ĐỒ TRỰC QUAN (DATA VIZ) */}
           <motion.div variants={itemVariants} className="glass p-6 rounded-3xl flex flex-col h-[450px]">
             <div className="flex items-center gap-2 mb-6">
               <Activity className="w-5 h-5 text-blue-500" />
               <h3 className="text-lg font-bold text-slate-800 dark:text-white">Xu hướng Dòng tiền</h3>
             </div>
-            <div className="flex-1 w-full min-h-0">
+            
+            <div className="w-full h-[350px] min-h-[350px]">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={cashflowData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                   <defs>
@@ -254,7 +252,6 @@ export default function CashflowReport() {
             </div>
           </motion.div>
 
-          {/* 5. BẢNG DỮ LIỆU CHI TIẾT */}
           <motion.div variants={itemVariants} className="glass-panel rounded-3xl overflow-hidden shadow-sm border border-slate-100 dark:border-white/5">
             <div className="bg-slate-50 dark:bg-slate-800/50 px-6 py-4 border-b border-slate-200 dark:border-white/10">
               <h3 className="font-bold text-slate-800 dark:text-white">Bảng kê chi tiết theo kỳ</h3>
@@ -262,7 +259,7 @@ export default function CashflowReport() {
             <DataTable 
               data={cashflowData} 
               columns={columns} 
-              itemsPerPage={12} // Cho phép hiển thị trọn 1 năm nếu cần
+              itemsPerPage={12} 
             />
           </motion.div>
 

@@ -7,7 +7,7 @@ import {
   MonitorSmartphone, Plus, Calculator, AlertOctagon, 
   RefreshCcw, Wrench, ArrowRightLeft, Trash2, CheckCircle2, 
   Ban, ShieldAlert, Laptop, Building, Activity, Search, 
-  Filter, Crown, TrendingDown, PackageOpen, LayoutGrid, Zap
+  Filter, Crown, TrendingDown, PackageOpen, LayoutGrid, Zap, Download
 } from "lucide-react";
 import dayjs from "dayjs";
 import 'dayjs/locale/vi';
@@ -27,6 +27,10 @@ import {
 import Header from "@/app/(components)/Header";
 import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
 
+// --- UTILS ---
+import { formatVND } from "@/utils/formatters";
+import { exportToCSV } from "@/utils/exportUtils";
+
 // --- SUB-MODALS NGHIỆP VỤ ---
 import CreateAssetModal from "./CreateAssetModal";
 import RunDepreciationModal from "./RunDepreciationModal";
@@ -39,8 +43,6 @@ dayjs.locale('vi');
 // ==========================================
 // 1. HELPERS & FORMATTERS
 // ==========================================
-const formatVND = (val: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
-
 const getStatusUI = (status: string) => {
   switch (status) {
     case "ACTIVE": return { label: "Sẵn sàng", icon: CheckCircle2, color: "text-emerald-600 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-500/10 dark:border-emerald-500/30" };
@@ -54,7 +56,7 @@ const getStatusUI = (status: string) => {
 type TabType = "ALL" | "ACTIVE" | "IN_USE" | "MAINTENANCE" | "LIQUIDATED";
 
 // ==========================================
-// 2. SKELETON LOADING CHUẨN XỊN
+// 2. SKELETON LOADING
 // ==========================================
 const AssetsSkeleton = () => (
   <div className="flex flex-col gap-6 w-full animate-pulse mt-6">
@@ -85,7 +87,7 @@ export default function AssetsPage() {
   const [handoverAssetId, setHandoverAssetId] = useState<string | null>(null);
   const [liquidateAssetId, setLiquidateAssetId] = useState<string | null>(null);
 
-  // 👉 FETCH DATA TỪ API
+  // 👉 FETCH DATA TỪ API THẬT
   const { data: rawAssets = [], isLoading: loadingAssets, isError, refetch, isFetching } = useGetAssetsQuery({});
   const { data: categories = [], isLoading: loadingCats } = useGetAssetCategoriesQuery();
   const { data: departments = [], isLoading: loadingDepts } = useGetDepartmentsQuery({});
@@ -95,14 +97,13 @@ export default function AssetsPage() {
 
   const isLoading = loadingAssets || loadingCats || loadingDepts;
 
-  // --- XỬ LÝ LỌC TRÊN CLIENT (✅ ĐÃ FIX TRIỆT ĐỂ LỖI TYPESCRIPT) ---
+  // --- XỬ LÝ LỌC TRÊN CLIENT ---
   const assets = useMemo(() => {
     return rawAssets.filter(asset => {
       const matchTab = activeTab === "ALL" || asset.status === activeTab;
       const matchSearch = asset.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           asset.assetCode.toLowerCase().includes(searchQuery.toLowerCase());
       
-      // Ép kiểu (any) để chọc thủng giới hạn của Interface, lấy đúng ID lọc dữ liệu
       const matchCat = filterCategory === "" || (asset as any).categoryId === filterCategory;
       const assetDeptId = (asset as any).departmentId || (asset as any).department?.departmentId;
       const matchDept = filterDepartment === "" || assetDeptId === filterDepartment;
@@ -138,27 +139,48 @@ export default function AssetsPage() {
     };
   }, [rawAssets]);
 
-  // --- HANDLERS (Bảo trì nhanh & Xóa) ---
+  // --- HANDLERS HOẠT ĐỘNG THẬT ---
   const handleQuickMaintenance = async (id: string, name: string) => {
     const description = window.prompt(`Nhập lý do bảo trì cho thiết bị "${name}":`);
     if (!description?.trim()) return;
+    
     try {
       await logMaintenance({ id, data: { maintenanceDate: dayjs().format('YYYY-MM-DD'), description, cost: 0 } }).unwrap();
-      toast.success(`Đã đưa ${name} vào diện bảo trì!`);
+      toast.success(`Đã đưa ${name} vào diện bảo trì thành công!`);
     } catch (err: any) {
-      toast.error(err?.data?.message || "Lỗi ghi nhận bảo trì!");
+      toast.error(err?.data?.message || "Lỗi ghi nhận bảo trì vào cơ sở dữ liệu!");
     }
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (window.confirm(`XÓA TÀI SẢN "${name}"?\nChỉ xóa được tài sản chưa từng phát sinh khấu hao.`)) {
+    if (window.confirm(`HÀNH ĐỘNG NGUY HIỂM: Xóa cứng tài sản "${name}"?\nChỉ xóa được tài sản CHƯA TỪNG phát sinh khấu hao hoặc giao dịch. Nếu không, hãy dùng chức năng Thanh lý.`)) {
       try {
         await deleteAsset(id).unwrap();
-        toast.success(`Đã xóa tài sản ${name}!`);
+        toast.success(`Đã xóa tài sản ${name} khỏi CSDL!`);
       } catch (err: any) {
-        toast.error("Tài sản đã có lịch sử, không thể xóa cứng! Hãy Thanh lý.");
+        toast.error(err?.data?.message || "Tài sản đã có lịch sử, không thể xóa cứng! Hãy Thanh lý.");
       }
     }
+  };
+
+  const handleExportAssets = () => {
+    if (assets.length === 0) {
+      toast.error("Không có dữ liệu tài sản để xuất!");
+      return;
+    }
+    const exportData = assets.map(a => ({
+      "Mã tài sản": a.assetCode,
+      "Tên tài sản": a.name,
+      "Phân loại": (a as any).category?.name || "Chưa phân loại",
+      "Phòng ban": (a as any).department?.name || "Kho chung",
+      "Nguyên giá (VND)": a.purchasePrice,
+      "Giá trị còn lại (VND)": a.currentValue,
+      "Trạng thái": getStatusUI(a.status).label,
+      "Phương pháp khấu hao": a.depreciationMethod
+    }));
+
+    exportToCSV(exportData, "Danh_Sach_Tai_San");
+    toast.success("Xuất File dữ liệu thành công!");
   };
 
   // --- CỘT BẢNG (DATATABLE COLUMNS) ---
@@ -215,7 +237,6 @@ export default function AssetsPage() {
                 {formatVND(current)}
               </span>
             </div>
-            {/* Thanh Progress Bar Data Viz */}
             <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner">
               <motion.div 
                 initial={{ width: 0 }} animate={{ width: `${percentRemain}%` }} transition={{ duration: 1, ease: "easeOut" }}
@@ -251,18 +272,18 @@ export default function AssetsPage() {
           <div className="flex items-center justify-end gap-1">
             {!isLiquidated && !isMaintenance && (
               <>
-                <button onClick={() => setHandoverAssetId(row.assetId)} title="Luân chuyển (Giao/Thu hồi)" className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 rounded-xl transition-colors">
+                <button onClick={() => setHandoverAssetId(row.assetId)} title="Luân chuyển (Giao/Thu hồi)" className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 rounded-xl transition-colors active:scale-95">
                   <ArrowRightLeft className="w-4 h-4" />
                 </button>
-                <button onClick={() => handleQuickMaintenance(row.assetId, row.name)} title="Ghi nhận Hư hỏng" className="p-2 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/20 rounded-xl transition-colors">
+                <button onClick={() => handleQuickMaintenance(row.assetId, row.name)} disabled={isLoggingMaintenance} title="Ghi nhận Hư hỏng" className="p-2 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/20 rounded-xl transition-colors active:scale-95 disabled:opacity-50">
                   <Wrench className="w-4 h-4" />
                 </button>
-                <button onClick={() => setLiquidateAssetId(row.assetId)} title="Thanh lý tài sản" className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/20 rounded-xl transition-colors">
+                <button onClick={() => setLiquidateAssetId(row.assetId)} title="Thanh lý tài sản" className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/20 rounded-xl transition-colors active:scale-95">
                   <ShieldAlert className="w-4 h-4" />
                 </button>
               </>
             )}
-            <button onClick={() => handleDelete(row.assetId, row.name)} disabled={!isClean || isLiquidated} title="Xóa vĩnh viễn" className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/20 rounded-xl transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+            <button onClick={() => handleDelete(row.assetId, row.name)} disabled={!isClean || isLiquidated || isDeleting} title="Xóa vĩnh viễn" className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/20 rounded-xl transition-colors active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed">
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
@@ -280,7 +301,7 @@ export default function AssetsPage() {
       <div className="flex flex-col items-center justify-center h-[70vh] w-full text-center">
         <AlertOctagon className="w-16 h-16 text-rose-500 mb-4 animate-pulse" />
         <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Lỗi kết nối Hệ thống Tài sản</h2>
-        <button onClick={() => refetch()} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg active:scale-95 flex items-center gap-2 mt-4">
+        <button onClick={() => refetch()} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg active:scale-95 flex items-center gap-2 mt-4 transition-transform">
           <RefreshCcw className={`w-5 h-5 ${isFetching ? 'animate-spin' : ''}`} /> Tải lại dữ liệu
         </button>
       </div>
@@ -296,6 +317,14 @@ export default function AssetsPage() {
         subtitle={t("Giám sát vòng đời, luân chuyển thiết bị và theo dõi tình trạng khấu hao.")}
         rightNode={
           <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+            <button 
+              onClick={handleExportAssets}
+              className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 whitespace-nowrap border border-slate-200 dark:border-slate-700 shadow-sm"
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:block text-sm font-bold">Xuất File</span>
+            </button>
+
             <button 
               onClick={() => setIsAdvancedOpsOpen(true)}
               className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl shadow-lg shadow-amber-500/30 transition-all active:scale-95 whitespace-nowrap"

@@ -172,6 +172,7 @@ model Users {
   passwordHash        String
   fullName            String
   phone               String?
+  address      String?
   status              UserStatus @default(ACTIVE)
   
   failedLoginAttempts Int       @default(0)

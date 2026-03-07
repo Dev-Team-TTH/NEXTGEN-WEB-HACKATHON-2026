@@ -7,7 +7,7 @@ import {
   BookOpen, Plus, Search, Lock, 
   Trash2, AlertOctagon, RefreshCcw, Loader2, CheckCircle2,
   FileEdit, ArrowRightLeft, Scale, ShieldAlert, FileText,
-  TrendingDown, TrendingUp, CalendarDays
+  TrendingDown, TrendingUp, CalendarDays, Download
 } from "lucide-react";
 import dayjs from "dayjs";
 import 'dayjs/locale/vi';
@@ -30,13 +30,15 @@ import FiscalPeriodModal from "./FiscalPeriodModal";
 import ManualJournalModal from "./ManualJournalModal";
 import ReverseEntryModal from "./ReverseEntryModal";
 
+// --- UTILS (KIẾN TRÚC MỚI) ---
+import { formatVND } from "@/utils/formatters";
+import { exportToCSV } from "@/utils/exportUtils";
+
 dayjs.locale('vi');
 
 // ==========================================
 // 1. HELPERS & FORMATTERS
 // ==========================================
-const formatVND = (val: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val || 0);
-
 // Phân loại Trạng thái Bút toán
 const getPostingStatusUI = (status: string) => {
   switch (status) {
@@ -139,6 +141,26 @@ export default function AccountingPage() {
         toast.error("Không thể xóa bút toán này do ràng buộc hệ thống!");
       }
     }
+  };
+
+  // --- EXPORT SỔ CÁI ---
+  const handleExportJournal = () => {
+    if (entries.length === 0) {
+      toast.error("Không có dữ liệu bút toán để xuất!");
+      return;
+    }
+    
+    const exportData = entries.map(e => ({
+      "Ngày hạch toán": dayjs(e.entryDate).format('DD/MM/YYYY'),
+      "Mã tham chiếu": e.reference,
+      "Diễn giải": e.description,
+      "Tổng Nợ (VND)": e.lines?.reduce((sum, line) => sum + (line.debit || 0), 0) || 0,
+      "Tổng Có (VND)": e.lines?.reduce((sum, line) => sum + (line.credit || 0), 0) || 0,
+      "Trạng thái": getPostingStatusUI(e.postingStatus).label,
+      "Đảo sổ": e.isReversed ? "Đã bị đảo" : "Bình thường"
+    }));
+
+    exportToCSV(exportData, "So_Nhat_Ky_Chung");
   };
 
   // --- CỘT BẢNG (DATATABLE COLUMNS) ---
@@ -302,7 +324,14 @@ export default function AccountingPage() {
         title={t("Sổ Nhật Ký Chung (General Journal)")} 
         subtitle={t("Trung tâm kiểm soát mọi bút toán Nợ/Có. Đảm bảo tính toàn vẹn và cân đối kế toán.")}
         rightNode={
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+            <button 
+              onClick={handleExportJournal}
+              className="px-4 py-2.5 flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 whitespace-nowrap border border-slate-200 dark:border-slate-700 shadow-sm text-sm font-bold"
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline">Xuất Sổ cái</span>
+            </button>
             <button 
               onClick={() => setIsFiscalModalOpen(true)}
               className="px-4 py-2.5 flex items-center gap-2 bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 border border-slate-200 dark:border-slate-700 hover:border-rose-300 dark:hover:border-rose-500/50 rounded-xl text-sm font-bold shadow-sm transition-all active:scale-95 whitespace-nowrap"
@@ -315,7 +344,7 @@ export default function AccountingPage() {
               className="px-5 py-2.5 flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-sm font-bold rounded-xl shadow-xl shadow-indigo-500/30 transition-all active:scale-95 whitespace-nowrap"
             >
               <Plus className="w-5 h-5" />
-              <span className="hidden sm:inline">Tạo Bút toán Thủ công</span>
+              <span className="hidden sm:inline">Tạo Bút toán Kép</span>
             </button>
           </div>
         }

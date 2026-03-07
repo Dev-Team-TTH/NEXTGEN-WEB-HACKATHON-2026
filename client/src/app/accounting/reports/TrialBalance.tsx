@@ -8,22 +8,25 @@ import {
 } from "lucide-react";
 import dayjs from "dayjs";
 import 'dayjs/locale/vi';
+import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
 import { useGetTrialBalanceReportQuery, TrialBalanceData } from "@/state/api";
 
-// --- COMPONENTS ---
+// --- COMPONENTS & UTILS ---
 import Header from "@/app/(components)/Header";
 import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
+import { formatVND } from "@/utils/formatters";
+import { exportToCSV } from "@/utils/exportUtils";
 
 dayjs.locale('vi');
 
 // ==========================================
 // 1. HELPERS & FORMATTERS
 // ==========================================
-const formatVND = (val: number) => {
+const formatVNDDisplay = (val: number) => {
   if (!val || val === 0) return "-";
-  return new Intl.NumberFormat('vi-VN').format(val);
+  return formatVND(val);
 };
 
 // ==========================================
@@ -77,6 +80,39 @@ export default function TrialBalanceReport() {
     totals.periodDebit === totals.periodCredit &&
     totals.closingDebit === totals.closingCredit;
 
+  // --- HANDLER EXPORT DỮ LIỆU ---
+  const handleExportData = () => {
+    if (trialBalance.length === 0) {
+      toast.error("Không có dữ liệu để xuất!"); return;
+    }
+
+    const exportData = trialBalance.map(row => ({
+      "Số hiệu TK": row.accountCode,
+      "Tên Tài khoản": row.accountName,
+      "Dư Nợ ĐK (VND)": row.openingDebit || 0,
+      "Dư Có ĐK (VND)": row.openingCredit || 0,
+      "PS Nợ Kỳ (VND)": row.periodDebit || 0,
+      "PS Có Kỳ (VND)": row.periodCredit || 0,
+      "Dư Nợ CK (VND)": row.closingDebit || 0,
+      "Dư Có CK (VND)": row.closingCredit || 0
+    }));
+
+    // Thêm dòng Tổng Cộng vào file Excel
+    exportData.push({
+      "Số hiệu TK": "TỔNG CỘNG",
+      "Tên Tài khoản": "",
+      "Dư Nợ ĐK (VND)": totals.openingDebit,
+      "Dư Có ĐK (VND)": totals.openingCredit,
+      "PS Nợ Kỳ (VND)": totals.periodDebit,
+      "PS Có Kỳ (VND)": totals.periodCredit,
+      "Dư Nợ CK (VND)": totals.closingDebit,
+      "Dư Có CK (VND)": totals.closingCredit
+    } as any);
+
+    exportToCSV(exportData, `Bang_Can_Doi_SPS_${startDate}_den_${endDate}`);
+    toast.success("Xuất Bảng Cân đối thành công!");
+  };
+
   // --- ĐỊNH NGHĨA CỘT CHO DATATABLE (Chuẩn IFRS) ---
   const columns: ColumnDef<TrialBalanceData>[] = [
     {
@@ -96,39 +132,39 @@ export default function TrialBalanceReport() {
       header: "Dư Nợ ĐK",
       accessorKey: "openingDebit",
       align: "right",
-      cell: (row) => <span className="font-semibold text-blue-600 dark:text-blue-400">{formatVND(row.openingDebit)}</span>
+      cell: (row) => <span className="font-semibold text-blue-600 dark:text-blue-400">{formatVNDDisplay(row.openingDebit)}</span>
     },
     {
       header: "Dư Có ĐK",
       accessorKey: "openingCredit",
       align: "right",
-      cell: (row) => <span className="font-semibold text-orange-600 dark:text-orange-400">{formatVND(row.openingCredit)}</span>
+      cell: (row) => <span className="font-semibold text-orange-600 dark:text-orange-400">{formatVNDDisplay(row.openingCredit)}</span>
     },
     // PHÁT SINH TRONG KỲ
     {
       header: "PS Nợ (Kỳ)",
       accessorKey: "periodDebit",
       align: "right",
-      cell: (row) => <span className="font-black text-blue-600 dark:text-blue-400">{formatVND(row.periodDebit)}</span>
+      cell: (row) => <span className="font-black text-blue-600 dark:text-blue-400">{formatVNDDisplay(row.periodDebit)}</span>
     },
     {
       header: "PS Có (Kỳ)",
       accessorKey: "periodCredit",
       align: "right",
-      cell: (row) => <span className="font-black text-orange-600 dark:text-orange-400">{formatVND(row.periodCredit)}</span>
+      cell: (row) => <span className="font-black text-orange-600 dark:text-orange-400">{formatVNDDisplay(row.periodCredit)}</span>
     },
     // DƯ CUỐI KỲ
     {
       header: "Dư Nợ CK",
       accessorKey: "closingDebit",
       align: "right",
-      cell: (row) => <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatVND(row.closingDebit)}</span>
+      cell: (row) => <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatVNDDisplay(row.closingDebit)}</span>
     },
     {
       header: "Dư Có CK",
       accessorKey: "closingCredit",
       align: "right",
-      cell: (row) => <span className="font-semibold text-rose-600 dark:text-rose-400">{formatVND(row.closingCredit)}</span>
+      cell: (row) => <span className="font-semibold text-rose-600 dark:text-rose-400">{formatVNDDisplay(row.closingCredit)}</span>
     }
   ];
 
@@ -164,7 +200,7 @@ export default function TrialBalanceReport() {
         title="Bảng Cân đối Số phát sinh" 
         subtitle="Báo cáo Trial Balance tổng hợp số dư tài khoản chuẩn IFRS."
         rightNode={
-          <button className="px-5 py-2.5 flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white dark:bg-white dark:hover:bg-slate-200 dark:text-slate-900 text-sm font-bold rounded-xl shadow-lg transition-all active:scale-95">
+          <button onClick={handleExportData} className="px-5 py-2.5 flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white dark:bg-white dark:hover:bg-slate-200 dark:text-slate-900 text-sm font-bold rounded-xl shadow-lg transition-all active:scale-95">
             <Download className="w-4 h-4" />
             <span className="hidden sm:inline">Xuất Excel</span>
           </button>
@@ -232,16 +268,16 @@ export default function TrialBalanceReport() {
                   </div>
                   
                   {/* Cột 2,3: Đầu kỳ */}
-                  <div className="flex-1 flex justify-end pr-4 text-blue-300">{formatVND(totals.openingDebit)}</div>
-                  <div className="flex-1 flex justify-end pr-4 text-orange-300">{formatVND(totals.openingCredit)}</div>
+                  <div className="flex-1 flex justify-end pr-4 text-blue-300">{formatVNDDisplay(totals.openingDebit)}</div>
+                  <div className="flex-1 flex justify-end pr-4 text-orange-300">{formatVNDDisplay(totals.openingCredit)}</div>
                   
                   {/* Cột 4,5: Trong kỳ */}
-                  <div className="flex-1 flex justify-end pr-4 text-blue-400 text-base">{formatVND(totals.periodDebit)}</div>
-                  <div className="flex-1 flex justify-end pr-4 text-orange-400 text-base">{formatVND(totals.periodCredit)}</div>
+                  <div className="flex-1 flex justify-end pr-4 text-blue-400 text-base">{formatVNDDisplay(totals.periodDebit)}</div>
+                  <div className="flex-1 flex justify-end pr-4 text-orange-400 text-base">{formatVNDDisplay(totals.periodCredit)}</div>
                   
                   {/* Cột 6,7: Cuối kỳ */}
-                  <div className="flex-1 flex justify-end pr-4 text-emerald-400">{formatVND(totals.closingDebit)}</div>
-                  <div className="flex-1 flex justify-end pr-4 text-rose-400">{formatVND(totals.closingCredit)}</div>
+                  <div className="flex-1 flex justify-end pr-4 text-emerald-400">{formatVNDDisplay(totals.closingDebit)}</div>
+                  <div className="flex-1 flex justify-end pr-4 text-rose-400">{formatVNDDisplay(totals.closingCredit)}</div>
                 </div>
               </div>
             )}

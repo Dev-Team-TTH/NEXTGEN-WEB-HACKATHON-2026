@@ -5,11 +5,18 @@ import { motion, AnimatePresence, Variants } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { 
   Package, Map, ScanBarcode, ArrowRightLeft, 
-  ClipboardEdit, AlertOctagon, RefreshCcw, Box, Lock, DollarSign, History, Layers
+  ClipboardEdit, AlertOctagon, RefreshCcw, Box, Lock, DollarSign, History, Layers,
+  AlertTriangle, Clock, Download
 } from "lucide-react";
+import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
-import { useGetInventoryBalancesQuery, InventoryBalance } from "@/state/api";
+import { 
+  useGetInventoryBalancesQuery, 
+  useGetLowStockAlertsQuery, 
+  useGetExpiringBatchesQuery, 
+  InventoryBalance 
+} from "@/state/api";
 
 // --- COMPONENTS ---
 import Header from "@/app/(components)/Header";
@@ -17,19 +24,22 @@ import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
 import Warehouse3DViewer from "@/app/(components)/Warehouse3DViewer";
 import UniversalScanner from "@/app/(components)/UniversalScanner";
 
-// --- SUB-PAGES & MODALS CHÚNG TA ĐÃ TẠO ---
+// --- SUB-PAGES & MODALS ---
 import ProductList from "./ProductList";
 import TransactionHistory from "./TransactionHistory";
 import AdjustStockModal from "./AdjustStockModal";
 import TransferStockModal from "./TransferStockModal";
-// Nếu bạn đã tạo BarcodePrintModal, có thể import vào đây và gọi qua nút "In mã vạch"
-// import BarcodePrintModal from "./BarcodePrintModal";
+
+// --- UTILS ---
+import { formatVND } from "@/utils/formatters";
+import { exportToCSV } from "@/utils/exportUtils";
 
 // ==========================================
 // 1. SKELETON LOADING
 // ==========================================
 const InventorySkeleton = () => (
   <div className="flex flex-col gap-6 w-full animate-pulse mt-6">
+    <div className="h-24 w-full bg-slate-200 dark:bg-slate-800/50 rounded-2xl"></div>
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
       {[1, 2, 3].map(i => <div key={i} className="h-28 rounded-2xl bg-slate-200 dark:bg-slate-800/50"></div>)}
     </div>
@@ -41,12 +51,8 @@ const InventorySkeleton = () => (
 // ==========================================
 // 2. HELPER FORMAT FORMATTER
 // ==========================================
-const formatVND = (val: number) => 
-  new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
-const formatQty = (val: number) => 
-  new Intl.NumberFormat('vi-VN').format(val);
+const formatQty = (val: number) => new Intl.NumberFormat('vi-VN').format(val);
 
-// Type định nghĩa các Tab
 type TabType = "BALANCES" | "PRODUCTS" | "HISTORY" | "3D_MAP";
 
 // ==========================================
@@ -63,8 +69,14 @@ export default function InventoryPage() {
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
 
-  // 👉 FETCH DATA THẬT: Lấy danh sách Tồn kho (Dùng chung cho KPI)
-  const { data: balances = [], isLoading, isError, refetch, isFetching } = useGetInventoryBalancesQuery({});
+  // 👉 FETCH DATA TỪ BACKEND
+  const { data: responseData, isLoading, isError, refetch, isFetching } = useGetInventoryBalancesQuery({
+    page: 1, limit: 50
+  });
+  const { data: lowStockAlerts = [] } = useGetLowStockAlertsQuery();
+  const { data: expiringBatches = [] } = useGetExpiringBatchesQuery({ days: 30 });
+
+  const balances: InventoryBalance[] = responseData?.data || [];
 
   // --- TÍNH TOÁN KPI TỔNG QUAN ---
   const summary = useMemo(() => {
@@ -74,6 +86,26 @@ export default function InventoryPage() {
       totalLocked: acc.totalLocked + (curr.lockedQty || 0),
     }), { totalValue: 0, totalAvailable: 0, totalLocked: 0 });
   }, [balances]);
+
+  // --- HANDLER EXPORT TỒN KHO ---
+  const handleExportBalances = () => {
+    if (balances.length === 0) {
+      toast.error("Không có dữ liệu tồn kho để xuất!"); return;
+    }
+    const exportData = balances.map(b => ({
+      "Mã SP": b.product?.productCode || "N/A",
+      "Tên Sản phẩm": b.product?.name || "N/A",
+      "Kho lưu trữ": b.warehouse?.name || "N/A",
+      "Vị trí kệ (Bin)": b.bin?.code || "Chưa xếp",
+      "Tồn khả dụng": b.quantity,
+      "Tồn đang khóa": b.lockedQty,
+      "Đơn vị tính": b.product?.uom?.name || "N/A",
+      "Giá vốn MAC (VND)": b.avgCost,
+      "Tổng giá trị (VND)": b.totalValue
+    }));
+    exportToCSV(exportData, "Bao_Cao_Ton_Kho_Hien_Tai");
+    toast.success("Xuất báo cáo tồn kho thành công!");
+  };
 
   // --- ĐỊNH NGHĨA CỘT CHO TAB TỒN KHO THỰC TẾ ---
   const columns: ColumnDef<InventoryBalance>[] = [
@@ -154,16 +186,10 @@ export default function InventoryPage() {
   ];
 
   // --- CẤU HÌNH MOTION ---
-  const containerVariants: Variants = {
-    hidden: { opacity: 0 },
-    show: { opacity: 1, transition: { staggerChildren: 0.1 } }
-  };
-  const itemVariants: Variants = {
-    hidden: { opacity: 0, y: 20 },
-    show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 300, damping: 24 } }
-  };
+  const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
+  const itemVariants: Variants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } };
 
-  // --- RENDER XỬ LÝ LỖI MẠNG LỚP NGOÀI ---
+  // --- RENDER XỬ LÝ LỖI MẠNG ---
   if (isError) {
     return (
       <div className="flex flex-col items-center justify-center h-[70vh] w-full text-center">
@@ -179,22 +205,28 @@ export default function InventoryPage() {
   return (
     <div className="w-full flex flex-col gap-6 pb-10">
       
-      {/* 1. HEADER & ACTIONS (Adaptive Mobile) */}
       <Header 
         title={t("Trung tâm Kho Bãi")} 
         subtitle={t("Giám sát danh mục vật tư, tồn kho thời gian thực và lịch sử luân chuyển.")}
         rightNode={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+            <button 
+              onClick={handleExportBalances}
+              className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 border border-slate-200 dark:border-slate-700 shadow-sm"
+            >
+              <Download className="w-5 h-5" />
+              <span className="hidden sm:block text-sm font-bold">Xuất Báo cáo</span>
+            </button>
             <button 
               onClick={() => setIsScannerOpen(true)}
-              className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 border border-slate-200 dark:border-slate-700"
+              className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 border border-slate-200 dark:border-slate-700 shadow-sm"
             >
               <ScanBarcode className="w-5 h-5" />
-              <span className="hidden sm:block text-sm font-bold">Quét mã</span>
+              <span className="hidden sm:block text-sm font-bold">Quét mã Bulk</span>
             </button>
             <button 
               onClick={() => setIsTransferModalOpen(true)}
-              className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-xl transition-all active:scale-95 border border-indigo-200 dark:border-indigo-500/30"
+              className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-xl transition-all active:scale-95 border border-indigo-200 dark:border-indigo-500/30 shadow-sm"
             >
               <ArrowRightLeft className="w-5 h-5" />
               <span className="hidden sm:block text-sm font-bold">Chuyển kho</span>
@@ -204,7 +236,7 @@ export default function InventoryPage() {
               className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg shadow-blue-500/30 transition-all active:scale-95"
             >
               <ClipboardEdit className="w-5 h-5" />
-              <span className="hidden sm:block text-sm font-bold">Kiểm kê</span>
+              <span className="hidden sm:block text-sm font-bold">Kiểm kê đơn</span>
             </button>
           </div>
         }
@@ -215,7 +247,59 @@ export default function InventoryPage() {
       ) : (
         <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-6 w-full">
           
-          {/* 2. KHỐI THỐNG KÊ (KPI CARDS) */}
+          {/* SMART ALERTS WIDGETS */}
+          <AnimatePresence>
+            {(lowStockAlerts.length > 0 || expiringBatches.length > 0) && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0, scale: 0.95 }}
+                animate={{ opacity: 1, height: "auto", scale: 1 }}
+                exit={{ opacity: 0, height: 0, scale: 0.95 }}
+                className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6"
+              >
+                {/* WIDGET CẢNH BÁO TỒN KHO THẤP */}
+                {lowStockAlerts.length > 0 && (
+                  <motion.div 
+                    animate={{ boxShadow: ["0px 0px 0px rgba(244,63,94,0)", "0px 0px 20px rgba(244,63,94,0.4)", "0px 0px 0px rgba(244,63,94,0)"] }}
+                    transition={{ repeat: Infinity, duration: 2.5 }}
+                    className="flex items-start gap-4 p-5 rounded-2xl bg-gradient-to-br from-rose-50 to-white dark:from-rose-500/10 dark:to-slate-900 border border-rose-200 dark:border-rose-500/30 relative overflow-hidden group cursor-pointer"
+                  >
+                    <div className="absolute -right-4 -top-4 w-24 h-24 bg-rose-500/10 rounded-full blur-2xl group-hover:bg-rose-500/20 transition-all"></div>
+                    <div className="p-3 bg-rose-100 dark:bg-rose-500/20 rounded-xl shrink-0">
+                      <AlertTriangle className="w-7 h-7 text-rose-600 dark:text-rose-400" />
+                    </div>
+                    <div className="flex flex-col z-10">
+                      <h4 className="text-base font-bold text-rose-800 dark:text-rose-300">Cảnh báo Tồn kho an toàn</h4>
+                      <p className="text-sm text-rose-600/80 dark:text-rose-400/80 mt-1 leading-relaxed">
+                        Phát hiện <span className="font-bold text-rose-600 dark:text-rose-400 text-lg">{lowStockAlerts.length}</span> mặt hàng đã chạm đáy (Reorder Point). Cần lên kế hoạch nhập khẩu hoặc sản xuất ngay!
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* WIDGET CẢNH BÁO HẾT HẠN SỬ DỤNG (FEFO) */}
+                {expiringBatches.length > 0 && (
+                  <motion.div 
+                    animate={{ boxShadow: ["0px 0px 0px rgba(245,158,11,0)", "0px 0px 20px rgba(245,158,11,0.4)", "0px 0px 0px rgba(245,158,11,0)"] }}
+                    transition={{ repeat: Infinity, duration: 2.5, delay: 1.25 }}
+                    className="flex items-start gap-4 p-5 rounded-2xl bg-gradient-to-br from-amber-50 to-white dark:from-amber-500/10 dark:to-slate-900 border border-amber-200 dark:border-amber-500/30 relative overflow-hidden group cursor-pointer"
+                  >
+                    <div className="absolute -right-4 -top-4 w-24 h-24 bg-amber-500/10 rounded-full blur-2xl group-hover:bg-amber-500/20 transition-all"></div>
+                    <div className="p-3 bg-amber-100 dark:bg-amber-500/20 rounded-xl shrink-0">
+                      <Clock className="w-7 h-7 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div className="flex flex-col z-10">
+                      <h4 className="text-base font-bold text-amber-800 dark:text-amber-300">Cảnh báo Hàng sắp hết hạn</h4>
+                      <p className="text-sm text-amber-600/80 dark:text-amber-400/80 mt-1 leading-relaxed">
+                        Có <span className="font-bold text-amber-600 dark:text-amber-400 text-lg">{expiringBatches.length}</span> lô hàng sẽ hết hạn trong 30 ngày tới. Yêu cầu ưu tiên xuất kho theo tiêu chuẩn FEFO.
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* KHỐI THỐNG KÊ (KPI CARDS) */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
             <motion.div variants={itemVariants} className="glass p-5 rounded-2xl border-l-4 border-l-emerald-500 group hover:-translate-y-1 transition-transform">
               <div className="flex justify-between items-start mb-2">
@@ -242,7 +326,7 @@ export default function InventoryPage() {
             </motion.div>
           </div>
 
-          {/* 3. ĐIỀU HƯỚNG TAB TỔNG HỢP (THIẾT KẾ ĐỘC QUYỀN) */}
+          {/* ĐIỀU HƯỚNG TAB TỔNG HỢP */}
           <div className="w-full overflow-x-auto scrollbar-hide">
             <div className="flex items-center gap-2 p-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-2xl w-fit border border-slate-200 dark:border-white/5">
               
@@ -269,11 +353,10 @@ export default function InventoryPage() {
             </div>
           </div>
 
-          {/* 4. NỘI DUNG HIỂN THỊ TƯƠNG ỨNG VỚI TAB */}
+          {/* NỘI DUNG HIỂN THỊ TƯƠNG ỨNG VỚI TAB */}
           <div className="w-full relative">
             <AnimatePresence mode="wait">
               
-              {/* TAB 1: DANH SÁCH TỒN KHO */}
               {activeTab === "BALANCES" && (
                 <motion.div key="balances" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
                   <div className="glass-panel rounded-3xl overflow-hidden shadow-sm border border-slate-100 dark:border-white/5">
@@ -288,21 +371,18 @@ export default function InventoryPage() {
                 </motion.div>
               )}
 
-              {/* TAB 2: DANH MỤC VẬT TƯ (Nhúng component ProductList) */}
               {activeTab === "PRODUCTS" && (
                 <motion.div key="products" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
                   <ProductList />
                 </motion.div>
               )}
 
-              {/* TAB 3: LỊCH SỬ XUẤT NHẬP (Nhúng component TransactionHistory) */}
               {activeTab === "HISTORY" && (
                 <motion.div key="history" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
                   <TransactionHistory />
                 </motion.div>
               )}
 
-              {/* TAB 4: BẢN ĐỒ 3D (Nhúng component Warehouse3DViewer) */}
               {activeTab === "3D_MAP" && (
                 <motion.div key="3d_map" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.98 }} transition={{ duration: 0.3 }}>
                   <Warehouse3DViewer />
@@ -315,9 +395,7 @@ export default function InventoryPage() {
         </motion.div>
       )}
 
-      {/* ==========================================
-          5. KHU VỰC CHỨA CÁC MODALS (HỘP THOẠI) 
-          ========================================== */}
+      {/* MODALS */}
       <UniversalScanner isOpen={isScannerOpen} onClose={() => setIsScannerOpen(false)} />
       <AdjustStockModal isOpen={isAdjustModalOpen} onClose={() => setIsAdjustModalOpen(false)} />
       <TransferStockModal isOpen={isTransferModalOpen} onClose={() => setIsTransferModalOpen(false)} />
