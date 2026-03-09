@@ -1,12 +1,17 @@
 import { useState } from "react";
 import { Message, MessageAction } from "./types";
+import { useAppDispatch } from "@/app/redux";
+import { api } from "@/state/api";
+import { formatVND } from "@/utils/formatters";
 
 export function useChatLogic() {
+  const dispatch = useAppDispatch();
+  
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'init-1',
       sender: 'ai',
-      text: 'Xin chào! Tôi là TTH AI Core. Tôi đã được kết nối với toàn bộ cơ sở dữ liệu của doanh nghiệp. Bạn cần tôi báo cáo doanh thu, kiểm tra kho hay tra cứu mã chứng từ nào?',
+      text: 'Xin chào! Tôi là TTH AI Core (Local Mode). Dữ liệu của bạn được bảo mật tuyệt đối 100% trên server nội bộ. \n\nTôi có thể giúp bạn truy xuất nhanh:\n- 📊 Báo cáo doanh thu / dòng tiền\n- 📦 Cảnh báo tồn kho\n- ✍️ Kiểm tra phiếu chờ duyệt',
       timestamp: new Date()
     }
   ]);
@@ -14,72 +19,103 @@ export function useChatLogic() {
   const [isTyping, setIsTyping] = useState(false);
 
   // ==========================================
-  // BỘ MÁY XỬ LÝ NGÔN NGỮ TỰ NHIÊN (NLP ENGINE)
-  // Phân tích Intent (Ý định) và Entity (Thực thể)
+  // BỘ MÁY XỬ LÝ LỆNH NỘI BỘ (LOCAL RETRIEVAL ENGINE)
+  // Fetch data thật từ Backend thông qua RTK Query
   // ==========================================
-  const generateIntelligentResponse = (query: string): { text: string; actions?: MessageAction[] } => {
+  const processIntelligentQuery = async (query: string): Promise<{ text: string; actions?: MessageAction[] }> => {
     const textLower = query.toLowerCase();
 
-    // 1. Intent: Tra cứu chứng từ cụ thể (Trích xuất bằng Regex)
-    // Bắt các mã như PNK-001, SO-2023, PRD-999
-    const documentRegex = /[a-z]{2,3}-\d{3,}/i; 
-    const foundDoc = query.match(documentRegex);
-    if (foundDoc) {
-      const docId = foundDoc[0].toUpperCase();
+    try {
+      // --------------------------------------------------
+      // 1. INTENT: BÁO CÁO TÀI CHÍNH / DOANH THU THẬT
+      // --------------------------------------------------
+      if (textLower.includes("doanh thu") || textLower.includes("tài chính") || textLower.includes("dòng tiền")) {
+        // Fetch data thật từ Backend (không lưu cache để luôn lấy số mới nhất)
+        const response = await dispatch(api.endpoints.getDashboardMetrics.initiate(undefined, { forceRefetch: true })).unwrap();
+        
+        const revenue = response.financials?.currentMonth?.revenue || 0;
+        const netProfit = response.financials?.currentMonth?.netProfit || 0;
+        const cashBalance = response.summary?.currentCashBalance || 0;
+
+        return {
+          text: `📊 **Báo cáo Tài chính Real-time:**\n\n- Doanh thu tháng hiện tại: **${formatVND(revenue)}**\n- Lợi nhuận ròng: **${formatVND(netProfit)}**\n- Quỹ tiền mặt & TGNH hiện có: **${formatVND(cashBalance)}**`,
+          actions: [
+            { label: "Xem Báo cáo Dòng tiền", path: "/accounting/reports/Cashflow" },
+            { label: "Xem Bảng điều khiển", path: "/dashboard" }
+          ]
+        };
+      }
+
+      // --------------------------------------------------
+      // 2. INTENT: CẢNH BÁO TỒN KHO THẬT
+      // --------------------------------------------------
+      if (textLower.includes("kho") || textLower.includes("tồn") || textLower.includes("cảnh báo")) {
+        const alerts = await dispatch(api.endpoints.getLowStockAlerts.initiate(undefined, { forceRefetch: true })).unwrap();
+        
+        if (!alerts || alerts.length === 0) {
+          return { text: "✅ Tình trạng kho hàng ổn định. Không có mã vật tư nào rớt xuống dưới mức cảnh báo an toàn (Reorder Point)." };
+        }
+
+        // Lấy top 3 sản phẩm cảnh báo khẩn cấp nhất
+        const topAlerts = alerts.slice(0, 3).map((item, index) => 
+          `${index + 1}. \`${item.productCode}\` - ${item.productName} (Còn: **${item.currentAvailableQty}** | Định mức: ${item.reorderPoint})`
+        ).join('\n');
+
+        return {
+          text: `⚠️ **Phát hiện ${alerts.length} mã vật tư dưới mức an toàn:**\n\n${topAlerts}\n\nBạn có muốn điều hướng đến phân hệ Kho để xử lý ngay không?`,
+          actions: [
+            { label: "Đi tới Quản lý Kho", path: "/inventory" }
+          ]
+        };
+      }
+
+      // --------------------------------------------------
+      // 3. INTENT: PHÊ DUYỆT (APPROVALS) THẬT
+      // --------------------------------------------------
+      if (textLower.includes("duyệt") || textLower.includes("chờ") || textLower.includes("nhiệm vụ")) {
+        const pending = await dispatch(api.endpoints.getPendingApprovals.initiate(undefined, { forceRefetch: true })).unwrap();
+        
+        if (!pending || pending.length === 0) {
+          return { text: "🎉 Thật tuyệt! Bạn không có tờ trình hay chứng từ nào đang chờ phê duyệt lúc này." };
+        }
+
+        return {
+          text: `🔔 **Trung tâm Phê duyệt:** Bạn đang có **${pending.length} yêu cầu** cần xử lý. Hãy ưu tiên kiểm tra Bàn làm việc để không làm nghẽn quy trình của doanh nghiệp.`,
+          actions: [
+            { label: "Mở Bàn làm việc (Approvals)", path: "/approvals" }
+          ]
+        };
+      }
+
+      // --------------------------------------------------
+      // 4. INTENT: TÌM KIẾM CHỨNG TỪ (REGEX MAP)
+      // --------------------------------------------------
+      const documentRegex = /[a-z]{2,3}-\d{3,}/i; 
+      const foundDoc = query.match(documentRegex);
+      if (foundDoc) {
+        const docId = foundDoc[0].toUpperCase();
+        // Có thể gọi thêm API getDocumentById ở đây nếu cần lấy trạng thái thật
+        return {
+          text: `🔍 Đã ghi nhận mã chứng từ **${docId}**. Bạn muốn thao tác gì với chứng từ này?`,
+          actions: [
+            { label: "Xem chi tiết chứng từ", path: `/transactions/${docId}` }
+          ]
+        };
+      }
+
+      // --------------------------------------------------
+      // FALLBACK: KHÔNG HIỂU LỆNH
+      // --------------------------------------------------
       return {
-        text: `Hệ thống đã tìm thấy chứng từ **${docId}**. Trạng thái hiện tại: "Đang chờ xử lý". Bạn có muốn xem chi tiết hoặc thực hiện phê duyệt không?`,
-        actions: [
-          { label: "Xem chi tiết chứng từ", path: `/transactions/${docId}` },
-          { label: "Chuyển đến Phê duyệt", path: `/approvals` }
-        ]
+        text: `Hệ thống ERP nội bộ chưa nhận diện được lệnh: *"**${query}**"*. \n\n💡 **Gợi ý các câu lệnh hợp lệ:**\n- "Báo cáo doanh thu tháng này"\n- "Cảnh báo tồn kho"\n- "Tôi có bao nhiêu phiếu chờ duyệt?"`
+      };
+
+    } catch (error) {
+      console.error("Lỗi khi Bot truy xuất dữ liệu nội bộ:", error);
+      return {
+        text: "❌ Lỗi truy xuất hệ thống. Vui lòng kiểm tra lại kết nối mạng hoặc phiên đăng nhập của bạn."
       };
     }
-
-    // 2. Intent: Báo cáo Tài chính / Doanh thu
-    if (textLower.includes("doanh thu") || textLower.includes("tài chính") || textLower.includes("lợi nhuận") || textLower.includes("tiền")) {
-      return {
-        text: "📊 **Báo cáo Tài chính Nhanh:**\n- Tổng doanh thu tháng này: **1,250,000,000 VNĐ** (Tăng 15% so với kỳ trước).\n- Dòng tiền thuần (Cashflow) đang dương. Đóng góp lớn nhất đến từ mảng Bán lẻ thiết bị CNTT.",
-        actions: [
-          { label: "Xem Báo cáo Lưu chuyển tiền tệ", path: "/accounting/reports/Cashflow" },
-          { label: "Xem Bảng cân đối", path: "/accounting/reports/TrialBalance" }
-        ]
-      };
-    }
-
-    // 3. Intent: Kiểm tra Tồn kho / Cảnh báo
-    if (textLower.includes("kho") || textLower.includes("tồn") || textLower.includes("hết") || textLower.includes("vật tư")) {
-      return {
-        text: "⚠️ **Cảnh báo Tồn kho:** Hiện có **2 mã vật tư** đang rớt xuống dưới định mức an toàn (Minimum Stock):\n\n1. `PRD-CPU01` - Intel Core i9 (Còn: 2)\n2. `PRD-RAM02` - RAM 32GB DDR5 (Còn: 5)\n\nBạn có muốn tự động lập Phiếu Yêu cầu Mua hàng (PR) cho 2 mã này không?",
-        actions: [
-          { label: "Quản lý Danh mục Vật tư", path: "/inventory" }
-        ]
-      };
-    }
-
-    // 4. Intent: Phê duyệt (Approvals)
-    if (textLower.includes("duyệt") || textLower.includes("trình") || textLower.includes("chờ")) {
-      return {
-        text: "🔔 **Trung tâm Phê duyệt:** Hiện có **5 tờ trình** đang nằm trong hộp thư của bạn. Trong đó có 2 phiếu yêu cầu thanh toán cần duyệt gấp trong hôm nay.",
-        actions: [
-          { label: "Đi tới Bàn làm việc", path: "/approvals" }
-        ]
-      };
-    }
-
-    // 5. Intent: Nhân sự / Tài khoản
-    if (textLower.includes("nhân sự") || textLower.includes("tài khoản") || textLower.includes("quyền") || textLower.includes("phòng ban")) {
-      return {
-        text: "👥 **Quản trị Tổ chức:** Module Nhân sự cho phép bạn quản lý cấu trúc sơ đồ tổ chức, phân quyền RBAC và kiểm tra Audit Log (Lịch sử thao tác).",
-        actions: [
-          { label: "Sơ đồ Tổ chức", path: "/users" }
-        ]
-      };
-    }
-
-    // Fallback: Default Response
-    return {
-      text: "Tôi đã ghi nhận dữ liệu: *" + query + "*. Tuy nhiên, ngữ cảnh này chưa đủ để tôi xuất báo cáo. Hãy cung cấp thêm thông tin chi tiết (VD: 'Báo cáo doanh thu', 'Kiểm tra tồn kho', hoặc kèm mã chứng từ)."
-    };
   };
 
   // ==========================================
@@ -89,7 +125,7 @@ export function useChatLogic() {
     const textToSend = overrideText || inputValue;
     if (!textToSend.trim()) return;
 
-    // 1. Hiển thị tin nhắn của User
+    // 1. Gắn tin nhắn của User vào giao diện
     const newUserMsg: Message = {
       id: Date.now().toString(),
       sender: 'user',
@@ -100,19 +136,10 @@ export function useChatLogic() {
     setInputValue("");
     setIsTyping(true);
 
-    // 2. KÍCH HOẠT TRÍ TUỆ NHÂN TẠO (AI PROCESSING)
-    // ----------------------------------------------------
-    // TODO: (PRODUCTION READY) Cắm API OpenAI/Gemini tại đây
-    // try {
-    //   const response = await fetch("https://api.openai.com/v1/chat/completions", { ... });
-    //   const data = await response.json();
-    //   aiText = data.choices[0].message.content;
-    // } catch (e) { ... }
-    // ----------------------------------------------------
-
-    // Sử dụng thuật toán AI Simulator Local để xử lý độ trễ
-    setTimeout(() => {
-      const { text, actions } = generateIntelligentResponse(textToSend);
+    // 2. GIẢ LẬP ĐỘ TRỄ SUY NGHĨ (UX) & XỬ LÝ LỆNH NỘI BỘ
+    setTimeout(async () => {
+      // Đợi fetch data thật từ DB thông qua hàm processIntelligentQuery
+      const { text, actions } = await processIntelligentQuery(textToSend);
 
       const newAiMsg: Message = {
         id: (Date.now() + 1).toString(),
@@ -124,14 +151,14 @@ export function useChatLogic() {
       
       setMessages(prev => [...prev, newAiMsg]);
       setIsTyping(false);
-    }, 1200 + Math.random() * 800); // Random delay 1.2s - 2.0s tạo cảm giác AI đang suy nghĩ thực sự
+    }, 600); // Rút ngắn delay xuống 600ms vì đây là truy vấn local, cần phản hồi nhanh gọn
   };
 
   const clearChat = () => {
     setMessages([{
       id: Date.now().toString(),
       sender: 'ai',
-      text: 'Đã dọn dẹp bộ nhớ ngữ cảnh. Băng thông dữ liệu đã sẵn sàng. Chúng ta tiếp tục nhé!',
+      text: 'Đã dọn dẹp bộ nhớ ngữ cảnh. Băng thông dữ liệu đã sẵn sàng. Bạn cần tôi truy xuất số liệu gì tiếp theo?',
       timestamp: new Date()
     }]);
   };

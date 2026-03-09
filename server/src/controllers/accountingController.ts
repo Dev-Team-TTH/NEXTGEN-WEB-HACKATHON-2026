@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { PaymentStatus, PostingStatus, ActionType } from "@prisma/client";
 import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
+import { enforceFiscalLock } from "../utils/fiscalLockHelper"; // DÙNG HELPER TẬP TRUNG
 
 // Hàm Helper trích xuất userId
 const getUserId = (req: Request) => (req as any).user?.userId || req.body.userId;
@@ -82,7 +83,7 @@ export const createJournalEntry = async (req: Request, res: Response): Promise<v
     const { branchId, fiscalPeriodId, entryDate, reference, description, lines, postingStatus } = req.body;
     const userId = getUserId(req);
 
-    // KIỂM TRA LOGIC KẾ TOÁN KÉP (DOUBLE-ENTRY VALIDATION)
+    // KIỂM TRA LOGIC KẾ TOÁN KÉP
     let totalDebit = 0;
     let totalCredit = 0;
 
@@ -96,17 +97,14 @@ export const createJournalEntry = async (req: Request, res: Response): Promise<v
       totalCredit += Number(line.credit || 0);
     }
 
-    // Xử lý sai số thập phân trong Javascript
     if (Math.abs(totalDebit - totalCredit) > 0.001) {
       res.status(400).json({ message: `Bút toán không cân bằng! Tổng Nợ (${totalDebit}) khác Tổng Có (${totalCredit})` });
       return;
     }
 
     const journal = await prisma.$transaction(async (tx) => {
-      // 1. Kiểm tra kỳ kế toán
-      const period = await tx.fiscalPeriod.findUnique({ where: { periodId: fiscalPeriodId } });
-      if (!period) throw new Error("Kỳ kế toán không tồn tại!");
-      if (period.isClosed) throw new Error("Kỳ kế toán này đã bị Khóa. Không thể ghi nhận bút toán!");
+      // 1. KIỂM TRA KHÓA SỔ BẰNG HELPER (Sạch sẽ, tái sử dụng)
+      await enforceFiscalLock(tx, fiscalPeriodId);
 
       // 2. Tạo Sổ nhật ký chung
       const newJournal = await tx.journalEntry.create({
@@ -121,40 +119,30 @@ export const createJournalEntry = async (req: Request, res: Response): Promise<v
         }
       });
 
-      // ==========================================
-      // [TÍNH NĂNG MỚI] 2.1 KIỂM SOÁT NGÂN SÁCH (BUDGET CONTROL)
-      // ==========================================
+      // 2.1 KIỂM SOÁT NGÂN SÁCH (BUDGET CONTROL)
       const entryYear = new Date(entryDate).getFullYear();
 
       for (const line of lines) {
-        // Chỉ kiểm tra ngân sách nếu dòng này có gắn CostCenter và là số Nợ (Tăng chi phí)
         if (line.costCenterId && Number(line.debit) > 0) {
-          
-          // Lấy thông tin Tài khoản để biết đây có phải là Tài khoản Chi phí (EXPENSE) không
           const account = await tx.account.findUnique({ where: { accountId: line.accountId } });
 
           if (account && account.type === "EXPENSE") {
-            // Tìm cấu hình Ngân sách của Trung tâm chi phí này trong năm nay
             const budget = await tx.budget.findUnique({
-              where: { 
-                costCenterId_year: { costCenterId: line.costCenterId, year: entryYear } 
-              }
+              where: { costCenterId_year: { costCenterId: line.costCenterId, year: entryYear } }
             });
 
             if (!budget) {
-              throw new Error(`Phòng ban / TT Chi phí [${line.costCenterId}] chưa được cấp Ngân sách cho năm ${entryYear}! Không thể ghi nhận chi phí.`);
+              throw new Error(`Phòng ban / TT Chi phí [${line.costCenterId}] chưa được cấp Ngân sách cho năm ${entryYear}!`);
             }
 
             const debitAmount = Number(line.debit);
             const newUsedAmount = Number(budget.usedAmount) + debitAmount;
             const budgetLimit = Number(budget.totalAmount);
 
-            // Nếu vượt ngân sách -> Chặn!
             if (newUsedAmount > budgetLimit) {
-              throw new Error(`Khoản chi này vượt quá Ngân sách cho phép! (Ngân sách: ${budgetLimit}, Đã dùng: ${budget.usedAmount}, Cần chi thêm: ${debitAmount})`);
+              throw new Error(`Khoản chi vượt quá Ngân sách! (Ngân sách: ${budgetLimit}, Đã dùng: ${budget.usedAmount}, Cần chi: ${debitAmount})`);
             }
 
-            // Nếu hợp lệ -> Trừ tiền vào quỹ ngân sách
             await tx.budget.update({
               where: { budgetId: budget.budgetId },
               data: { usedAmount: newUsedAmount }
@@ -163,7 +151,7 @@ export const createJournalEntry = async (req: Request, res: Response): Promise<v
         }
       }
 
-      // 3. Tạo các dòng Nợ/Có (Journal Lines)
+      // 3. Tạo các dòng Nợ/Có
       await tx.journalLine.createMany({
         data: lines.map((line: any) => ({
           journalId: newJournal.journalId,
@@ -181,7 +169,7 @@ export const createJournalEntry = async (req: Request, res: Response): Promise<v
     await logAudit("JournalEntry", journal.journalId, "CREATE", null, journal, userId, req.ip);
     res.status(201).json(journal);
   } catch (error: any) {
-    res.status(400).json({ message: "Lỗi tạo Bút toán", error: error.message });
+    res.status(400).json({ message: error.message || "Lỗi tạo Bút toán" });
   }
 };
 
@@ -194,50 +182,36 @@ export const updateJournalEntry = async (req: Request, res: Response): Promise<v
   const userId = getUserId(req);
 
   try {
-    // Kiểm tra cân bằng kế toán kép nếu có gửi lines mới lên
     if (lines && lines.length > 0) {
-      let totalDebit = 0;
-      let totalCredit = 0;
-      for (const line of lines) {
-        totalDebit += Number(line.debit || 0);
-        totalCredit += Number(line.credit || 0);
-      }
+      let totalDebit = 0; let totalCredit = 0;
+      for (const line of lines) { totalDebit += Number(line.debit || 0); totalCredit += Number(line.credit || 0); }
       if (Math.abs(totalDebit - totalCredit) > 0.001) {
-        res.status(400).json({ message: `Bút toán không cân bằng! Tổng Nợ (${totalDebit}) khác Tổng Có (${totalCredit})` });
-        return;
+        res.status(400).json({ message: `Bút toán không cân bằng!` }); return;
       }
     }
 
     const updatedJournal = await prisma.$transaction(async (tx) => {
       const existing = await tx.journalEntry.findUnique({ where: { journalId: id } });
       if (!existing) throw new Error("Không tìm thấy bút toán!");
-      if (existing.postingStatus !== PostingStatus.DRAFT) {
-        throw new Error("Chỉ được chỉnh sửa bút toán khi ở trạng thái Nháp (DRAFT)!");
-      }
+      if (existing.postingStatus !== PostingStatus.DRAFT) throw new Error("Chỉ sửa được bút toán Nháp!");
 
-      // Kiểm tra kỳ kế toán mới (nếu có thay đổi)
+      // 1. KIỂM TRA KHÓA SỔ CỦA CẢ KỲ CŨ VÀ KỲ MỚI BẰNG HELPER
+      await enforceFiscalLock(tx, existing.fiscalPeriodId); // Cấm sửa nếu kỳ cũ đã khóa
       if (fiscalPeriodId && fiscalPeriodId !== existing.fiscalPeriodId) {
-        const period = await tx.fiscalPeriod.findUnique({ where: { periodId: fiscalPeriodId } });
-        if (!period || period.isClosed) throw new Error("Kỳ kế toán mới đã bị Khóa!");
+        await enforceFiscalLock(tx, fiscalPeriodId); // Cấm chuyển bút toán sang kỳ mới đã khóa
       }
 
-      // Cập nhật các dòng Nợ/Có (Xóa cũ thêm mới để đảm bảo sạch dữ liệu)
       if (lines && lines.length > 0) {
         await tx.journalLine.deleteMany({ where: { journalId: id } });
         await tx.journalLine.createMany({
           data: lines.map((line: any) => ({
-            journalId: id,
-            accountId: line.accountId,
-            costCenterId: line.costCenterId || null,
-            debit: Number(line.debit || 0),
-            credit: Number(line.credit || 0),
-            description: line.description
+            journalId: id, accountId: line.accountId, costCenterId: line.costCenterId || null,
+            debit: Number(line.debit || 0), credit: Number(line.credit || 0), description: line.description
           }))
         });
       }
 
-      // Cập nhật Header
-      const journal = await tx.journalEntry.update({
+      return await tx.journalEntry.update({
         where: { journalId: id },
         data: {
           branchId: branchId || existing.branchId,
@@ -247,13 +221,12 @@ export const updateJournalEntry = async (req: Request, res: Response): Promise<v
           description: description || existing.description
         }
       });
-      return journal;
     });
 
     await logAudit("JournalEntry", id, "UPDATE", null, updatedJournal, userId, req.ip);
     res.json(updatedJournal);
   } catch (error: any) {
-    res.status(400).json({ message: "Lỗi cập nhật Bút toán", error: error.message });
+    res.status(400).json({ message: error.message || "Lỗi cập nhật Bút toán" });
   }
 };
 
@@ -268,11 +241,11 @@ export const deleteJournalEntry = async (req: Request, res: Response): Promise<v
     await prisma.$transaction(async (tx) => {
       const existing = await tx.journalEntry.findUnique({ where: { journalId: id } });
       if (!existing) throw new Error("Không tìm thấy bút toán!");
-      if (existing.postingStatus !== PostingStatus.DRAFT) {
-        throw new Error("Tuyệt đối không được xóa bút toán đã Ghi sổ hoặc Bị đảo! Vui lòng dùng nghiệp vụ Đảo bút toán.");
-      }
+      if (existing.postingStatus !== PostingStatus.DRAFT) throw new Error("Chỉ được xóa bút toán Nháp!");
 
-      // Bảng JournalLine thiết lập onDelete: Cascade, nhưng xóa thủ công để chắc chắn
+      // 1. KIỂM TRA KHÓA SỔ TRƯỚC KHI XÓA
+      await enforceFiscalLock(tx, existing.fiscalPeriodId);
+
       await tx.journalLine.deleteMany({ where: { journalId: id } });
       await tx.journalEntry.delete({ where: { journalId: id } });
     });
@@ -280,7 +253,7 @@ export const deleteJournalEntry = async (req: Request, res: Response): Promise<v
     await logAudit("JournalEntry", id, "DELETE", null, { deleted: true }, userId, req.ip);
     res.json({ message: "Đã xóa bút toán Nháp thành công!" });
   } catch (error: any) {
-    res.status(400).json({ message: "Lỗi xóa Bút toán", error: error.message });
+    res.status(400).json({ message: error.message || "Lỗi xóa Bút toán" });
   }
 };
 
@@ -293,14 +266,12 @@ export const postJournalEntry = async (req: Request, res: Response): Promise<voi
 
   try {
     const journal = await prisma.$transaction(async (tx) => {
-      const existing = await tx.journalEntry.findUnique({ 
-        where: { journalId: id },
-        include: { fiscalPeriod: true } 
-      });
-      
+      const existing = await tx.journalEntry.findUnique({ where: { journalId: id } });
       if (!existing) throw new Error("Không tìm thấy bút toán!");
-      if (existing.postingStatus !== PostingStatus.DRAFT) throw new Error("Chỉ được Ghi sổ các bút toán đang ở trạng thái Nháp!");
-      if (existing.fiscalPeriod?.isClosed) throw new Error("Kỳ kế toán chứa bút toán này đã Khóa!");
+      if (existing.postingStatus !== PostingStatus.DRAFT) throw new Error("Chỉ Ghi sổ bút toán Nháp!");
+
+      // 1. KIỂM TRA KHÓA SỔ
+      await enforceFiscalLock(tx, existing.fiscalPeriodId);
 
       return await tx.journalEntry.update({
         where: { journalId: id },
@@ -311,12 +282,12 @@ export const postJournalEntry = async (req: Request, res: Response): Promise<voi
     await logAudit("JournalEntry", id, "UPDATE", { postingStatus: "DRAFT" }, { postingStatus: "POSTED" }, userId, req.ip);
     res.json({ message: "Ghi sổ bút toán thành công!", journal });
   } catch (error: any) {
-    res.status(400).json({ message: "Lỗi ghi sổ Bút toán", error: error.message });
+    res.status(400).json({ message: error.message || "Lỗi ghi sổ Bút toán" });
   }
 };
 
 // ==========================================
-// 6. ĐẢO BÚT TOÁN (REVERSE JOURNAL ENTRY - IFRS Standard)
+// 6. ĐẢO BÚT TOÁN (REVERSE JOURNAL ENTRY)
 // ==========================================
 export const reverseJournalEntry = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
@@ -326,50 +297,40 @@ export const reverseJournalEntry = async (req: Request, res: Response): Promise<
   try {
     const reversedJournal = await prisma.$transaction(async (tx) => {
       const original = await tx.journalEntry.findUnique({ 
-        where: { journalId: id },
-        include: { lines: true }
+        where: { journalId: id }, include: { lines: true }
       });
       
       if (!original) throw new Error("Không tìm thấy bút toán gốc!");
-      if (original.postingStatus !== PostingStatus.POSTED) throw new Error("Chỉ có thể Đảo các bút toán đã GHI SỔ (POSTED)!");
-      if (original.reversalEntryId) throw new Error("Bút toán này đã được Đảo trước đó rồi!");
+      if (original.postingStatus !== PostingStatus.POSTED) throw new Error("Chỉ Đảo bút toán đã GHI SỔ!");
+      if (original.reversalEntryId) throw new Error("Bút toán này đã được Đảo!");
 
       const periodToUse = fiscalPeriodId || original.fiscalPeriodId;
-      const period = await tx.fiscalPeriod.findUnique({ where: { periodId: periodToUse } });
-      if (!period || period.isClosed) throw new Error("Kỳ kế toán để ghi bút toán đảo đã bị Khóa!");
+      
+      // 1. KIỂM TRA KHÓA SỔ CỦA KỲ CHỨA BÚT TOÁN ĐẢO
+      await enforceFiscalLock(tx, periodToUse);
 
-      // 1. Tạo bút toán đảo ngược mới (Sinh ra luôn là POSTED)
       const reversal = await tx.journalEntry.create({
         data: {
           branchId: original.branchId,
           fiscalPeriodId: periodToUse,
           entryDate: entryDate ? new Date(entryDate) : new Date(),
           reference: `ĐẢO-${original.reference || original.journalId.substring(0,8)}`,
-          description: description || `Đảo bút toán cho: ${original.description}`,
+          description: description || `Đảo bút toán: ${original.description}`,
           createdById: userId,
           postingStatus: PostingStatus.POSTED 
         }
       });
 
-      // 2. Sinh các line ngược (Nợ -> Có, Có -> Nợ)
       await tx.journalLine.createMany({
         data: original.lines.map((line) => ({
-          journalId: reversal.journalId,
-          accountId: line.accountId,
-          costCenterId: line.costCenterId,
-          debit: line.credit, // Đảo Nợ -> Có
-          credit: line.debit, // Đảo Có -> Nợ
-          description: `Đảo: ${line.description || ''}`
+          journalId: reversal.journalId, accountId: line.accountId, costCenterId: line.costCenterId,
+          debit: line.credit, credit: line.debit, description: `Đảo: ${line.description || ''}`
         }))
       });
 
-      // 3. Cập nhật bút toán gốc thành REVERSED và trỏ ID đến bút toán đảo
       await tx.journalEntry.update({
         where: { journalId: id },
-        data: { 
-          postingStatus: PostingStatus.REVERSED,
-          reversalEntryId: reversal.journalId 
-        }
+        data: { postingStatus: PostingStatus.REVERSED, reversalEntryId: reversal.journalId }
       });
 
       return reversal;
@@ -378,7 +339,7 @@ export const reverseJournalEntry = async (req: Request, res: Response): Promise<
     await logAudit("JournalEntry", id, "UPDATE", { postingStatus: "POSTED" }, { postingStatus: "REVERSED", reversalId: reversedJournal.journalId }, userId, req.ip);
     res.json({ message: "Nghiệp vụ Đảo bút toán thành công!", reversalJournal: reversedJournal });
   } catch (error: any) {
-    res.status(400).json({ message: "Lỗi đảo bút toán", error: error.message });
+    res.status(400).json({ message: error.message || "Lỗi đảo bút toán" });
   }
 };
 
@@ -390,141 +351,97 @@ export const processPayment = async (req: Request, res: Response): Promise<void>
   const { 
     amount, paymentMethod, reference, note, 
     cashAccountId, bankAccountId, branchId, fiscalPeriodId,
-    paymentExchangeRate, // [NEW] Tỷ giá thực tế ngày thanh toán
-    arApAccountId,       // [NEW] Tài khoản Công nợ (131 hoặc 331)
-    fxGainAccountId,     // [NEW] Tài khoản Doanh thu HĐ Tài chính (VD: 515)
-    fxLossAccountId      // [NEW] Tài khoản Chi phí Tài chính (VD: 635)
+    paymentExchangeRate, arApAccountId, fxGainAccountId, fxLossAccountId
   } = req.body;
-  const userId = (req as any).user?.userId || req.body.userId;
+  const userId = getUserId(req);
 
   try {
-    const paymentAmount = Number(amount); // Số tiền theo đồng tiền của Chứng từ (Ngoại tệ hoặc VND)
-    if (paymentAmount <= 0) {
-      res.status(400).json({ message: "Số tiền thanh toán phải lớn hơn 0" });
-      return;
-    }
+    const paymentAmount = Number(amount); 
+    if (paymentAmount <= 0) { res.status(400).json({ message: "Số tiền phải > 0" }); return; }
 
     await prisma.$transaction(async (tx) => {
-      // 1. Lấy thông tin chứng từ
-      const doc = await tx.document.findUnique({ 
-        where: { documentId },
-        include: { customer: true, supplier: true }
-      });
+      const doc = await tx.document.findUnique({ where: { documentId }});
       if (!doc) throw new Error("Không tìm thấy chứng từ!");
-      if (doc.status !== "COMPLETED") throw new Error("Chỉ có thể thanh toán chứng từ đã Hoàn tất!");
-      if (doc.paymentStatus === "PAID") throw new Error("Chứng từ này đã được thanh toán đủ!");
+      if (doc.status !== "COMPLETED") throw new Error("Chỉ thanh toán chứng từ Hoàn tất!");
+      if (doc.paymentStatus === "PAID") throw new Error("Chứng từ đã thanh toán đủ!");
 
       const totalDocAmount = Number(doc.totalAmount);
       const currentPaid = Number(doc.paidAmount);
       const newPaidAmount = currentPaid + paymentAmount;
 
-      if (newPaidAmount - totalDocAmount > 0.001) {
-        throw new Error(`Số tiền thanh toán vượt quá nợ còn lại! (Còn nợ: ${totalDocAmount - currentPaid})`);
-      }
-
+      if (newPaidAmount - totalDocAmount > 0.001) throw new Error(`Vượt quá nợ còn lại!`);
       const newPaymentStatus = Math.abs(totalDocAmount - newPaidAmount) <= 0.001 ? "PAID" : "PARTIAL";
 
-      // ==============================================================
-      // [TÍNH NĂNG MỚI]: THUẬT TOÁN CHÊNH LỆCH TỶ GIÁ (FX GAINS / LOSSES)
-      // ==============================================================
+      // TÍNH TOÁN CHÊNH LỆCH TỶ GIÁ
       const originalRate = Number(doc.exchangeRate || 1);
       const currentRate = Number(paymentExchangeRate || originalRate);
-      
-      let fxDifferenceBase = 0; // Số tiền chênh lệch (tính bằng Base Currency - VNĐ)
-      let isFxGain = false;
-      let isFxLoss = false;
+      let fxDifferenceBase = paymentAmount * Math.abs(currentRate - originalRate);
+      let isFxGain = false; let isFxLoss = false;
 
-      // Nếu tỷ giá thanh toán khác tỷ giá gốc
       if (currentRate !== originalRate) {
-        fxDifferenceBase = paymentAmount * Math.abs(currentRate - originalRate);
-
         if (doc.type.includes("PURCHASE")) { 
-          // Mang tính chất CHI TIỀN (AP)
-          if (currentRate > originalRate) isFxLoss = true; // Mua ngoại tệ đắt hơn -> Lỗ
-          else isFxGain = true;                            // Mua ngoại tệ rẻ hơn -> Lãi
+          if (currentRate > originalRate) isFxLoss = true; else isFxGain = true;                            
         } else if (doc.type.includes("SALES")) { 
-          // Mang tính chất THU TIỀN (AR)
-          if (currentRate > originalRate) isFxGain = true; // Bán ngoại tệ được giá hơn -> Lãi
-          else isFxLoss = true;                            // Bán ngoại tệ mất giá -> Lỗ
+          if (currentRate > originalRate) isFxGain = true; else isFxLoss = true;                            
         }
       }
 
       let journalId = null;
-      // Nếu có truyền Kỳ kế toán và cấu hình Tài khoản, sẽ sinh Bút toán Sổ cái tự động
       if (fiscalPeriodId && (cashAccountId || bankAccountId) && arApAccountId) {
-        const period = await tx.fiscalPeriod.findUnique({ where: { periodId: fiscalPeriodId } });
-        if (period?.isClosed) throw new Error("Kỳ kế toán để ghi sổ đã bị Khóa!");
+        
+        // 1. KIỂM TRA KHÓA SỔ BẰNG HELPER
+        await enforceFiscalLock(tx, fiscalPeriodId);
 
         const paymentAccount = paymentMethod === "CASH" ? cashAccountId : bankAccountId;
-        
         const journal = await tx.journalEntry.create({
           data: {
-            branchId: branchId || doc.branchId,
-            fiscalPeriodId, documentId, entryDate: new Date(),
-            description: `Thanh toán ${paymentMethod} cho ${doc.documentNumber} (Tỷ giá: ${currentRate})`,
+            branchId: branchId || doc.branchId, fiscalPeriodId, documentId, entryDate: new Date(),
+            description: `Thanh toán ${paymentMethod} cho ${doc.documentNumber}`,
             createdById: userId, postingStatus: "POSTED"
           }
         });
         journalId = journal.journalId;
 
-        // Tính toán số tiền quy ra VNĐ
-        const baseAmountToClear = paymentAmount * originalRate; // Tiền VNĐ để xóa nợ gốc
-        const actualBaseAmountPaid = paymentAmount * currentRate; // Tiền VNĐ thực tế ra/vào túi
-
+        const baseAmountToClear = paymentAmount * originalRate; 
+        const actualBaseAmountPaid = paymentAmount * currentRate; 
         const journalLines = [];
 
         if (doc.type.includes("PURCHASE")) {
-           // TRẢ TIỀN NHÀ CUNG CẤP (Nợ Công nợ / Có Tiền mặt)
-           journalLines.push({ journalId, accountId: arApAccountId, debit: baseAmountToClear, credit: 0, description: "Giảm công nợ NCC theo tỷ giá gốc" });
-           journalLines.push({ journalId, accountId: paymentAccount, debit: 0, credit: actualBaseAmountPaid, description: "Chi tiền thanh toán thực tế" });
-           
-           if (isFxLoss && fxDifferenceBase > 0) {
-             journalLines.push({ journalId, accountId: fxLossAccountId, debit: fxDifferenceBase, credit: 0, description: "Lỗ chênh lệch tỷ giá" });
-           } else if (isFxGain && fxDifferenceBase > 0) {
-             journalLines.push({ journalId, accountId: fxGainAccountId, debit: 0, credit: fxDifferenceBase, description: "Lãi chênh lệch tỷ giá" });
-           }
+           journalLines.push({ journalId, accountId: arApAccountId, debit: baseAmountToClear, credit: 0, description: "Giảm công nợ NCC" });
+           journalLines.push({ journalId, accountId: paymentAccount, debit: 0, credit: actualBaseAmountPaid, description: "Chi tiền" });
+           if (isFxLoss && fxDifferenceBase > 0) journalLines.push({ journalId, accountId: fxLossAccountId, debit: fxDifferenceBase, credit: 0, description: "Lỗ tỷ giá" });
+           else if (isFxGain && fxDifferenceBase > 0) journalLines.push({ journalId, accountId: fxGainAccountId, debit: 0, credit: fxDifferenceBase, description: "Lãi tỷ giá" });
         } else {
-           // THU TIỀN KHÁCH HÀNG (Nợ Tiền mặt / Có Công nợ)
-           journalLines.push({ journalId, accountId: paymentAccount, debit: actualBaseAmountPaid, credit: 0, description: "Thu tiền thanh toán thực tế" });
-           journalLines.push({ journalId, accountId: arApAccountId, debit: 0, credit: baseAmountToClear, description: "Giảm công nợ KH theo tỷ giá gốc" });
-
-           if (isFxLoss && fxDifferenceBase > 0) {
-             journalLines.push({ journalId, accountId: fxLossAccountId, debit: fxDifferenceBase, credit: 0, description: "Lỗ chênh lệch tỷ giá" });
-           } else if (isFxGain && fxDifferenceBase > 0) {
-             journalLines.push({ journalId, accountId: fxGainAccountId, debit: 0, credit: fxDifferenceBase, description: "Lãi chênh lệch tỷ giá" });
-           }
+           journalLines.push({ journalId, accountId: paymentAccount, debit: actualBaseAmountPaid, credit: 0, description: "Thu tiền" });
+           journalLines.push({ journalId, accountId: arApAccountId, debit: 0, credit: baseAmountToClear, description: "Giảm công nợ KH" });
+           if (isFxLoss && fxDifferenceBase > 0) journalLines.push({ journalId, accountId: fxLossAccountId, debit: fxDifferenceBase, credit: 0, description: "Lỗ tỷ giá" });
+           else if (isFxGain && fxDifferenceBase > 0) journalLines.push({ journalId, accountId: fxGainAccountId, debit: 0, credit: fxDifferenceBase, description: "Lãi tỷ giá" });
         }
 
-        // Check an toàn: Đảm bảo Kế toán Kép Nợ = Có tuyệt đối
-        const totalDebit = journalLines.reduce((sum, line) => sum + line.debit, 0);
-        const totalCredit = journalLines.reduce((sum, line) => sum + line.credit, 0);
-        if (Math.abs(totalDebit - totalCredit) > 0.001) {
-           throw new Error(`Lỗi thuật toán Kế toán kép: Nợ (${totalDebit}) khác Có (${totalCredit})`);
-        }
+        const tDebit = journalLines.reduce((s, l) => s + l.debit, 0);
+        const tCredit = journalLines.reduce((s, l) => s + l.credit, 0);
+        if (Math.abs(tDebit - tCredit) > 0.001) throw new Error(`Lỗi Kép: Nợ khác Có`);
 
         await tx.journalLine.createMany({ data: journalLines });
       }
 
-      // 4. Tạo Lịch sử Giao dịch Thanh toán
       const paymentTx = await tx.paymentTransaction.create({
         data: {
-          documentId, journalEntryId: journalId,
-          amount: paymentAmount, paymentMethod, reference, note, processedById: userId
+          documentId, journalEntryId: journalId, amount: paymentAmount, 
+          paymentMethod, reference, note, processedById: userId
         }
       });
 
-      // 5. Cập nhật trạng thái chứng từ gốc
       await tx.document.update({
-        where: { documentId },
-        data: { paidAmount: newPaidAmount, paymentStatus: newPaymentStatus }
+        where: { documentId }, data: { paidAmount: newPaidAmount, paymentStatus: newPaymentStatus }
       });
 
-      await logAudit("PaymentTransaction", paymentTx.paymentId, "CREATE", null, { amount: paymentAmount, fxDiff: fxDifferenceBase }, userId, req.ip);
+      await logAudit("PaymentTransaction", paymentTx.paymentId, "CREATE", null, { amount: paymentAmount }, userId, req.ip);
     });
 
     res.json({ message: "Ghi nhận thanh toán và chênh lệch tỷ giá thành công!" });
   } catch (error: any) {
-    res.status(400).json({ message: "Lỗi xử lý thanh toán", error: error.message });
+    res.status(400).json({ message: error.message || "Lỗi xử lý thanh toán" });
   }
 };
 
@@ -532,58 +449,41 @@ export const processPayment = async (req: Request, res: Response): Promise<void>
 // 8. BÁO CÁO TÀI CHÍNH (FINANCIAL REPORTS)
 // ==========================================
 
-// Báo cáo Lưu chuyển tiền tệ (Cashflow)
 export const getCashflowReport = async (req: Request, res: Response): Promise<void> => {
   try {
     const { branchId, startDate, endDate } = req.query;
-    
-    // 1. Khởi tạo điều kiện an toàn cho Journal
-    const journalCondition: any = {
-      postingStatus: "POSTED"
-    };
+    const journalCondition: any = { postingStatus: "POSTED" };
 
-    if (branchId) {
-      journalCondition.branchId = String(branchId);
-    }
-
+    if (branchId) journalCondition.branchId = String(branchId);
     if (startDate && endDate) {
       const start = new Date(String(startDate));
       const end = new Date(String(endDate));
-      
-      // Chống lỗi Invalid Date
       if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
         journalCondition.entryDate = { gte: start, lte: end };
       }
     }
 
-    // 2. Tìm các dòng nhật ký liên quan đến tiền (111: Tiền mặt, 112: Tiền gửi NH)
     const cashLines = await prisma.journalLine.findMany({
       where: {
         account: { accountCode: { startsWith: "11" } },
-        journal: journalCondition // Đưa điều kiện đã tách gọn vào đây
+        journal: journalCondition 
       },
       include: { 
         journal: { select: { entryDate: true } },
-        account: { select: { accountCode: true, name: true } } // Select thêm để log dễ debug nếu cần
+        account: { select: { accountCode: true, name: true } } 
       }
     });
 
-    // 3. Gom nhóm theo tháng (YYYY-MM)
     const groupedData: Record<string, { cashIn: number, cashOut: number }> = {};
-    
     cashLines.forEach(line => {
-      // Đảm bảo entryDate tồn tại trước khi parse
       if (!line.journal?.entryDate) return; 
-
-      const period = line.journal.entryDate.toISOString().substring(0, 7); // Lấy "YYYY-MM"
+      const period = line.journal.entryDate.toISOString().substring(0, 7); 
       if (!groupedData[period]) groupedData[period] = { cashIn: 0, cashOut: 0 };
       
-      // Nguyên lý kế toán: Tài sản (Tiền) Nợ -> Tăng (Thu vào), Có -> Giảm (Chi ra)
       groupedData[period].cashIn += Number(line.debit || 0); 
       groupedData[period].cashOut += Number(line.credit || 0); 
     });
 
-    // 4. Trả kết quả mảng đã sort
     const result = Object.keys(groupedData).map(period => ({
       period,
       cashIn: groupedData[period].cashIn,
@@ -593,30 +493,25 @@ export const getCashflowReport = async (req: Request, res: Response): Promise<vo
 
     res.json(result);
   } catch (error: any) {
-    console.error("[Cashflow Error]:", error); // In lỗi thực tế ra Terminal để debug
     res.status(500).json({ message: "Lỗi tạo Báo cáo Dòng tiền", error: error.message });
   }
 };
 
-// Bảng Cân đối Số phát sinh (Trial Balance) ĐÃ FIX LỖI 🚀
 export const getTrialBalanceReport = async (req: Request, res: Response): Promise<void> => {
   try {
     const { branchId, fiscalPeriodId } = req.query;
     
-    // 1. Lấy thông tin Kỳ kế toán để xác định Ngày bắt đầu (Làm mốc tính Số dư Đầu kỳ)
     let periodStartDate: Date | null = null;
     if (fiscalPeriodId) {
       const period = await prisma.fiscalPeriod.findUnique({ where: { periodId: String(fiscalPeriodId) } });
       if (period) periodStartDate = period.startDate;
     }
 
-    // 2. TÍNH TOÁN SỐ DƯ ĐẦU KỲ (Lũy kế các bút toán POSTED trước kỳ này)
     const openingLines = periodStartDate ? await prisma.journalLine.groupBy({
       by: ['accountId'],
       where: {
         journal: {
-          postingStatus: "POSTED",
-          entryDate: { lt: periodStartDate },
+          postingStatus: "POSTED", entryDate: { lt: periodStartDate },
           ...(branchId && { branchId: String(branchId) })
         }
       },
@@ -625,26 +520,21 @@ export const getTrialBalanceReport = async (req: Request, res: Response): Promis
 
     const openingMap = new Map();
     openingLines.forEach(line => {
-      openingMap.set(line.accountId, {
-        debit: Number(line._sum.debit || 0),
-        credit: Number(line._sum.credit || 0)
-      });
+      openingMap.set(line.accountId, { debit: Number(line._sum.debit || 0), credit: Number(line._sum.credit || 0) });
     });
 
-    // 3. TÍNH TOÁN SỐ PHÁT SINH TRONG KỲ
     const periodLines = await prisma.journalLine.groupBy({
       by: ['accountId'],
       where: {
         journal: {
           postingStatus: "POSTED",
           ...(branchId && { branchId: String(branchId) }),
-          ...(fiscalPeriodId && { fiscalPeriodId: String(fiscalPeriodId) }) // Phát sinh thuộc kỳ này
+          ...(fiscalPeriodId && { fiscalPeriodId: String(fiscalPeriodId) }) 
         }
       },
       _sum: { debit: true, credit: true }
     });
 
-    // 4. LẮP RÁP DỮ LIỆU BÁO CÁO KẾ TOÁN CHUẨN MỰC
     const accounts = await prisma.account.findMany({ 
       where: { isActive: true },
       select: { accountId: true, accountCode: true, name: true, type: true } 
@@ -654,12 +544,11 @@ export const getTrialBalanceReport = async (req: Request, res: Response): Promis
       const opening = openingMap.get(acc.accountId) || { debit: 0, credit: 0 };
       const period = periodLines.find(l => l.accountId === acc.accountId) || { _sum: { debit: 0, credit: 0 } };
       
-      // Xử lý logic Đầu kỳ theo Bản chất tài khoản
       let openingDebit = 0; let openingCredit = 0;
-      if (acc.type === "ASSET" || acc.type === "EXPENSE") { // Dư Nợ
+      if (acc.type === "ASSET" || acc.type === "EXPENSE") { 
         const bal = opening.debit - opening.credit;
         if (bal > 0) openingDebit = bal; else openingCredit = Math.abs(bal);
-      } else { // Dư Có (LIABILITY, EQUITY, REVENUE)
+      } else { 
         const bal = opening.credit - opening.debit;
         if (bal > 0) openingCredit = bal; else openingDebit = Math.abs(bal);
       }
@@ -667,7 +556,6 @@ export const getTrialBalanceReport = async (req: Request, res: Response): Promis
       const periodDebit = Number(period._sum.debit || 0);
       const periodCredit = Number(period._sum.credit || 0);
 
-      // Xử lý logic Cuối kỳ
       let closingDebit = 0; let closingCredit = 0;
       if (acc.type === "ASSET" || acc.type === "EXPENSE") {
          const closingBal = openingDebit - openingCredit + periodDebit - periodCredit;
@@ -678,12 +566,8 @@ export const getTrialBalanceReport = async (req: Request, res: Response): Promis
       }
 
       return {
-        accountId: acc.accountId,
-        accountCode: acc.accountCode,
-        accountName: acc.name,
-        openingDebit, openingCredit,
-        periodDebit, periodCredit,
-        closingDebit, closingCredit
+        accountId: acc.accountId, accountCode: acc.accountCode, accountName: acc.name,
+        openingDebit, openingCredit, periodDebit, periodCredit, closingDebit, closingCredit
       };
     }).sort((a, b) => a.accountCode.localeCompare(b.accountCode));
 

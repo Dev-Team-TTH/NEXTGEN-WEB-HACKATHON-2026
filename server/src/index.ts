@@ -3,6 +3,7 @@ import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 import dotenv from "dotenv";
+import path from "path"; // [THÊM MỚI] Dùng để định tuyến thư mục
 
 // ==========================================
 // 1. IMPORT TOÀN BỘ CÁC ROUTES CỦA HỆ THỐNG
@@ -23,6 +24,7 @@ import approvalRoutes from "./routes/approvalRoutes";
 import approvalConfigRoutes from "./routes/approvalConfigRoutes";
 import dashboardRoutes from "./routes/dashboardRoutes";
 import searchRoutes from "./routes/searchRoutes";
+import uploadRoutes from "./routes/uploadRoutes"; // [THÊM MỚI] Route upload
 
 // ==========================================
 // 2. IMPORT CÁC CRONJOBS (TIẾN TRÌNH CHẠY NGẦM)
@@ -41,7 +43,8 @@ const apiPrefix = "/api/v1"; // Tiền tố phiên bản API chuẩn mực
 // 3. GLOBAL MIDDLEWARES (LÁ CHẮN BẢO VỆ)
 // ==========================================
 // Helmet giúp bảo vệ ứng dụng khỏi một số lỗ hổng web đã biết bằng cách thiết lập cấu hình HTTP headers phù hợp
-app.use(helmet()); 
+// [THÊM MỚI] Cấu hình crossOriginResourcePolicy để cho phép load ảnh từ domain khác (nếu cần)
+app.use(helmet({ crossOriginResourcePolicy: false })); 
 
 // CORS (Cross-Origin Resource Sharing): Kiểm soát domain nào được phép gọi API
 app.use(cors({
@@ -56,6 +59,9 @@ app.use(morgan("dev"));
 // Body Parser: Xử lý payload JSON và URL-encoded
 app.use(express.json({ limit: "10mb" })); // Tăng giới hạn payload lên 10MB cho các form lớn
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// [THÊM MỚI] BIẾN THƯ MỤC UPLOADS THÀNH PUBLIC ĐỂ FRONTEND XEM ĐƯỢC ẢNH
+app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 // ==========================================
 // 4. ĐĂNG KÝ ROUTER (API ENDPOINTS)
@@ -89,9 +95,10 @@ app.use(`${apiPrefix}/assets`, assetRoutes);
 app.use(`${apiPrefix}/approval-config`, approvalConfigRoutes);
 app.use(`${apiPrefix}/approvals`, approvalRoutes);
 
-// --- 4.8. Báo cáo & Thống kê (Dashboard & Analytics) ---
+// --- 4.8. Báo cáo & Thống kê & Tiện ích ---
 app.use(`${apiPrefix}/dashboard`, dashboardRoutes);
 app.use("/api/v1/search", searchRoutes);
+app.use(`${apiPrefix}/upload`, uploadRoutes); // [THÊM MỚI] Đăng ký API Upload
 
 
 // ==========================================
@@ -148,5 +155,4 @@ app.listen(PORT, () => {
   console.log(`======================================================\n`);
 });
 
-// Export app để dễ dàng viết Unit Test (với Jest / Supertest) sau này
 export default app;

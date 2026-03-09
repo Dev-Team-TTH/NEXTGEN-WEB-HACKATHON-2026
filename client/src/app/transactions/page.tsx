@@ -7,7 +7,7 @@ import {
   FileText, Plus, Search, Filter, Anchor, CreditCard, 
   Trash2, AlertOctagon, RefreshCcw, Loader2, TrendingUp, 
   TrendingDown, ShoppingCart, Truck, Receipt, CheckCircle2,
-  Clock, ArrowRightLeft, Building, Download
+  Clock, ArrowRightLeft, Building, Download, Printer
 } from "lucide-react";
 import dayjs from "dayjs";
 import 'dayjs/locale/vi';
@@ -23,6 +23,7 @@ import {
 // --- COMPONENTS GIAO DIỆN LÕI ---
 import Header from "@/app/(components)/Header";
 import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
+import RequirePermission from "@/app/(components)/RequirePermission"; // ĐÃ THÊM LÁ CHẮN BẢO MẬT
 
 // --- UTILS (KIẾN TRÚC MỚI) ---
 import { formatVND } from "@/utils/formatters";
@@ -38,18 +39,16 @@ dayjs.locale('vi');
 // ==========================================
 // 1. HELPERS & FORMATTERS (DATA VIZ)
 // ==========================================
-// Phân loại màu sắc Chứng từ
 const getDocTypeUI = (type: string) => {
   switch (type) {
-    case "PURCHASE_ORDER": return { label: "Đơn Mua (PO)", icon: ShoppingCart, color: "text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/30" };
-    case "SALES_ORDER": return { label: "Đơn Bán (SO)", icon: TrendingUp, color: "text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30" };
-    case "GOODS_RECEIPT": return { label: "Nhập Kho (GRPO)", icon: Truck, color: "text-purple-600 bg-purple-50 dark:text-purple-400 dark:bg-purple-500/10 border-purple-200 dark:border-purple-500/30" };
-    case "INVOICE": return { label: "Hóa Đơn", icon: Receipt, color: "text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30" };
-    default: return { label: type, icon: FileText, color: "text-slate-600 bg-slate-50 dark:text-slate-400 dark:bg-slate-500/10 border-slate-200 dark:border-slate-500/30" };
+    case "PURCHASE_ORDER": return { label: "Đơn Mua (PO)", printLabel: "ĐƠN ĐẶT HÀNG MUA", icon: ShoppingCart, color: "text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/30" };
+    case "SALES_ORDER": return { label: "Đơn Bán (SO)", printLabel: "ĐƠN ĐẶT HÀNG BÁN", icon: TrendingUp, color: "text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30" };
+    case "GOODS_RECEIPT": return { label: "Nhập Kho (GRPO)", printLabel: "PHIẾU NHẬP KHO", icon: Truck, color: "text-purple-600 bg-purple-50 dark:text-purple-400 dark:bg-purple-500/10 border-purple-200 dark:border-purple-500/30" };
+    case "INVOICE": return { label: "Hóa Đơn", printLabel: "HÓA ĐƠN TÀI CHÍNH", icon: Receipt, color: "text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30" };
+    default: return { label: type, printLabel: "CHỨNG TỪ KẾ TOÁN", icon: FileText, color: "text-slate-600 bg-slate-50 dark:text-slate-400 dark:bg-slate-500/10 border-slate-200 dark:border-slate-500/30" };
   }
 };
 
-// Trạng thái Thanh toán (Đã trả, Nợ, 1 phần)
 const getPaymentStatusUI = (paid: number, total: number) => {
   if (total === 0) return { label: "N/A", color: "text-slate-500", bar: "bg-slate-200 dark:bg-slate-700", percent: 0 };
   const percent = Math.round((paid / total) * 100);
@@ -83,10 +82,11 @@ export default function TransactionsPage() {
   const [activeTab, setActiveTab] = useState<DocTab>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // --- STATE MODALS ĐIỀU PHỐI ---
+  // --- STATE MODALS & PRINT ---
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedDocForLandedCost, setSelectedDocForLandedCost] = useState<string | null>(null);
   const [selectedDocForPayment, setSelectedDocForPayment] = useState<string | null>(null);
+  const [selectedDocForPrint, setSelectedDocForPrint] = useState<any | null>(null); 
 
   // 👉 FETCH & MUTATION API
   const { data: rawDocuments = [], isLoading, isError, refetch, isFetching } = useGetDocumentsQuery({});
@@ -148,12 +148,25 @@ export default function TransactionsPage() {
   const handleApprove = async (id: string, docNum: string) => {
     if (window.confirm(`Duyệt Nhanh Chứng từ [${docNum}]?\nHệ thống sẽ tự động sinh phiếu nhập/xuất kho và hạch toán kế toán.`)) {
       try {
-        await approveDocument({ id, data: { action: "APPROVE", comment: "Duyệt nhanh từ Dashboard" } }).unwrap();
-        toast.success(`Đã duyệt chứng từ ${docNum}!`);
+        // Nhờ Optimistic UI, giao diện sẽ đổi ngay lập tức không cần đợi 
+        const promise = approveDocument({ id, data: { action: "APPROVE", comment: "Duyệt nhanh từ Dashboard" } }).unwrap();
+        toast.promise(promise, {
+          loading: 'Đang xử lý phê duyệt...',
+          success: `Đã duyệt chứng từ ${docNum}!`,
+          error: (err) => err?.data?.message || "Lỗi khi duyệt chứng từ!"
+        });
       } catch (err: any) {
-        toast.error(err?.data?.message || "Lỗi khi duyệt chứng từ!");
+        // Lỗi đã được Toast Promise bắt
       }
     }
+  };
+
+  // --- HANDLER GỌI LỆNH IN (PRINT PDF) ---
+  const handlePrint = (doc: any) => {
+    setSelectedDocForPrint(doc);
+    setTimeout(() => {
+      window.print();
+    }, 300);
   };
 
   // --- EXPORT DỮ LIỆU CHỨNG TỪ ---
@@ -281,11 +294,18 @@ export default function TransactionsPage() {
         return (
           <div className="flex items-center justify-end gap-1.5">
             
-            {/* Nút Duyệt Nhanh (Nếu đang chờ duyệt) */}
+            {/* Nút In ấn (PDF) - Ai cũng có quyền xem và in */}
+            <button onClick={() => handlePrint(row)} title="In Chứng từ / Lưu PDF" className="p-2 text-slate-600 hover:text-indigo-600 bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-indigo-500/20 rounded-xl transition-colors shadow-sm">
+              <Printer className="w-4 h-4" />
+            </button>
+
+            {/* LÁ CHẮN BẢO MẬT: Nút Duyệt Nhanh (Chỉ MANAGER trở lên mới thấy) */}
             {isPending && (
-              <button onClick={() => handleApprove(docId, row.documentNumber)} disabled={isApproving} title="Duyệt Chứng từ" className="p-2 text-emerald-600 hover:text-white bg-emerald-50 hover:bg-emerald-600 dark:bg-emerald-500/10 dark:hover:bg-emerald-600 rounded-xl transition-colors shadow-sm">
-                <CheckCircle2 className="w-4 h-4" />
-              </button>
+              <RequirePermission roles={["ADMIN", "MANAGER"]}>
+                <button onClick={() => handleApprove(docId, row.documentNumber)} disabled={isApproving} title="Duyệt Chứng từ" className="p-2 text-emerald-600 hover:text-white bg-emerald-50 hover:bg-emerald-600 dark:bg-emerald-500/10 dark:hover:bg-emerald-600 rounded-xl transition-colors shadow-sm">
+                  <CheckCircle2 className="w-4 h-4" />
+                </button>
+              </RequirePermission>
             )}
 
             {/* Nút Landed Cost (Nếu là Phiếu nhập kho) */}
@@ -295,18 +315,22 @@ export default function TransactionsPage() {
               </button>
             )}
             
-            {/* Nút Thanh toán (Nếu còn nợ) */}
+            {/* Nút Thanh toán (Cần quyền Kế toán - ACCOUNTANT hoặc ADMIN) */}
             {canPay && (
-              <button onClick={() => setSelectedDocForPayment(docId)} title="Gạch nợ / Thanh toán" className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-500/10 dark:hover:bg-blue-500/30 rounded-xl transition-colors shadow-sm">
-                <CreditCard className="w-4 h-4" />
-              </button>
+              <RequirePermission roles={["ADMIN", "ACCOUNTANT", "MANAGER"]}>
+                <button onClick={() => setSelectedDocForPayment(docId)} title="Gạch nợ / Thanh toán" className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-500/10 dark:hover:bg-blue-500/30 rounded-xl transition-colors shadow-sm">
+                  <CreditCard className="w-4 h-4" />
+                </button>
+              </RequirePermission>
             )}
 
-            {/* Nút Xóa */}
+            {/* LÁ CHẮN BẢO MẬT: Nút Xóa (Chỉ ADMIN mới có quyền xóa cứng chứng từ nháp) */}
             {isPending && (
-              <button onClick={() => handleDelete(docId, row.documentNumber)} disabled={isDeleting} title="Xóa chứng từ" className="p-2 text-rose-400 hover:text-white bg-rose-50 hover:bg-rose-500 dark:bg-rose-500/10 dark:hover:bg-rose-600 rounded-xl transition-colors shadow-sm">
-                <Trash2 className="w-4 h-4" />
-              </button>
+              <RequirePermission roles={["ADMIN"]}>
+                <button onClick={() => handleDelete(docId, row.documentNumber)} disabled={isDeleting} title="Xóa chứng từ" className="p-2 text-rose-400 hover:text-white bg-rose-50 hover:bg-rose-500 dark:bg-rose-500/10 dark:hover:bg-rose-600 rounded-xl transition-colors shadow-sm">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </RequirePermission>
             )}
           </div>
         );
@@ -330,161 +354,299 @@ export default function TransactionsPage() {
     );
   }
 
+  // Phục vụ Render Template In 
+  const partnerNamePrint = selectedDocForPrint?.supplier?.name || selectedDocForPrint?.customer?.name || "Khách lẻ / Khách vãng lai";
+  const partnerAddressPrint = selectedDocForPrint?.supplier?.address || selectedDocForPrint?.customer?.address || "...............................................................";
+  const partnerPhonePrint = selectedDocForPrint?.supplier?.phone || selectedDocForPrint?.customer?.phone || ".........................";
+
   return (
-    <div className="w-full flex flex-col gap-6 pb-10">
-      
-      {/* 1. HEADER CHUẨN ENTERPRISE */}
-      <Header 
-        title={t("Giao dịch & Mua bán")} 
-        subtitle={t("Kiểm soát toàn bộ vòng đời Đơn hàng, Nhập xuất kho và Thanh toán Công nợ.")}
-        rightNode={
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
-            <button 
-              onClick={handleExportData}
-              className="px-4 py-2.5 flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 whitespace-nowrap border border-slate-200 dark:border-slate-700 shadow-sm text-sm font-bold"
-            >
-              <Download className="w-4 h-4" />
-              <span className="hidden sm:inline">Xuất Dữ liệu</span>
-            </button>
-            <button 
-              onClick={() => setIsCreateModalOpen(true)}
-              className="px-6 py-2.5 flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-black rounded-xl shadow-xl shadow-blue-500/30 transition-all active:scale-95 whitespace-nowrap"
-            >
-              <Plus className="w-5 h-5" />
-              <span className="hidden sm:inline">Khởi tạo Chứng từ</span>
-            </button>
-          </div>
-        }
-      />
-
-      {isLoading ? <TransactionsSkeleton /> : (
-        <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-6 w-full">
-          
-          {/* 2. KHỐI THỐNG KÊ KÉP (KPI CARDS) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-            
-            <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-blue-400 transition-colors">
-              <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform"><ShoppingCart className="w-20 h-20 text-blue-500"/></div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Chi phí Mua Hàng (PO)</p>
-              <h3 className="text-2xl font-black text-blue-700 dark:text-blue-400 truncate relative z-10">{formatVND(kpis.totalPurchases)}</h3>
-              <p className="text-[11px] font-bold text-rose-500 mt-2 relative z-10 flex items-center gap-1 bg-rose-50 dark:bg-rose-500/10 px-2.5 py-1.5 rounded-lg w-fit border border-rose-100 dark:border-rose-500/20">
-                Nợ phải trả: {formatVND(kpis.totalDebt)}
-              </p>
-            </motion.div>
-            
-            <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-emerald-400 transition-colors">
-              <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform"><TrendingUp className="w-20 h-20 text-emerald-500"/></div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Doanh thu Bán Hàng (SO)</p>
-              <h3 className="text-2xl font-black text-emerald-700 dark:text-emerald-400 truncate relative z-10">{formatVND(kpis.totalSales)}</h3>
-              <p className="text-[11px] font-bold text-amber-600 dark:text-amber-500 mt-2 relative z-10 flex items-center gap-1 bg-amber-50 dark:bg-amber-500/10 px-2.5 py-1.5 rounded-lg w-fit border border-amber-200 dark:border-amber-500/20">
-                Nợ phải thu: {formatVND(kpis.totalReceivables)}
-              </p>
-            </motion.div>
-
-            <motion.div variants={itemVariants} className={`glass p-5 rounded-3xl border shadow-sm relative overflow-hidden group transition-colors ${kpis.pendingDocs > 0 ? 'border-amber-300 bg-amber-50/30 dark:border-amber-500/30 dark:bg-amber-900/10' : 'border-slate-200 dark:border-white/10'}`}>
-              <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform"><Clock className="w-20 h-20 text-amber-500"/></div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Chứng từ Chờ Duyệt</p>
-              <div className="flex items-center gap-3 relative z-10">
-                <h3 className={`text-3xl font-black ${kpis.pendingDocs > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
-                  {kpis.pendingDocs}
-                </h3>
-                {kpis.pendingDocs > 0 && (
-                  <span className="flex h-3 w-3 relative">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] font-medium text-slate-500 mt-2 relative z-10">Đang chờ phê duyệt</p>
-            </motion.div>
-
-            <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-purple-400 transition-colors">
-               <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform"><ArrowRightLeft className="w-20 h-20 text-purple-500"/></div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Tổng Lưu lượng (Volume)</p>
-              <h3 className="text-3xl font-black text-purple-600 dark:text-purple-400 relative z-10">{kpis.totalDocs} <span className="text-sm font-medium text-slate-500">phiếu</span></h3>
-              <p className="text-[11px] font-medium text-slate-500 mt-2 relative z-10">Tất cả giao dịch trong hệ thống</p>
-            </motion.div>
-
-          </div>
-
-          {/* 3. THANH CÔNG CỤ ĐIỀU HƯỚNG TABS (STICKY GLASSMORPHISM) */}
-          <motion.div variants={itemVariants} className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-3 rounded-3xl border border-slate-200/50 dark:border-white/10 shadow-sm z-30 sticky top-4">
-            
-            {/* Tabs Filter */}
-            <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200/50 dark:border-white/5">
-              {[
-                { id: "ALL", label: "Tất cả" },
-                { id: "PURCHASE_ORDER", label: "Đơn Mua (PO)" },
-                { id: "SALES_ORDER", label: "Đơn Bán (SO)" },
-                { id: "GOODS_RECEIPT", label: "Nhập Kho (GRPO)" },
-                { id: "INVOICE", label: "Hóa Đơn" }
-              ].map(tab => (
+    <>
+      {/* BAO BỌC GIAO DIỆN CHÍNH, ẨN ĐI KHI IN (print:hidden) */}
+      <div className="w-full flex flex-col gap-6 pb-10 print:hidden">
+        
+        {/* 1. HEADER CHUẨN ENTERPRISE */}
+        <Header 
+          title={t("Giao dịch & Mua bán")} 
+          subtitle={t("Kiểm soát toàn bộ vòng đời Đơn hàng, Nhập xuất kho và Thanh toán Công nợ.")}
+          rightNode={
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+              <button 
+                onClick={handleExportData}
+                className="px-4 py-2.5 flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 whitespace-nowrap border border-slate-200 dark:border-slate-700 shadow-sm text-sm font-bold"
+              >
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">Xuất Dữ liệu</span>
+              </button>
+              <RequirePermission roles={["ADMIN", "MANAGER", "STAFF"]}>
                 <button 
-                  key={tab.id} onClick={() => setActiveTab(tab.id as DocTab)} 
-                  className={`relative px-4 py-2.5 text-xs font-bold rounded-xl transition-colors whitespace-nowrap z-10 ${activeTab === tab.id ? "text-slate-900 dark:text-white" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="px-6 py-2.5 flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-black rounded-xl shadow-xl shadow-blue-500/30 transition-all active:scale-95 whitespace-nowrap"
                 >
-                  {activeTab === tab.id && <motion.div layoutId="docFilterTab" className="absolute inset-0 bg-white dark:bg-slate-700 shadow-sm rounded-xl -z-10 border border-slate-200/50 dark:border-slate-600" />}
-                  {tab.label}
+                  <Plus className="w-5 h-5" />
+                  <span className="hidden sm:inline">Khởi tạo Chứng từ</span>
                 </button>
-              ))}
+              </RequirePermission>
             </div>
+          }
+        />
 
-            {/* Thanh Tìm kiếm */}
-            <div className="relative w-full sm:w-80">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input 
-                type="text" placeholder="Tìm số phiếu, đối tác..." 
-                value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500 transition-shadow shadow-sm"
-              />
-            </div>
-          </motion.div>
+        {isLoading ? <TransactionsSkeleton /> : (
+          <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-6 w-full">
+            
+            {/* 2. KHỐI THỐNG KÊ KÉP (KPI CARDS) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+              
+              <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-blue-400 transition-colors">
+                <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform"><ShoppingCart className="w-20 h-20 text-blue-500"/></div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Chi phí Mua Hàng (PO)</p>
+                <h3 className="text-2xl font-black text-blue-700 dark:text-blue-400 truncate relative z-10">{formatVND(kpis.totalPurchases)}</h3>
+                <p className="text-[11px] font-bold text-rose-500 mt-2 relative z-10 flex items-center gap-1 bg-rose-50 dark:bg-rose-500/10 px-2.5 py-1.5 rounded-lg w-fit border border-rose-100 dark:border-rose-500/20">
+                  Nợ phải trả: {formatVND(kpis.totalDebt)}
+                </p>
+              </motion.div>
+              
+              <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-emerald-400 transition-colors">
+                <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform"><TrendingUp className="w-20 h-20 text-emerald-500"/></div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Doanh thu Bán Hàng (SO)</p>
+                <h3 className="text-2xl font-black text-emerald-700 dark:text-emerald-400 truncate relative z-10">{formatVND(kpis.totalSales)}</h3>
+                <p className="text-[11px] font-bold text-amber-600 dark:text-amber-500 mt-2 relative z-10 flex items-center gap-1 bg-amber-50 dark:bg-amber-500/10 px-2.5 py-1.5 rounded-lg w-fit border border-amber-200 dark:border-amber-500/20">
+                  Nợ phải thu: {formatVND(kpis.totalReceivables)}
+                </p>
+              </motion.div>
 
-          {/* 4. BẢNG DỮ LIỆU ĐỘNG (DATATABLE) */}
-          <motion.div variants={itemVariants} className="glass-panel rounded-3xl overflow-hidden shadow-md border border-slate-200 dark:border-white/10">
-            {documents.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-24 text-slate-400">
-                <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
-                  <FileText className="w-10 h-10 opacity-50" />
+              <motion.div variants={itemVariants} className={`glass p-5 rounded-3xl border shadow-sm relative overflow-hidden group transition-colors ${kpis.pendingDocs > 0 ? 'border-amber-300 bg-amber-50/30 dark:border-amber-500/30 dark:bg-amber-900/10' : 'border-slate-200 dark:border-white/10'}`}>
+                <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform"><Clock className="w-20 h-20 text-amber-500"/></div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Chứng từ Chờ Duyệt</p>
+                <div className="flex items-center gap-3 relative z-10">
+                  <h3 className={`text-3xl font-black ${kpis.pendingDocs > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
+                    {kpis.pendingDocs}
+                  </h3>
+                  {kpis.pendingDocs > 0 && (
+                    <span className="flex h-3 w-3 relative">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+                    </span>
+                  )}
                 </div>
-                <p className="font-bold text-slate-600 dark:text-slate-300 text-lg">Không có dữ liệu</p>
-                <p className="text-sm mt-1">Chưa có chứng từ nào khớp với tiêu chí lọc của bạn.</p>
-              </div>
-            ) : (
-              <DataTable 
-                data={documents} 
-                columns={columns} 
-                searchKey="documentNumber" 
-                searchPlaceholder="Lọc nhanh mã phiếu trong bảng..." 
-                itemsPerPage={10} 
-              />
-            )}
-          </motion.div>
+                <p className="text-[11px] font-medium text-slate-500 mt-2 relative z-10">Đang chờ phê duyệt</p>
+              </motion.div>
 
-        </motion.div>
-      )}
+              <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-purple-400 transition-colors">
+                 <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform"><ArrowRightLeft className="w-20 h-20 text-purple-500"/></div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Tổng Lưu lượng (Volume)</p>
+                <h3 className="text-3xl font-black text-purple-600 dark:text-purple-400 relative z-10">{kpis.totalDocs} <span className="text-sm font-medium text-slate-500">phiếu</span></h3>
+                <p className="text-[11px] font-medium text-slate-500 mt-2 relative z-10">Tất cả giao dịch trong hệ thống</p>
+              </motion.div>
+
+            </div>
+
+            {/* 3. THANH CÔNG CỤ ĐIỀU HƯỚNG TABS (STICKY GLASSMORPHISM) */}
+            <motion.div variants={itemVariants} className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-3 rounded-3xl border border-slate-200/50 dark:border-white/10 shadow-sm z-30 sticky top-4">
+              
+              {/* Tabs Filter */}
+              <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200/50 dark:border-white/5">
+                {[
+                  { id: "ALL", label: "Tất cả" },
+                  { id: "PURCHASE_ORDER", label: "Đơn Mua (PO)" },
+                  { id: "SALES_ORDER", label: "Đơn Bán (SO)" },
+                  { id: "GOODS_RECEIPT", label: "Nhập Kho (GRPO)" },
+                  { id: "INVOICE", label: "Hóa Đơn" }
+                ].map(tab => (
+                  <button 
+                    key={tab.id} onClick={() => setActiveTab(tab.id as DocTab)} 
+                    className={`relative px-4 py-2.5 text-xs font-bold rounded-xl transition-colors whitespace-nowrap z-10 ${activeTab === tab.id ? "text-slate-900 dark:text-white" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}
+                  >
+                    {activeTab === tab.id && <motion.div layoutId="docFilterTab" className="absolute inset-0 bg-white dark:bg-slate-700 shadow-sm rounded-xl -z-10 border border-slate-200/50 dark:border-slate-600" />}
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Thanh Tìm kiếm */}
+              <div className="relative w-full sm:w-80">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input 
+                  type="text" placeholder="Tìm số phiếu, đối tác..." 
+                  value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500 transition-shadow shadow-sm"
+                />
+              </div>
+            </motion.div>
+
+            {/* 4. BẢNG DỮ LIỆU ĐỘNG (DATATABLE) */}
+            <motion.div variants={itemVariants} className="glass-panel rounded-3xl overflow-hidden shadow-md border border-slate-200 dark:border-white/10">
+              {documents.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-24 text-slate-400">
+                  <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                    <FileText className="w-10 h-10 opacity-50" />
+                  </div>
+                  <p className="font-bold text-slate-600 dark:text-slate-300 text-lg">Không có dữ liệu</p>
+                  <p className="text-sm mt-1">Chưa có chứng từ nào khớp với tiêu chí lọc của bạn.</p>
+                </div>
+              ) : (
+                <DataTable 
+                  data={documents} 
+                  columns={columns} 
+                  searchKey="documentNumber" 
+                  searchPlaceholder="Lọc nhanh mã phiếu trong bảng..." 
+                  itemsPerPage={10} 
+                />
+              )}
+            </motion.div>
+
+          </motion.div>
+        )}
+
+        {/* ==========================================
+            5. KHU VỰC TÍCH HỢP CÁC SIÊU MODALS 
+            ========================================== */}
+            
+        <CreateDocumentModal 
+          isOpen={isCreateModalOpen} 
+          onClose={() => { setIsCreateModalOpen(false); refetch(); }} 
+        />
+
+        <LandedCostModal 
+          isOpen={!!selectedDocForLandedCost} 
+          onClose={() => setSelectedDocForLandedCost(null)} 
+          documentId={selectedDocForLandedCost} 
+        />
+
+        <PaymentModal 
+          docId={selectedDocForPayment} 
+          isOpen={!!selectedDocForPayment} 
+          onClose={() => setSelectedDocForPayment(null)} 
+        />
+
+      </div>
 
       {/* ==========================================
-          5. KHU VỰC TÍCH HỢP CÁC SIÊU MODALS 
+          6. TEMPLATE IN ẨN (CHỈ HIỂN THỊ KHI BẤM Ctrl+P) 
           ========================================== */}
+      {selectedDocForPrint && (
+        <div className="hidden print:block fixed inset-0 bg-white w-full min-h-screen text-black font-serif text-sm z-[9999] p-8">
           
-      <CreateDocumentModal 
-        isOpen={isCreateModalOpen} 
-        onClose={() => { setIsCreateModalOpen(false); refetch(); }} 
-      />
+          {/* HEADER CHỨNG TỪ */}
+          <div className="flex justify-between items-start border-b-2 border-black pb-4 mb-6">
+            <div className="flex items-center gap-4">
+              {/* Giả lập Logo */}
+              <div className="w-20 h-20 bg-gray-100 border border-black flex items-center justify-center font-bold text-lg">
+                LOGO
+              </div>
+              <div>
+                <h1 className="font-black text-xl uppercase">CÔNG TY CỔ PHẦN TTH ENTERPRISE</h1>
+                <p>Địa chỉ: Khu công nghệ cao Biên Hòa, Đồng Nai, Việt Nam</p>
+                <p>Mã số thuế: 0101234567 | Điện thoại: (0251) 388 9999</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="font-bold text-xs italic">Mẫu số: 01GTKT</p>
+              <p className="text-xs italic">(Ban hành theo thông tư hệ thống ERP)</p>
+            </div>
+          </div>
 
-      <LandedCostModal 
-        isOpen={!!selectedDocForLandedCost} 
-        onClose={() => setSelectedDocForLandedCost(null)} 
-        documentId={selectedDocForLandedCost} 
-      />
+          {/* TIÊU ĐỀ CHỨNG TỪ */}
+          <div className="text-center mb-8">
+            <h2 className="text-3xl font-black uppercase tracking-widest mb-1">
+              {getDocTypeUI(selectedDocForPrint.type).printLabel}
+            </h2>
+            <p className="italic">
+              Ngày {dayjs(selectedDocForPrint.issueDate || selectedDocForPrint.createdAt).format('DD')} tháng {dayjs(selectedDocForPrint.issueDate || selectedDocForPrint.createdAt).format('MM')} năm {dayjs(selectedDocForPrint.issueDate || selectedDocForPrint.createdAt).format('YYYY')}
+            </p>
+            <p className="font-bold mt-1">Số: {selectedDocForPrint.documentNumber}</p>
+          </div>
 
-      <PaymentModal 
-        docId={selectedDocForPayment} 
-        isOpen={!!selectedDocForPayment} 
-        onClose={() => setSelectedDocForPayment(null)} 
-      />
+          {/* THÔNG TIN ĐỐI TÁC */}
+          <div className="mb-6 space-y-2">
+            <p><span className="font-bold w-40 inline-block">Khách hàng / Đơn vị:</span> {partnerNamePrint}</p>
+            <p><span className="font-bold w-40 inline-block">Địa chỉ:</span> {partnerAddressPrint}</p>
+            <p><span className="font-bold w-40 inline-block">Điện thoại:</span> {partnerPhonePrint}</p>
+            <p><span className="font-bold w-40 inline-block">Diễn giải:</span> {selectedDocForPrint.note || "...................................................................................................."}</p>
+          </div>
 
-    </div>
+          {/* BẢNG CHI TIẾT HÀNG HÓA */}
+          <table className="w-full border-collapse border border-black mb-6 text-sm">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="border border-black p-2 text-center w-12">STT</th>
+                <th className="border border-black p-2 text-left">Tên Hàng hóa / Dịch vụ</th>
+                <th className="border border-black p-2 text-center w-24">Số lượng</th>
+                <th className="border border-black p-2 text-right w-32">Đơn giá</th>
+                <th className="border border-black p-2 text-right w-32">Thành tiền</th>
+              </tr>
+            </thead>
+            <tbody>
+              {selectedDocForPrint.transactions && selectedDocForPrint.transactions.length > 0 ? (
+                selectedDocForPrint.transactions.map((item: any, idx: number) => (
+                  <tr key={idx}>
+                    <td className="border border-black p-2 text-center">{idx + 1}</td>
+                    <td className="border border-black p-2 text-left font-semibold">
+                      {item.product?.name || "Vật tư không xác định"}
+                    </td>
+                    <td className="border border-black p-2 text-center">{item.quantity}</td>
+                    <td className="border border-black p-2 text-right">{formatVND(item.unitPrice)}</td>
+                    <td className="border border-black p-2 text-right">{formatVND(item.totalPrice)}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={5} className="border border-black p-8 text-center italic text-gray-500">
+                    (Không có dữ liệu chi tiết hàng hóa hoặc chưa tải)
+                  </td>
+                </tr>
+              )}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan={4} className="border border-black p-2 text-right font-bold uppercase">Tổng Cộng:</td>
+                <td className="border border-black p-2 text-right font-black text-lg">
+                  {formatVND(selectedDocForPrint.totalAmount)}
+                </td>
+              </tr>
+              <tr>
+                <td colSpan={4} className="border border-black p-2 text-right font-bold uppercase">Đã Thanh Toán:</td>
+                <td className="border border-black p-2 text-right">
+                  {formatVND(selectedDocForPrint.paidAmount)}
+                </td>
+              </tr>
+              <tr>
+                <td colSpan={4} className="border border-black p-2 text-right font-bold uppercase">Số Tiền Còn Nợ:</td>
+                <td className="border border-black p-2 text-right font-bold">
+                  {formatVND(selectedDocForPrint.totalAmount - selectedDocForPrint.paidAmount)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+
+          {/* CHỮ KÝ */}
+          <div className="grid grid-cols-4 gap-4 mt-12 text-center">
+            <div>
+              <p className="font-bold">Người Lập Phiếu</p>
+              <p className="text-xs italic">(Ký, họ tên)</p>
+              <div className="h-24"></div>
+            </div>
+            <div>
+              <p className="font-bold">Người Nhận / Giao Hàng</p>
+              <p className="text-xs italic">(Ký, họ tên)</p>
+              <div className="h-24"></div>
+            </div>
+            <div>
+              <p className="font-bold">Kế Toán Trưởng</p>
+              <p className="text-xs italic">(Ký, họ tên)</p>
+              <div className="h-24"></div>
+            </div>
+            <div>
+              <p className="font-bold">Giám Đốc</p>
+              <p className="text-xs italic">(Ký, đóng dấu)</p>
+              <div className="h-24"></div>
+            </div>
+          </div>
+          
+          <div className="text-center text-xs italic mt-16 text-gray-500">
+            Chứng từ được kết xuất tự động từ Hệ thống TTH ERP - Ngày in: {dayjs().format('DD/MM/YYYY HH:mm')}
+          </div>
+        </div>
+      )}
+    </>
   );
 }

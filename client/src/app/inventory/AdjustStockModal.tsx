@@ -24,7 +24,11 @@ interface AdjustStockModalProps {
 
 export default function AdjustStockModal({ isOpen, onClose }: AdjustStockModalProps) {
   // --- API HOOKS ---
-  const { data: products, isLoading: loadingProducts } = useGetProductsQuery({});
+  // FIX LỖI TYPE: API getProducts giờ trả về { data, meta }. Ta cần lấy data ra.
+  // Truyền limit cao để thẻ select hiển thị đủ danh sách vật tư
+  const { data: productsResponse, isLoading: loadingProducts } = useGetProductsQuery({ limit: 1000 });
+  const products = productsResponse?.data || []; // Trích xuất mảng data
+
   const { data: warehouses, isLoading: loadingWarehouses } = useGetWarehousesQuery({});
   const [adjustStock, { isLoading: isSubmitting }] = useAdjustStockMutation();
 
@@ -129,7 +133,7 @@ export default function AdjustStockModal({ isOpen, onClose }: AdjustStockModalPr
               className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white disabled:opacity-50 shadow-sm"
             >
               <option value="">-- Chọn kho cần điều chỉnh --</option>
-              {warehouses?.map(w => (
+              {warehouses?.map((w: any) => (
                 <option key={w.warehouseId} value={w.warehouseId}>{w.name} ({w.code})</option>
               ))}
             </select>
@@ -148,7 +152,7 @@ export default function AdjustStockModal({ isOpen, onClose }: AdjustStockModalPr
               className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white disabled:opacity-50 shadow-sm"
             >
               <option value="">-- Chọn sản phẩm --</option>
-              {products?.map(p => (
+              {products?.map((p: any) => (
                 <option key={p.productId} value={p.productId}>[{p.productCode}] {p.name}</option>
               ))}
             </select>

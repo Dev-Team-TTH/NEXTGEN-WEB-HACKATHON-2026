@@ -10,13 +10,15 @@ import {
 import * as THREE from "three";
 import { 
   Loader2, PackageSearch, Box as BoxIcon, 
-  AlertOctagon, Maximize, Target, Zap, CheckCircle2, RotateCcw
+  AlertOctagon, Maximize, Target, Zap, CheckCircle2, RotateCcw, Building2
 } from "lucide-react";
+import { toast } from "react-hot-toast"; // ĐÃ THÊM: Import thư viện Toast
 
 // --- REDUX & API ---
 import { 
   useGetBinsQuery, 
   useGetProductsQuery,
+  useGetWarehousesQuery,
   useAutoPickStockMutation 
 } from "@/state/api";
 
@@ -38,10 +40,10 @@ const BinNode = ({ position, binData, index, binCode, isHighlighted, pickQuantit
   const emptyWireframeRef = useRef<THREE.Mesh>(null);
 
   const capacityPercent = binData ? ((binData.currentLoad || 0) / (binData.capacity || 100)) * 100 : 0;
-  const hasItem = capacityPercent > 0 || isHighlighted; // Nếu được pick thì coi như có hàng để render
+  const hasItem = capacityPercent > 0 || isHighlighted; 
   
   const getColor = () => {
-    if (isHighlighted) return "#06b6d4"; // Cyan rực rỡ cho hàng được Auto Pick
+    if (isHighlighted) return "#06b6d4"; 
     if (capacityPercent >= 85) return "#ef4444"; 
     if (capacityPercent >= 40) return "#f59e0b"; 
     return "#10b981"; 
@@ -49,11 +51,9 @@ const BinNode = ({ position, binData, index, binCode, isHighlighted, pickQuantit
 
   useFrame((state) => {
     if (groupRef.current) {
-      // Animation khi Hover HOẶC khi được Highlight bởi Thuật toán
       const targetScale = (hovered || isHighlighted) ? 1.05 : 1;
       const targetY = (hovered || isHighlighted) ? position[1] + 0.15 : position[1]; 
       
-      // Nếu đang Highlight, thêm hiệu ứng thở (Pulse) cực mạnh
       const finalScale = isHighlighted 
         ? targetScale + Math.sin(state.clock.elapsedTime * 6) * 0.03 
         : targetScale;
@@ -86,7 +86,7 @@ const BinNode = ({ position, binData, index, binCode, isHighlighted, pickQuantit
           <Box args={[2.4, 1.1, 2.4]} position={[0, 0.1, 0]} castShadow receiveShadow>
             <meshStandardMaterial 
               color={hovered ? "#60a5fa" : getColor()} 
-              emissive={isHighlighted ? "#06b6d4" : "#000000"} // Phát sáng khi được pick
+              emissive={isHighlighted ? "#06b6d4" : "#000000"} 
               emissiveIntensity={isHighlighted ? 0.6 : 0}
               roughness={0.3}
               metalness={0.2}
@@ -99,7 +99,6 @@ const BinNode = ({ position, binData, index, binCode, isHighlighted, pickQuantit
         )}
       </group>
 
-      {/* TOOLTIP HIỂN THỊ THÔNG TIN AUTO PICK VÀ BIN */}
       {(hovered || isHighlighted) && (
         <Html position={[0, isHighlighted ? 2.0 : 1.5, 0]} center zIndexRange={[100, 0]} className="pointer-events-none">
           <motion.div 
@@ -152,11 +151,13 @@ const BinNode = ({ position, binData, index, binCode, isHighlighted, pickQuantit
 const WarehouseScene = ({ 
   binsData, 
   highlightedPicks, 
-  focusTarget 
+  focusTarget,
+  isWarehouseSelected
 }: { 
   binsData: any[]; 
   highlightedPicks: any[];
   focusTarget: THREE.Vector3 | null;
+  isWarehouseSelected: boolean;
 }) => {
   const aisles = 3, bays = 4, levels = 3; 
   const bayWidth = 3, bayDepth = 3, levelHeight = 1.6, aisleSpacing = 5.5; 
@@ -164,7 +165,6 @@ const WarehouseScene = ({
   const controlsRef = useRef<any>(null);
   const { camera } = useThree();
 
-  // Tạo map layout 1 lần
   const layout = useMemo(() => {
     let positions: any[] = [];
     let dataIndex = 0;
@@ -173,7 +173,7 @@ const WarehouseScene = ({
       for (let b = 0; b < bays; b++) {
         for (let l = 0; l < levels; l++) {
           const binData = binsData[dataIndex] || null;
-          const binCode = binData?.code || binData?.binCode || `BIN-${100 + dataIndex}`;
+          const binCode = binData?.code || binData?.binCode || `BIN-${a}-${b}-${l}`;
           positions.push({
             pos: [
               (b - bays / 2 + 0.5) * bayWidth, 
@@ -190,20 +190,14 @@ const WarehouseScene = ({
     return positions;
   }, [binsData]);
 
-  // LOGIC ANIMATION: CAMERA FLY-TO
-  useFrame(() => {
+  useFrame((state) => {
     if (controlsRef.current) {
       if (focusTarget) {
-        // Tắt auto rotate khi focus
         controlsRef.current.autoRotate = false;
-        // Lướt mượt mà tâm xoay (target) tới vị trí lô hàng cần pick
         controlsRef.current.target.lerp(focusTarget, 0.05);
-        
-        // Kéo Camera lại gần để nhìn rõ
         const idealCameraPos = new THREE.Vector3(focusTarget.x + 8, focusTarget.y + 6, focusTarget.z + 12);
         camera.position.lerp(idealCameraPos, 0.03);
       } else {
-        // Trạng thái bình thường
         controlsRef.current.autoRotate = true;
       }
       controlsRef.current.update();
@@ -229,8 +223,8 @@ const WarehouseScene = ({
         />
       </mesh>
 
-      {/* RACKS */}
-      {Array.from({ length: aisles }).map((_, a) => {
+      {/* RACKS - Chỉ render khi đã chọn Kho */}
+      {isWarehouseSelected && Array.from({ length: aisles }).map((_, a) => {
         const zPos = (a - aisles / 2 + 0.5) * aisleSpacing;
         return (
           <group key={`aisle-${a}`} position={[0, 0, zPos]}>
@@ -256,8 +250,8 @@ const WarehouseScene = ({
         );
       })}
 
-      {/* KIỆN HÀNG CÓ LOGIC HIGHLIGHT */}
-      {layout.map((item, index) => {
+      {/* BINS & ITEMS */}
+      {isWarehouseSelected && layout.map((item, index) => {
         const pickData = highlightedPicks.find(p => p.binCode === item.binCode);
         return (
           <BinNode 
@@ -281,7 +275,7 @@ const WarehouseScene = ({
         maxDistance={60}
         enableDamping={true}
         dampingFactor={0.05}
-        autoRotate={true}
+        autoRotate={!focusTarget} // Chỉ xoay tự động khi không focus
         autoRotateSpeed={0.3} 
       />
       
@@ -296,25 +290,40 @@ const WarehouseScene = ({
 interface Warehouse3DViewerProps { warehouseId?: string; }
 
 export default function Warehouse3DViewer({ warehouseId }: Warehouse3DViewerProps) {
-  // --- APIs ---
-  const { data: bins = [], isLoading, isError } = useGetBinsQuery(warehouseId ? { warehouseId } : {});
-  const { data: productsData } = useGetProductsQuery({ limit: 50 } as any); 
   
-  // FIX LỖI 1: Tùy thuộc backend trả về mảng trực tiếp hay Object phân trang
-  const products = Array.isArray(productsData) ? productsData : ((productsData as any)?.data || []);
-  
-  const [autoPick] = useAutoPickStockMutation();
-
   // --- STATES ---
+  const [localWarehouseId, setLocalWarehouseId] = useState<string>(warehouseId || "");
   const [selectedProductId, setSelectedProductId] = useState("");
   const [requiredQty, setRequiredQty] = useState<number>(10);
   const [pickResults, setPickResults] = useState<any[]>([]);
   const [focusTarget, setFocusTarget] = useState<THREE.Vector3 | null>(null);
   const [isPicking, setIsPicking] = useState(false);
 
+  // Sync prop changes
+  useEffect(() => {
+    if (warehouseId) setLocalWarehouseId(warehouseId);
+  }, [warehouseId]);
+
+  // --- APIs ---
+  const { data: warehousesData } = useGetWarehousesQuery({});
+  const warehouses = Array.isArray(warehousesData) ? warehousesData : ((warehousesData as any)?.data || []);
+
+  // CHỈ FETCH BINS KHI ĐÃ CÓ ID KHO
+  const { data: binsData, isLoading: loadingBins, isError } = useGetBinsQuery(
+    { warehouseId: localWarehouseId }, 
+    { skip: !localWarehouseId }
+  );
+  
+  const bins = Array.isArray(binsData) ? binsData : ((binsData as any)?.data || []);
+  const { data: productsData } = useGetProductsQuery({ limit: 100 } as any); 
+  const products = Array.isArray(productsData) ? productsData : ((productsData as any)?.data || []);
+  
+  const [autoPick] = useAutoPickStockMutation();
+
   // Tính Legend
   const stats = useMemo(() => {
     let full = 0, empty = 0, partial = 0;
+    if (!bins || bins.length === 0) return { full: 0, empty: 0, partial: 0, total: 0 };
     bins.forEach((b: any) => {
       const p = ((b.currentLoad || 0) / (b.capacity || 100)) * 100;
       if (p >= 85) full++; else if (p < 5) empty++; else partial++;
@@ -324,15 +333,14 @@ export default function Warehouse3DViewer({ warehouseId }: Warehouse3DViewerProp
 
   // HÀM CHẠY THUẬT TOÁN FEFO
   const handleRunAlgorithm = async () => {
-    if (!selectedProductId || requiredQty <= 0) return;
+    if (!localWarehouseId || !selectedProductId || requiredQty <= 0) return;
     setIsPicking(true);
     setPickResults([]);
-    setFocusTarget(null); // Reset góc nhìn
+    setFocusTarget(null);
 
     try {
-      const wId = warehouseId || "wh-test-01"; 
       const response = await autoPick({ 
-        warehouseId: wId, 
+        warehouseId: localWarehouseId, 
         productId: selectedProductId, 
         requiredQuantity: requiredQty 
       }).unwrap();
@@ -349,9 +357,8 @@ export default function Warehouse3DViewer({ warehouseId }: Warehouse3DViewerProp
         for (let a = 0; a < aisles; a++) {
           for (let b = 0; b < bays; b++) {
             for (let l = 0; l < levels; l++) {
-              // FIX LỖI 2: Ép kiểu sang any để an toàn khi check fallback các field
               const binItem = bins[dataIndex] as any;
-              const currentCode = binItem?.code || binItem?.binCode || `BIN-${100 + dataIndex}`;
+              const currentCode = binItem?.code || binItem?.binCode || `BIN-${a}-${b}-${l}`;
               
               if (currentCode === firstBinCode) {
                 foundPos = [
@@ -368,9 +375,12 @@ export default function Warehouse3DViewer({ warehouseId }: Warehouse3DViewerProp
         if (foundPos) {
           setFocusTarget(new THREE.Vector3(...foundPos));
         }
+      } else {
+        toast.error("Không tìm thấy đủ hàng trong kho theo yêu cầu.");
       }
     } catch (error) {
       console.error("Lỗi Auto Pick:", error);
+      toast.error("Thuật toán tìm kiếm thất bại. Vui lòng thử lại.");
     } finally {
       setIsPicking(false);
     }
@@ -381,7 +391,7 @@ export default function Warehouse3DViewer({ warehouseId }: Warehouse3DViewerProp
     setPickResults([]);
   };
 
-  if (isError) return (<div className="w-full h-[500px] flex justify-center bg-slate-50"><AlertOctagon className="w-12 h-12 text-rose-500"/></div>);
+  if (isError) return (<div className="w-full h-[500px] flex justify-center items-center bg-slate-50 dark:bg-slate-900 rounded-3xl border border-dashed border-rose-200"><AlertOctagon className="w-12 h-12 text-rose-500"/></div>);
 
   return (
     <div className="relative w-full h-[700px] bg-[#090D14] rounded-3xl overflow-hidden shadow-2xl group">
@@ -404,34 +414,55 @@ export default function Warehouse3DViewer({ warehouseId }: Warehouse3DViewerProp
         </div>
         
         <div className="p-4 flex flex-col gap-4">
+          
+          {/* LỰA CHỌN KHO HÀNG (DYNAMICS) */}
           <div>
-            <label className="text-xs font-bold text-slate-500 mb-1 block">Chọn Sản phẩm (Mock):</label>
+            <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1"><Building2 className="w-3.5 h-3.5"/> Vị trí Kho:</label>
+            <select 
+              value={localWarehouseId} 
+              onChange={(e) => {
+                setLocalWarehouseId(e.target.value);
+                setPickResults([]);
+                setFocusTarget(null);
+              }}
+              className="w-full bg-slate-100 dark:bg-slate-800 p-2.5 rounded-lg text-sm border-none focus:ring-2 focus:ring-cyan-500 outline-none dark:text-white font-semibold"
+            >
+              <option value="">-- Chọn kho cần xem --</option>
+              {warehouses.map((wh: any) => (
+                <option key={wh.warehouseId} value={wh.warehouseId}>{wh.code} - {wh.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-slate-500 mb-1 block">Chọn Sản phẩm (SKU):</label>
             <select 
               value={selectedProductId} 
               onChange={(e) => setSelectedProductId(e.target.value)}
-              className="w-full bg-slate-100 dark:bg-slate-800 p-2.5 rounded-lg text-sm border-none focus:ring-2 focus:ring-cyan-500 outline-none dark:text-white"
+              disabled={!localWarehouseId}
+              className="w-full bg-slate-100 dark:bg-slate-800 p-2.5 rounded-lg text-sm border-none focus:ring-2 focus:ring-cyan-500 outline-none dark:text-white disabled:opacity-50"
             >
               <option value="">-- Chọn vật tư cần xuất --</option>
-              {products.slice(0, 10).map((p: any) => (
+              {products.map((p: any) => (
                 <option key={p.productId} value={p.productId}>{p.productCode} - {p.name}</option>
               ))}
-              {/* Fallback Option để Test */}
-              <option value="test-prod-1">SP001 - Dầu nhớt Động cơ</option>
             </select>
           </div>
 
           <div>
             <label className="text-xs font-bold text-slate-500 mb-1 block">Số lượng cần xuất:</label>
             <input 
-              type="number" value={requiredQty} onChange={(e) => setRequiredQty(Number(e.target.value))}
-              className="w-full bg-slate-100 dark:bg-slate-800 p-2.5 rounded-lg text-sm border-none focus:ring-2 focus:ring-cyan-500 outline-none dark:text-white"
+              type="number" min="1" 
+              value={requiredQty} onChange={(e) => setRequiredQty(Number(e.target.value))}
+              disabled={!localWarehouseId || !selectedProductId}
+              className="w-full bg-slate-100 dark:bg-slate-800 p-2.5 rounded-lg text-sm border-none focus:ring-2 focus:ring-cyan-500 outline-none dark:text-white disabled:opacity-50"
             />
           </div>
 
           <div className="flex gap-2 mt-2">
             <button 
               onClick={handleRunAlgorithm}
-              disabled={isPicking || !selectedProductId}
+              disabled={isPicking || !selectedProductId || !localWarehouseId}
               className="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2.5 rounded-xl shadow-lg shadow-cyan-600/30 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {isPicking ? <Loader2 className="w-4 h-4 animate-spin"/> : <Target className="w-4 h-4" />}
@@ -469,25 +500,46 @@ export default function Warehouse3DViewer({ warehouseId }: Warehouse3DViewerProp
       </div>
 
       {/* LEGEND BOTTOM LEFT */}
-      <div className="absolute bottom-6 left-6 z-10 bg-black/60 backdrop-blur-xl p-5 rounded-2xl border border-white/10">
-        <h4 className="text-xs font-black text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2"><Maximize className="w-4 h-4" /> Tình trạng tải</h4>
-        <div className="space-y-3 text-sm font-bold text-white">
-          <div className="flex items-center justify-between gap-8"><span className="flex items-center gap-2"><span className="w-4 h-4 rounded bg-rose-500"></span> Quá tải</span> <span>{stats.full}</span></div>
-          <div className="flex items-center justify-between gap-8"><span className="flex items-center gap-2"><span className="w-4 h-4 rounded bg-amber-500"></span> Đang dùng</span> <span>{stats.partial}</span></div>
-          <div className="flex items-center justify-between gap-8"><span className="flex items-center gap-2"><span className="w-4 h-4 rounded border-2 border-emerald-500"></span> Trống</span> <span>{stats.empty}</span></div>
+      {localWarehouseId && (
+        <div className="absolute bottom-6 left-6 z-10 bg-black/60 backdrop-blur-xl p-5 rounded-2xl border border-white/10">
+          <h4 className="text-xs font-black text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2"><Maximize className="w-4 h-4" /> Tình trạng tải</h4>
+          <div className="space-y-3 text-sm font-bold text-white">
+            <div className="flex items-center justify-between gap-8"><span className="flex items-center gap-2"><span className="w-4 h-4 rounded bg-rose-500"></span> Quá tải</span> <span>{stats.full}</span></div>
+            <div className="flex items-center justify-between gap-8"><span className="flex items-center gap-2"><span className="w-4 h-4 rounded bg-amber-500"></span> Đang dùng</span> <span>{stats.partial}</span></div>
+            <div className="flex items-center justify-between gap-8"><span className="flex items-center gap-2"><span className="w-4 h-4 rounded border-2 border-emerald-500"></span> Trống</span> <span>{stats.empty}</span></div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* EMPTY STATE OVERLAY (Khi chưa chọn Kho) */}
+      {!localWarehouseId && !loadingBins && (
+        <div className="absolute inset-0 z-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm pointer-events-none">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+            className="flex flex-col items-center justify-center p-8 bg-slate-900/80 rounded-3xl border border-white/10 shadow-2xl"
+          >
+            <Building2 className="w-16 h-16 text-cyan-500 mb-4 opacity-80" />
+            <h2 className="text-xl font-bold text-white mb-2">Chưa chọn Kho hàng</h2>
+            <p className="text-slate-400 text-sm max-w-sm text-center">Vui lòng chọn một kho hàng từ bảng điều khiển bên phải để tải và hiển thị bản sao kỹ thuật số 3D của hệ thống giá kệ.</p>
+          </motion.div>
+        </div>
+      )}
 
       {/* 3D RENDER SCENE */}
       <div className="absolute inset-0 cursor-grab active:cursor-grabbing">
-        {isLoading ? (
+        {loadingBins ? (
           <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900/50 backdrop-blur-sm z-50">
             <Loader2 className="w-12 h-12 animate-spin text-cyan-500 mb-4" />
           </div>
         ) : (
           <Suspense fallback={null}>
             <Canvas camera={{ position: [25, 20, 30], fov: 40 }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}>
-              <WarehouseScene binsData={bins} highlightedPicks={pickResults} focusTarget={focusTarget} />
+              <WarehouseScene 
+                binsData={bins} 
+                highlightedPicks={pickResults} 
+                focusTarget={focusTarget} 
+                isWarehouseSelected={!!localWarehouseId}
+              />
             </Canvas>
           </Suspense>
         )}

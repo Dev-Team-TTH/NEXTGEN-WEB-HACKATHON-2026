@@ -24,6 +24,7 @@ import {
 
 // --- IMPORT CORE MODAL & UTILS ---
 import Modal from "@/app/(components)/Modal";
+import FileDropzone from "@/app/(components)/FileDropzone"; // TÍCH HỢP UPLOAD FILE
 import { formatVND } from "@/utils/formatters";
 
 // ==========================================
@@ -55,7 +56,10 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
   const { activeBranchId } = useAppSelector(state => state.global);
 
   // --- API HOOKS (SỬ DỤNG DỮ LIỆU THỰC TẾ) ---
-  const { data: products = [], isLoading: loadingProds } = useGetProductsQuery({}, { skip: !isOpen });
+  // FIX LỖI TS2339: API getProducts trả về object phân trang, cần lấy limit lớn để nạp đủ dropdown
+  const { data: productsResponse, isLoading: loadingProds } = useGetProductsQuery({ limit: 1000 }, { skip: !isOpen });
+  const products = productsResponse?.data || []; // TRÍCH XUẤT MẢNG DATA
+
   const { data: suppliers = [], isLoading: loadingSupps } = useGetSuppliersQuery(undefined, { skip: !isOpen });
   const { data: customers = [], isLoading: loadingCusts } = useGetCustomersQuery(undefined, { skip: !isOpen });
   const { data: taxes = [], isLoading: loadingTaxes } = useGetTaxesQuery(undefined, { skip: !isOpen });
@@ -74,6 +78,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
   const [partnerId, setPartnerId] = useState("");
   const [warehouseId, setWarehouseId] = useState(""); 
   const [note, setNote] = useState("");
+  const [documentUrl, setDocumentUrl] = useState(""); // FILE ĐÍNH KÈM (PDF/HÌNH ẢNH)
   const [lines, setLines] = useState<LineItem[]>([]);
 
   // Khởi tạo trạng thái ban đầu khi mở Modal
@@ -83,6 +88,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
       setPartnerId("");
       setWarehouseId("");
       setNote("");
+      setDocumentUrl("");
       setLines([{ id: Date.now().toString(), productId: "", uomId: "", quantity: 1, unitCost: "", taxId: "", taxRate: 0, taxAmount: 0 }]);
     }
   }, [isOpen]);
@@ -149,7 +155,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
     const currentQty = field === "quantity" ? Number(value) : Number(currentLine.quantity || 1);
     const currentProdId = field === "productId" ? value : currentLine.productId;
 
-    // 1. Khi chọn Sản phẩm mới -> Tự động kéo giá và UOM
+    // 1. Khi chọn Sản phẩm mới -> Tự động kéo giá và UOM (ĐÃ FIX TÌM THEO PRODUCTS MỚI)
     if (field === "productId" && value) {
       const prod = products.find((p: any) => p.productId === value || p.id === value);
       if (prod) {
@@ -239,6 +245,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
         currencyCode: "VND", 
         exchangeRate: 1,
         totalAmount: summary.grandTotal, 
+        documentSnapshot: documentUrl ? JSON.stringify({ attachmentUrl: documentUrl }) : null, // Lưu file đính kèm
         
         ...(isPurchasing ? { supplierId: partnerId } : { customerId: partnerId }),
 
@@ -268,7 +275,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
   // --- FOOTER RENDER (Cho Core Modal) ---
   const modalFooter = (
     <div className="flex w-full items-center justify-between">
-      {/* Khối Summary tích hợp vào Footer cho gọn - ĐÃ FIX CSS CONFLICT Ở ĐÂY */}
+      {/* Khối Summary tích hợp vào Footer cho gọn */}
       <div className="hidden sm:flex items-center gap-6">
         <div className="text-right">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Cộng tiền hàng</p>
@@ -360,6 +367,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
                             className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800 dark:text-slate-200"
                           >
                             <option value="">-- Chọn mặt hàng --</option>
+                            {/* FIX LỖI TÌM THEO PRODUCTS MỚI */}
                             {products.map((p: any) => (
                               <option key={p.productId || p.id} value={p.productId || p.id}>{p.productCode} - {p.name}</option>
                             ))}
@@ -503,6 +511,17 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
                 rows={3} value={note} onChange={(e) => setNote(e.target.value)}
                 placeholder="Nhập ghi chú cho chứng từ này..."
                 className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+              />
+            </div>
+
+            {/* KHU VỰC UPLOAD FILE ĐÍNH KÈM */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5">Hồ sơ / Hợp đồng đính kèm</label>
+              <FileDropzone 
+                onUploadSuccess={(url) => setDocumentUrl(url)}
+                accept="application/pdf, image/*"
+                label="Kéo thả PDF / Hình ảnh Hóa đơn"
+                maxSizeMB={10}
               />
             </div>
             

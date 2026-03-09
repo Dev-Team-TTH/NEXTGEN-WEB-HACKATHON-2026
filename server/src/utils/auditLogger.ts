@@ -1,6 +1,6 @@
-import { PrismaClient, ActionType, Prisma } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { ActionType, Prisma } from "@prisma/client";
+import prisma from "../prismaClient"; // Dùng chung instance prisma thay vì new PrismaClient() mới
+import { getIo } from "./socket"; // Nhúng bộ bắn sự kiện thời gian thực Socket.io
 
 /**
  * Hàm làm sạch dữ liệu an toàn (Safe Serialize)
@@ -18,7 +18,7 @@ const sanitizeJson = (data: any): any => {
 };
 
 // ==========================================
-// 1. GHI NHẬT KÝ KIỂM TOÁN (WRITE LOG)
+// 1. GHI NHẬT KÝ KIỂM TOÁN (WRITE LOG & REAL-TIME BROADCAST)
 // ==========================================
 export const logAudit = async (
   tableName: string,
@@ -30,7 +30,8 @@ export const logAudit = async (
   ipAddress: string | null = null
 ): Promise<void> => {
   try {
-    await prisma.systemAuditLog.create({
+    // 1. Lưu xuống Database
+    const newLog = await prisma.systemAuditLog.create({
       data: {
         tableName,
         recordId,
@@ -40,11 +41,38 @@ export const logAudit = async (
         userId,
         ipAddress,
       },
+      include: {
+        user: { select: { fullName: true, email: true } } // Kéo theo user để bắn lên UI
+      }
     });
+
+    // 2. PHÁT SÓNG THỜI GIAN THỰC (REAL-TIME BROADCAST) TỚI FRONTEND
+    try {
+      const io = getIo();
+      
+      // Phân tách kênh riêng cho Yêu cầu Phê duyệt
+      if (tableName === "ApprovalRequest" || tableName === "ApprovalLog") {
+        io.emit("new_approval_event", {
+          message: "Có cập nhật mới về Phê duyệt chứng từ",
+          action: action,
+          data: newLog
+        });
+      } 
+      // Kênh chung cho mọi hoạt động khác
+      else {
+        io.emit("new_system_activity", {
+          message: "Hoạt động hệ thống mới",
+          action: action,
+          tableName: tableName,
+          data: newLog
+        });
+      }
+    } catch (socketErr) {
+      console.warn("[Socket] Chưa có kết nối hoặc lỗi phát sóng:", socketErr);
+    }
+
   } catch (error) {
     // 💡 Thiết kế thông minh: Bắt lỗi nhưng TUYỆT ĐỐI KHÔNG THROW.
-    // Nếu lỗi ghi log xảy ra (do DB nghẽn, mất mạng...), cũng không được phép 
-    // làm Rollback hay văng màn hình của nghiệp vụ chính mà người dùng đang làm.
     console.error(`[AUDIT LOG ERROR] Lỗi khi ghi log cho bảng ${tableName} (ID: ${recordId}):`, error);
   }
 };

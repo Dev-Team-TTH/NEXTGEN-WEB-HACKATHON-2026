@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import { Search, ChevronDown, ChevronUp, SlidersHorizontal, Inbox } from "lucide-react";
 
@@ -21,10 +21,18 @@ interface DataTableProps<T> {
   columns: ColumnDef<T>[];
   isLoading?: boolean;
   searchPlaceholder?: string;
-  searchKey?: keyof T; // Cột nào dùng để search text
+  searchKey?: keyof T; 
   onRowClick?: (row: T) => void;
-  // Phân trang nội bộ
+  
+  // NÂNG CẤP: Tính năng Server-side Pagination & Filtering
+  isServerSide?: boolean;
+  serverPage?: number;
+  serverTotalPages?: number;
+  serverTotalItems?: number;
   itemsPerPage?: number;
+  onPageChange?: (newPage: number) => void;
+  onSearchChange?: (searchTerm: string) => void;
+  onSortChange?: (sortKey: string, direction: "asc" | "desc") => void;
 }
 
 // ==========================================
@@ -38,24 +46,48 @@ export default function DataTable<T>({
   searchKey,
   onRowClick,
   itemsPerPage = 10,
+  // Props cho Server-side
+  isServerSide = false,
+  serverPage = 1,
+  serverTotalPages = 1,
+  serverTotalItems = 0,
+  onPageChange,
+  onSearchChange,
+  onSortChange
 }: DataTableProps<T>) {
-  const [searchTerm, setSearchTerm] = useState("");
+  
+  const [localSearchTerm, setLocalSearchTerm] = useState("");
   const [sortConfig, setSortConfig] = useState<{ key: keyof T | string; direction: "asc" | "desc" } | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [clientPage, setClientPage] = useState(1);
 
-  // --- LOGIC: TÌM KIẾM & SẮP XẾP ---
+  // --- KỸ THUẬT DEBOUNCE TÌM KIẾM ---
+  // Chống Spam API khi người dùng gõ phím quá nhanh
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      if (isServerSide && onSearchChange) {
+        onSearchChange(localSearchTerm);
+        if (onPageChange) onPageChange(1); // Reset về trang 1 khi search
+      }
+    }, 500); // Đợi 500ms sau khi ngừng gõ mới báo cho Server
+
+    return () => clearTimeout(handler);
+  }, [localSearchTerm, isServerSide, onSearchChange, onPageChange]);
+
+  // --- LOGIC CLIENT-SIDE (Chạy nếu isServerSide = false) ---
   const processedData = useMemo(() => {
+    if (isServerSide) return data; // Nếu là Server-side, trả data nguyên bản do Backend gửi
+
     let result = [...data];
 
-    // 1. Lọc (Search)
-    if (searchTerm && searchKey) {
+    // Lọc (Search Client)
+    if (localSearchTerm && searchKey) {
       result = result.filter((item) => {
         const val = item[searchKey as keyof T];
-        return String(val).toLowerCase().includes(searchTerm.toLowerCase());
+        return String(val).toLowerCase().includes(localSearchTerm.toLowerCase());
       });
     }
 
-    // 2. Sắp xếp (Sort)
+    // Sắp xếp (Sort Client)
     if (sortConfig) {
       result.sort((a, b) => {
         const aValue = a[sortConfig.key as keyof T];
@@ -65,16 +97,17 @@ export default function DataTable<T>({
         return 0;
       });
     }
-
     return result;
-  }, [data, searchTerm, searchKey, sortConfig]);
+  }, [data, localSearchTerm, searchKey, sortConfig, isServerSide]);
 
-  // --- LOGIC: PHÂN TRANG ---
-  const totalPages = Math.ceil(processedData.length / itemsPerPage);
-  const paginatedData = processedData.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  // Khớp biến phân trang giữa Server và Client
+  const displayData = isServerSide 
+    ? data 
+    : processedData.slice((clientPage - 1) * itemsPerPage, clientPage * itemsPerPage);
+
+  const currentPage = isServerSide ? serverPage : clientPage;
+  const totalPages = isServerSide ? serverTotalPages : Math.ceil(processedData.length / itemsPerPage);
+  const totalItems = isServerSide ? serverTotalItems : processedData.length;
 
   const handleSort = (key: keyof T | string) => {
     let direction: "asc" | "desc" = "asc";
@@ -82,25 +115,29 @@ export default function DataTable<T>({
       direction = "desc";
     }
     setSortConfig({ key, direction });
+
+    if (isServerSide && onSortChange) {
+      onSortChange(String(key), direction);
+    }
+  };
+
+  const handlePageChange = (newPage: number) => {
+    if (isServerSide && onPageChange) {
+      onPageChange(newPage);
+    } else {
+      setClientPage(newPage);
+    }
   };
 
   // --- ANIMATION CONFIG (FRAMER MOTION) ---
-  // Đã fix lỗi TypeScript bằng 'Variants' và 'as const'
   const containerVariants: Variants = {
     hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: { staggerChildren: 0.05 }, // Hiệu ứng xuất hiện lần lượt từng dòng
-    },
+    show: { opacity: 1, transition: { staggerChildren: 0.05 } }, 
   };
 
   const rowVariants: Variants = {
     hidden: { opacity: 0, y: 10 },
-    show: { 
-      opacity: 1, 
-      y: 0, 
-      transition: { type: "spring" as const, stiffness: 300, damping: 24 } 
-    },
+    show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 300, damping: 24 } },
   };
 
   return (
@@ -114,10 +151,10 @@ export default function DataTable<T>({
             <input
               type="text"
               placeholder={searchPlaceholder}
-              value={searchTerm}
+              value={localSearchTerm}
               onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setCurrentPage(1); // Reset trang khi search
+                setLocalSearchTerm(e.target.value);
+                if (!isServerSide) setClientPage(1); 
               }}
               className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all text-gray-900 dark:text-gray-100 placeholder-gray-400"
             />
@@ -129,8 +166,18 @@ export default function DataTable<T>({
         </button>
       </div>
 
-      {/* VÙNG CHỨA BẢNG (Hỗ trợ cuộn ngang trên Mobile) */}
-      <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700">
+      {/* VÙNG CHỨA BẢNG */}
+      <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700 relative min-h-[200px]">
+        
+        {/* NỀN MỜ KHI ĐANG LOADING TRÊN SERVER */}
+        {isServerSide && isLoading && (
+           <div className="absolute inset-0 bg-white/50 dark:bg-black/20 backdrop-blur-[1px] z-10 flex items-center justify-center">
+             <div className="px-4 py-2 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 text-sm font-semibold flex items-center gap-2">
+               <span className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></span> Đang tải...
+             </div>
+           </div>
+        )}
+
         <table className="w-full text-left border-collapse min-w-[600px]">
           <thead>
             <tr className="bg-gray-50/80 dark:bg-gray-800/50 text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wider font-semibold">
@@ -154,62 +201,40 @@ export default function DataTable<T>({
             </tr>
           </thead>
 
-          {/* SKELETON LOADING HOẶC DỮ LIỆU */}
+          {/* SKELETON LOADING (Chỉ hiện lúc tải trang đầu tiên) */}
           <AnimatePresence mode="wait">
-            {isLoading ? (
-              <motion.tbody
-                key="skeleton"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
+            {!isServerSide && isLoading ? (
+              <motion.tbody key="skeleton" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 {Array.from({ length: 5 }).map((_, rowIndex) => (
                   <tr key={rowIndex} className="border-b border-gray-50 dark:border-white/5">
                     {columns.map((_, colIndex) => (
-                      <td key={colIndex} className="p-4 first:pl-6 last:pr-6">
-                        <div className="h-5 bg-gray-200 dark:bg-gray-700 rounded-md animate-pulse w-3/4"></div>
-                      </td>
+                      <td key={colIndex} className="p-4 first:pl-6 last:pr-6"><div className="h-5 bg-gray-200 dark:bg-gray-700 rounded-md animate-pulse w-3/4"></div></td>
                     ))}
                   </tr>
                 ))}
               </motion.tbody>
-            ) : paginatedData.length === 0 ? (
-              <motion.tbody
-                key="empty"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
+            ) : displayData.length === 0 ? (
+              <motion.tbody key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <tr>
                   <td colSpan={columns.length} className="p-10 text-center text-gray-500 dark:text-gray-400">
                     <div className="flex flex-col items-center justify-center gap-3">
-                      <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-full">
-                        <Inbox className="w-8 h-8 text-gray-400" />
-                      </div>
+                      <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-full"><Inbox className="w-8 h-8 text-gray-400" /></div>
                       <p className="text-sm font-medium">Không tìm thấy dữ liệu</p>
                     </div>
                   </td>
                 </tr>
               </motion.tbody>
             ) : (
-              <motion.tbody
-                key="data"
-                variants={containerVariants}
-                initial="hidden"
-                animate="show"
-              >
-                {paginatedData.map((row, rowIndex) => (
+              <motion.tbody key="data" variants={containerVariants} initial="hidden" animate="show">
+                {displayData.map((row, rowIndex) => (
                   <motion.tr
                     key={rowIndex}
                     variants={rowVariants}
                     onClick={() => onRowClick && onRowClick(row)}
-                    className={`border-b border-gray-50 dark:border-white/5 group transition-colors ${onRowClick ? "cursor-pointer hover:bg-blue-50/50 dark:hover:bg-blue-900/10" : ""}`}
+                    className={`border-b border-gray-50 dark:border-white/5 group transition-colors ${onRowClick ? "cursor-pointer hover:blue-50/50 dark:hover:bg-blue-900/10" : ""}`}
                   >
                     {columns.map((col, colIndex) => (
-                      <td
-                        key={colIndex}
-                        className={`p-4 text-sm text-gray-700 dark:text-gray-300 first:pl-6 last:pr-6 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
-                      >
+                      <td key={colIndex} className={`p-4 text-sm text-gray-700 dark:text-gray-300 first:pl-6 last:pr-6 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
                         {col.cell ? col.cell(row) : (row[col.accessorKey as keyof T] as React.ReactNode)}
                       </td>
                     ))}
@@ -222,22 +247,25 @@ export default function DataTable<T>({
       </div>
 
       {/* FOOTER: PHÂN TRANG */}
-      {!isLoading && totalPages > 1 && (
-        <div className="p-4 border-t border-gray-100 dark:border-white/5 flex items-center justify-between text-sm text-gray-500 dark:text-gray-400 bg-gray-50/30 dark:bg-transparent">
+      {totalPages > 0 && (
+        <div className="p-4 border-t border-gray-100 dark:border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500 dark:text-gray-400 bg-gray-50/30 dark:bg-transparent">
           <span>
-            Hiển thị <span className="font-semibold text-gray-900 dark:text-white">{(currentPage - 1) * itemsPerPage + 1}</span> - <span className="font-semibold text-gray-900 dark:text-white">{Math.min(currentPage * itemsPerPage, processedData.length)}</span> trong tổng số <span className="font-semibold text-gray-900 dark:text-white">{processedData.length}</span>
+            Hiển thị <span className="font-semibold text-gray-900 dark:text-white">{(currentPage - 1) * itemsPerPage + 1}</span> - <span className="font-semibold text-gray-900 dark:text-white">{Math.min(currentPage * itemsPerPage, totalItems)}</span> trong tổng số <span className="font-semibold text-gray-900 dark:text-white">{totalItems}</span>
           </span>
           <div className="flex gap-1">
             <button
-              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-              disabled={currentPage === 1}
+              onClick={() => handlePageChange(Math.max(currentPage - 1, 1))}
+              disabled={currentPage === 1 || (isServerSide && isLoading)}
               className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Trước
             </button>
+            <span className="px-3 py-1.5 font-semibold text-gray-700 dark:text-gray-300">
+              Trang {currentPage} / {totalPages}
+            </span>
             <button
-              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-              disabled={currentPage === totalPages}
+              onClick={() => handlePageChange(Math.min(currentPage + 1, totalPages))}
+              disabled={currentPage === totalPages || (isServerSide && isLoading)}
               className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Sau

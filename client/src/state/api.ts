@@ -13,6 +13,7 @@ export interface PaginatedResponse<T> {
     page: number;
     limit: number;
     totalPages: number;
+    kpis?: any; // Đã thêm trường kpis do Backend trả về
   };
 }
 
@@ -785,7 +786,10 @@ export const api = createApi({
     // ------------------------------------------
     // C. PRODUCTS & UOM CONVERSIONS
     // ------------------------------------------
-    getProducts: build.query<Product[], any>({ query: (params) => ({ url: "/products", params }), providesTags: ["Products"] }),
+    getProducts: build.query<PaginatedResponse<Product>, any>({ 
+      query: (params) => ({ url: "/products", params }), 
+      providesTags: ["Products"] 
+    }),
     getProductById: build.query<Product, string>({ query: (id) => `/products/${id}`, providesTags: ["Products"] }),
     createProduct: build.mutation<Product, Partial<Product>>({ query: (body) => ({ url: "/products", method: "POST", body }), invalidatesTags: ["Products", "Dashboard"] }),
     updateProduct: build.mutation<Product, { id: string; data: Partial<Product> }>({ query: ({ id, data }) => ({ url: `/products/${id}`, method: "PUT", body: data }), invalidatesTags: ["Products"] }),
@@ -896,6 +900,20 @@ export const api = createApi({
     
     processApproval: build.mutation<any, { id: string; action: "APPROVE" | "REJECT"; comment?: string }>({ 
       query: ({ id, ...body }) => ({ url: `/approvals/${id}/action`, method: "POST", body }), 
+      async onQueryStarted({ id, action }, { dispatch, queryFulfilled }) {
+        // OPTIMISTIC UPDATE: Xóa ngay Request khỏi danh sách chờ duyệt của Client
+        const patchResult = dispatch(
+          api.util.updateQueryData('getPendingApprovals', undefined, (draft) => {
+            return draft.filter((req) => req.requestId !== id);
+          })
+        );
+        try {
+          await queryFulfilled;
+        } catch {
+          // NẾU API LỖI (Vd: Mạng rớt): Undo lại, cho phiếu hiện lại màn hình
+          patchResult.undo(); 
+        }
+      },
       invalidatesTags: ["Approvals", "ApprovalLogs", "Dashboard", "Inventory", "Transactions", "Accounting", "Products", "Finance", "LandedCosts"] 
     }),
     cancelApproval: build.mutation<any, string>({ query: (id) => ({ url: `/approvals/${id}/cancel`, method: "POST" }), invalidatesTags: ["Approvals", "Transactions"] }),
@@ -971,6 +989,23 @@ export const api = createApi({
     // NÂNG CẤP: Phê duyệt chứng từ làm thay đổi toàn bộ bức tranh tài chính/kho bãi
     approveDocumentDirectly: build.mutation<any, { id: string; data: any }>({ 
       query: ({ id, data }) => ({ url: `/transactions/${id}/approve`, method: "POST", body: data }), 
+      async onQueryStarted({ id, data }, { dispatch, queryFulfilled }) {
+        // Cập nhật trạng thái giả trên Client thành APPROVED lập tức
+        const patchResult = dispatch(
+          api.util.updateQueryData('getDocuments', {} as any, (draft) => {
+            // SỬA LỖI TS: draft ở đây chính là mảng DocumentTx[]
+            if (draft && Array.isArray(draft)) {
+               const doc = draft.find((d) => d.documentId === id);
+               if (doc) doc.status = "APPROVED"; 
+            }
+          })
+        );
+        try {
+          await queryFulfilled;
+        } catch {
+          patchResult.undo();
+        }
+      },
       invalidatesTags: ["Transactions", "Inventory", "Accounting", "Dashboard", "Products", "Finance", "LandedCosts", "FinancialReports"] 
     }),
 
@@ -1049,6 +1084,17 @@ export const api = createApi({
 
     getGlobalSearch: build.query<{ users: any[]; products: any[]; transactions: any[] }, string>({
       query: (searchTerm) => `/search?q=${encodeURIComponent(searchTerm)}`,
+    }),
+
+    // --- L1. UTIL: UPLOAD FILE ---
+    uploadFile: build.mutation<{ url: string; message: string; fileName: string; size: number }, FormData>({
+      query: (body) => ({
+        url: "/upload",
+        method: "POST",
+        body,
+        // Lưu ý quan trọng: KHÔNG set Content-Type thủ công ở đây.
+        // FetchBaseQuery sẽ tự động nhận diện FormData và set thành multipart/form-data cùng boundary chuẩn.
+      }),
     }),
   }),
 });
@@ -1253,5 +1299,6 @@ export const {
   useCalculateDynamicPriceMutation,
 
   useGetGlobalSearchQuery,
+  useUploadFileMutation,
 
 } = api;

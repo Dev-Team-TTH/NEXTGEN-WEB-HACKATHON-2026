@@ -1,12 +1,11 @@
 import { Router } from "express";
 import {
-  getProducts, getProductById, createProduct, updateProduct, deleteProduct,
+  getProducts, getProductById, createProduct, updateProduct, deleteProduct, importProducts,
   getProductVariants, createProductVariant, updateProductVariant, deleteProductVariant,
   getProductBatches, createProductBatch, updateProductBatch, deleteProductBatch,
   getUomConversions, createUomConversion, updateUomConversion, deleteUomConversion
 } from "../controllers/productController";
 
-// ĐÃ SỬA LỖI IMPORT TÊN HÀM: Dùng đúng tên authenticateToken từ authMiddleware của bạn
 import { authenticateToken } from "../middleware/authMiddleware";
 
 const router = Router();
@@ -14,14 +13,11 @@ const router = Router();
 // ==========================================
 // MIDDLEWARE BẢO VỆ TOÀN BỘ ROUTE
 // ==========================================
-// Chặn mọi Request không có hoặc sai Access Token
-// (Tất cả request đi qua đây sẽ được nạp sẵn Roles và Permissions vào RAM nhờ logic Cache của bạn)
 router.use(authenticateToken);
 
 // ==========================================
 // 1. BIẾN THỂ SẢN PHẨM (VARIANTS)
 // ==========================================
-// Chú ý: Đặt các route cụ thể LÊN TRƯỚC các route có param /:id để tránh bị lọt nhầm
 router.post("/variants", createProductVariant);
 router.put("/variants/:variantId", updateProductVariant);
 router.delete("/variants/:variantId", deleteProductVariant);
@@ -45,6 +41,7 @@ router.delete("/uom-conversions/:id", deleteUomConversion);
 // 4. SẢN PHẨM CHÍNH (PRODUCTS MASTER)
 // ==========================================
 router.get("/", getProducts);
+router.post("/import", importProducts); // API IMPORT HÀNG LOẠT
 router.post("/", createProduct);
 router.get("/:id", getProductById);
 router.put("/:id", updateProduct);

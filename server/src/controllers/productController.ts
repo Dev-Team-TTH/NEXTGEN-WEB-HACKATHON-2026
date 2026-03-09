@@ -6,37 +6,91 @@ import { logAudit } from "../utils/auditLogger";
 const getUserId = (req: Request) => (req as any).user?.userId || req.body?.userId;
 
 // ==========================================
-// 1. PRODUCTS (SẢN PHẨM CHÍNH)
+// 1. PRODUCTS (SẢN PHẨM CHÍNH) - NÂNG CẤP SERVER-SIDE PAGINATION
 // ==========================================
 export const getProducts = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { search, categoryId, status } = req.query;
+    const { search, categoryId, status, page = 1, limit = 10 } = req.query;
 
-    const products = await prisma.products.findMany({
-      where: {
-        isDeleted: false,
-        ...(categoryId && { categoryId: String(categoryId) }),
-        ...(status && { status: status as UserStatus }),
-        ...(search && {
-          OR: [
-            { name: { contains: String(search), mode: 'insensitive' } },
-            { productCode: { contains: String(search), mode: 'insensitive' } },
-            { barcode: { contains: String(search), mode: 'insensitive' } }
-          ]
-        })
-      },
-      include: {
-        category: { select: { name: true, code: true } },
-        uom: { select: { name: true, code: true } },
-        supplier: { select: { name: true } },
-        variants: { where: { isDeleted: false } },
-        uomConversions: {
-          include: { fromUom: { select: { name: true } }, toUom: { select: { name: true } } }
+    const pageNum = Number(page);
+    const limitNum = Number(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    const whereCondition: any = {
+      isDeleted: false,
+    };
+
+    if (categoryId) whereCondition.categoryId = String(categoryId);
+    if (status && status !== "ALL") whereCondition.status = status as UserStatus;
+    if (search) {
+      whereCondition.OR = [
+        { name: { contains: String(search), mode: 'insensitive' } },
+        { productCode: { contains: String(search), mode: 'insensitive' } },
+        { barcode: { contains: String(search), mode: 'insensitive' } }
+      ];
+    }
+
+    const [total, productsRaw, kpiRawData] = await prisma.$transaction([
+      prisma.products.count({ where: whereCondition }),
+      
+      prisma.products.findMany({
+        where: whereCondition,
+        skip: skip,
+        take: limitNum,
+        include: {
+          category: { select: { name: true, code: true } },
+          uom: { select: { name: true, code: true } },
+          supplier: { select: { name: true } },
+          variants: { where: { isDeleted: false } },
+          uomConversions: {
+            include: { fromUom: { select: { name: true } }, toUom: { select: { name: true } } }
+          },
+          balances: { select: { quantity: true } } // Lấy balance để tính Tồn kho
+        },
+        orderBy: { createdAt: 'desc' }
+      }),
+
+      prisma.products.findMany({
+        where: whereCondition,
+        select: {
+          purchasePrice: true,
+          reorderPoint: true,
+          status: true,
+          balances: { select: { quantity: true } } // Truy vấn nhẹ lấy balance để tính KPI
         }
-      },
-      orderBy: { createdAt: 'desc' }
+      })
+    ]);
+
+    // Gắn thêm trường totalStock cho từng sản phẩm trả về Client
+    const products = productsRaw.map(p => ({
+      ...p,
+      totalStock: p.balances.reduce((sum, b) => sum + b.quantity, 0)
+    }));
+
+    let totalValue = 0;
+    let lowStockCount = 0;
+    let outOfStockCount = 0;
+
+    kpiRawData.forEach(p => {
+      if (p.status === "ACTIVE") {
+        const stock = p.balances.reduce((sum, b) => sum + b.quantity, 0);
+        const reorder = p.reorderPoint || 10;
+        totalValue += stock * Number(p.purchasePrice || 0);
+        if (stock === 0) outOfStockCount++;
+        else if (stock <= reorder) lowStockCount++;
+      }
     });
-    res.json(products);
+
+    res.json({
+      data: products,
+      meta: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum),
+        kpis: { totalItems: total, totalValue, lowStockCount, outOfStockCount }
+      }
+    });
   } catch (error: any) {
     res.status(500).json({ message: "Lỗi truy xuất danh sách sản phẩm", error: error.message });
   }
@@ -101,6 +155,43 @@ export const createProduct = async (req: Request, res: Response): Promise<void> 
   }
 };
 
+// ĐÃ KHÔI PHỤC LẠI API NHẬP EXCEL
+export const importProducts = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const products = req.body; 
+    const userId = getUserId(req);
+
+    if (!Array.isArray(products) || products.length === 0) {
+      res.status(400).json({ message: "Dữ liệu rỗng hoặc không hợp lệ" });
+      return;
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const created = await tx.products.createMany({
+        data: products.map(p => ({
+          productCode: p.productCode,
+          name: p.name,
+          barcode: p.barcode || null,
+          price: Number(p.price || 0),
+          purchasePrice: Number(p.purchasePrice || 0),
+          categoryId: p.categoryId,
+          uomId: p.uomId,
+          hasVariants: false,
+          hasBatches: false,
+          status: "ACTIVE"
+        })),
+        skipDuplicates: true 
+      });
+      return created;
+    });
+
+    await logAudit("Products", "BULK_IMPORT", ActionType.CREATE, null, { count: result.count }, userId, req.ip);
+    res.status(201).json({ message: `Đã nhập thành công ${result.count} sản phẩm`, count: result.count });
+  } catch (error: any) {
+    res.status(400).json({ message: "Lỗi nhập dữ liệu hàng loạt", error: error.message });
+  }
+};
+
 export const updateProduct = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -153,9 +244,8 @@ export const deleteProduct = async (req: Request, res: Response): Promise<void> 
 };
 
 // ==========================================
-// 2. PRODUCT VARIANTS (BIẾN THỂ SẢN PHẨM - NEW ✨)
+// 2. PRODUCT VARIANTS (BIẾN THỂ SẢN PHẨM)
 // ==========================================
-
 export const getProductVariants = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params; // ID của sản phẩm cha
@@ -178,7 +268,6 @@ export const createProductVariant = async (req: Request, res: Response): Promise
       const product = await tx.products.findUnique({ where: { productId } });
       if (!product) throw new Error("Sản phẩm gốc không tồn tại!");
       
-      // Auto kích hoạt flag biến thể của sản phẩm cha nếu nó đang tắt
       if (!product.hasVariants) {
         await tx.products.update({ where: { productId }, data: { hasVariants: true } });
       }
@@ -242,7 +331,6 @@ export const deleteProductVariant = async (req: Request, res: Response): Promise
       const existing = await tx.productVariant.findUnique({ where: { variantId } });
       if (!existing || existing.isDeleted) throw new Error("Biến thể không tồn tại!");
 
-      // Chuẩn Kế toán: Nếu đã nhập/xuất kho thì chỉ được Xóa Mềm (Soft delete)
       const hasTx = await tx.inventoryTransaction.findFirst({ where: { variantId } });
       if (hasTx) {
         await tx.productVariant.update({
@@ -266,7 +354,7 @@ export const deleteProductVariant = async (req: Request, res: Response): Promise
 // ==========================================
 export const getProductBatches = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { id } = req.params; // productId
+    const { id } = req.params; 
     const batches = await prisma.productBatch.findMany({
       where: { productId: id },
       include: { variant: { select: { sku: true, attributes: true } } },

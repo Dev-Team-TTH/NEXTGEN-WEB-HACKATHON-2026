@@ -82,7 +82,8 @@ export default function RootLayout({
 }>) {
   return (
     // suppressHydrationWarning BẮT BUỘC phải có ở <html> khi dùng next-themes
-    <html lang="vi" suppressHydrationWarning className={`${inter.variable}`}>
+    // Đã thêm data-scroll-behavior="smooth" để triệt tiêu cảnh báo Next.js
+    <html lang="vi" suppressHydrationWarning data-scroll-behavior="smooth" className={`${inter.variable}`}>
       <body 
         // antialiased: Làm mịn font chữ trên macOS/iOS
         // selection: Tùy chỉnh màu khi người dùng bôi đen đoạn text
