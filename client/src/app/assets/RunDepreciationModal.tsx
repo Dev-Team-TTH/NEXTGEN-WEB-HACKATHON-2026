@@ -14,8 +14,9 @@ import {
   useGetFiscalPeriodsQuery 
 } from "@/state/api";
 
-// --- IMPORT CORE MODAL ---
+// --- IMPORT CORE MODAL & UTILS ---
 import Modal from "@/app/(components)/Modal";
+import { cn } from "@/utils/helpers";
 
 // ==========================================
 // COMPONENT: MODAL CHẠY KHẤU HAO TỰ ĐỘNG
@@ -26,7 +27,7 @@ interface RunDepreciationModalProps {
 }
 
 export default function RunDepreciationModal({ isOpen, onClose }: RunDepreciationModalProps) {
-  // --- BỐI CẢNH (CONTEXT) TỪ REDUX ---
+  // --- BỐI CẢNH (CONTEXT) ---
   const { activeBranchId } = useAppSelector(state => state.global);
 
   // --- API HOOKS ---
@@ -36,10 +37,8 @@ export default function RunDepreciationModal({ isOpen, onClose }: RunDepreciatio
   // --- LOCAL STATE ---
   const [fiscalPeriodId, setFiscalPeriodId] = useState("");
 
-  // Khởi tạo: Tự động chọn kỳ đầu tiên đang mở khi bật Modal
   useEffect(() => {
     if (isOpen && fiscalPeriods.length > 0) {
-      // FIX LỖI TS: Chỉ sử dụng trường status (bỏ isClosed vì API không trả về)
       const openPeriods = fiscalPeriods.filter(p => p.status === "OPEN");
       if (openPeriods.length > 0 && !fiscalPeriodId) {
         setFiscalPeriodId(openPeriods[0].periodId);
@@ -48,11 +47,8 @@ export default function RunDepreciationModal({ isOpen, onClose }: RunDepreciatio
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, fiscalPeriods]);
 
-  // Reset form khi đóng/mở
   useEffect(() => {
-    if (!isOpen) {
-      setFiscalPeriodId("");
-    }
+    if (!isOpen) setFiscalPeriodId("");
   }, [isOpen]);
 
   // --- HANDLERS ---
@@ -89,14 +85,13 @@ export default function RunDepreciationModal({ isOpen, onClose }: RunDepreciatio
     }
   };
 
-  // Trực quan hóa quy trình xử lý
   const processSteps = [
     { icon: Database, title: "Quét Dữ liệu", desc: "Tìm các tài sản đang sử dụng" },
     { icon: Cog, title: "Xử lý Thuật toán", desc: "Trích lập theo tỷ lệ (Đường thẳng/Giảm dần)" },
     { icon: Send, title: "Đồng bộ Sổ cái", desc: "Sinh tự động Bút toán Khấu hao" }
   ];
 
-  // --- FOOTER CHO CORE MODAL ---
+  // --- FOOTER RENDER ---
   const modalFooter = (
     <>
       <button 
@@ -132,7 +127,7 @@ export default function RunDepreciationModal({ isOpen, onClose }: RunDepreciatio
     >
       <div className="p-6 sm:p-8 flex flex-col gap-6">
         
-        {/* Cảnh báo nghiêm trọng */}
+        {/* Cảnh báo */}
         <div className="flex items-start gap-3 p-4 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 shadow-inner">
           <AlertOctagon className="w-5 h-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
           <div className="text-sm text-amber-800 dark:text-amber-200">
@@ -147,8 +142,11 @@ export default function RunDepreciationModal({ isOpen, onClose }: RunDepreciatio
             const Icon = step.icon;
             return (
               <div key={idx} className="flex flex-col items-center text-center gap-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-white/5 relative">
-                <div className={`p-2 rounded-full ${isRunning ? 'bg-purple-100 dark:bg-purple-500/20 animate-pulse text-purple-600 dark:text-purple-400' : 'bg-slate-200 dark:bg-slate-700 text-slate-500'}`}>
-                  <Icon className={`w-4 h-4 ${isRunning && idx === 1 ? 'animate-spin' : ''}`} />
+                <div className={cn(
+                  "p-2 rounded-full",
+                  isRunning ? "bg-purple-100 dark:bg-purple-500/20 animate-pulse text-purple-600 dark:text-purple-400" : "bg-slate-200 dark:bg-slate-700 text-slate-500"
+                )}>
+                  <Icon className={cn("w-4 h-4", isRunning && idx === 1 ? "animate-spin" : "")} />
                 </div>
                 <p className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">{step.title}</p>
                 <p className="text-[9px] text-slate-500 hidden sm:block">{step.desc}</p>
@@ -184,7 +182,6 @@ export default function RunDepreciationModal({ isOpen, onClose }: RunDepreciatio
             >
               <option value="">-- Click để chọn Kỳ --</option>
               {fiscalPeriods.map(p => (
-                // FIX LỖI TS: Chỉ dựa vào status
                 <option key={p.periodId} value={p.periodId} disabled={p.status === "CLOSED"}>
                   {p.periodName} {p.status === "CLOSED" ? "(Đã khóa)" : "(Đang mở)"}
                 </option>

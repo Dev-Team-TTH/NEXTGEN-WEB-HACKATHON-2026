@@ -26,14 +26,14 @@ import {
   useGetPriceListsQuery
 } from "@/state/api";
 
-// --- COMPONENTS GIAO DIỆN LÕI ---
+// --- COMPONENTS & UTILS (SIÊU VŨ KHÍ) ---
 import Header from "@/app/(components)/Header";
 import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
 import PriceListModal from "./PriceListModal";
 import UniversalMasterDataModal, { MasterDataField } from "./UniversalMasterDataModal";
-
-// --- UTILS ---
+import { formatVND } from "@/utils/formatters";
 import { exportToCSV } from "@/utils/exportUtils";
+import { cn } from "@/utils/helpers";
 
 // ==========================================
 // 1. CẤU HÌNH MENU & MODULES
@@ -54,8 +54,8 @@ const getFormConfig = (subTab: string): { title: string, subtitle: string, field
   switch (subTab) {
     case "branches": return { title: "Cấu hình Chi nhánh", subtitle: "Khai báo thực thể Pháp nhân / Cơ sở", fields: [{ name: "code", label: "Mã Chi nhánh", type: "text", required: true }, { name: "name", label: "Tên Chi nhánh", type: "text", required: true }, { name: "address", label: "Địa chỉ", type: "textarea" }] };
     case "departments": return { title: "Phòng ban", subtitle: "Cấu trúc tổ chức nhân sự", fields: [{ name: "code", label: "Mã Phòng", type: "text", required: true }, { name: "name", label: "Tên Phòng", type: "text", required: true }] };
-    case "warehouses": return { title: "Kho lưu trữ", subtitle: "Không gian vật lý chứa hàng", fields: [{ name: "code", label: "Mã Kho", type: "text", required: true }, { name: "name", label: "Tên Kho", type: "text", required: true }, { name: "address", label: "Địa chỉ Kho", type: "textarea" }] }; // Sửa location -> address cho khớp Prisma Schema chuẩn
-    case "bins": return { title: "Vị trí Kệ (Bin)", subtitle: "Tọa độ chi tiết trong kho", fields: [{ name: "code", label: "Mã Kệ", type: "text", required: true }, { name: "description", label: "Mô tả Kệ", type: "text" }] }; // Sửa name -> description cho khớp schema
+    case "warehouses": return { title: "Kho lưu trữ", subtitle: "Không gian vật lý chứa hàng", fields: [{ name: "code", label: "Mã Kho", type: "text", required: true }, { name: "name", label: "Tên Kho", type: "text", required: true }, { name: "address", label: "Địa chỉ Kho", type: "textarea" }] }; 
+    case "bins": return { title: "Vị trí Kệ (Bin)", subtitle: "Tọa độ chi tiết trong kho", fields: [{ name: "code", label: "Mã Kệ", type: "text", required: true }, { name: "description", label: "Mô tả Kệ", type: "text" }] }; 
     case "suppliers": return { title: "Nhà Cung Cấp", subtitle: "Đối tác bán hàng cho công ty", fields: [{ name: "code", label: "Mã NCC", type: "text", required: true }, { name: "name", label: "Tên Pháp nhân", type: "text", required: true }, { name: "taxCode", label: "Mã số Thuế", type: "text" }, { name: "phone", label: "SĐT", type: "tel" }, { name: "address", label: "Địa chỉ", type: "textarea" }] };
     case "customers": return { title: "Khách hàng", subtitle: "Đối tác mua hàng", fields: [{ name: "code", label: "Mã KH", type: "text", required: true }, { name: "name", label: "Tên Khách hàng", type: "text", required: true }, { name: "taxCode", label: "Mã số Thuế", type: "text" }, { name: "phone", label: "SĐT", type: "tel" }, { name: "address", label: "Địa chỉ", type: "textarea" }] };
     case "categories": return { title: "Nhóm Hàng", subtitle: "Phân loại theo ngành hàng", fields: [{ name: "code", label: "Mã Nhóm", type: "text", required: true }, { name: "name", label: "Tên Nhóm", type: "text", required: true }, { name: "description", label: "Mô tả", type: "textarea" }] };
@@ -109,7 +109,7 @@ export default function MasterDataPage() {
 
   const isLoading = l1 || l2 || l3 || l4 || l5 || l6 || l7 || l8 || l9 || l10 || l11 || l12;
 
-  // --- MUTATIONS: GOM VÀO MỘT MAP OBJECT ---
+  // --- MUTATIONS ---
   const [createBranch] = useCreateBranchMutation(); const [updateBranch] = useUpdateBranchMutation();
   const [createWarehouse] = useCreateWarehouseMutation(); const [updateWarehouse] = useUpdateWarehouseMutation();
   const [createBin] = useCreateBinMutation(); const [updateBin] = useUpdateBinMutation();
@@ -191,28 +191,24 @@ export default function MasterDataPage() {
     }
   };
 
-  // --- ĐỘNG CƠ XỬ LÝ CRUD ĐA NĂNG (THE REAL DEAL) ---
+  // --- ĐỘNG CƠ XỬ LÝ CRUD ĐA NĂNG ---
   const handleUniversalSave = async (data: any) => {
     setIsSavingMasterData(true);
     try {
       const isUpdating = !!editingData;
-      // Hàm tìm ID Record dựa trên quy tắc đặt tên của Schema (branchId, departmentId, uomId...)
       const recordId = isUpdating 
         ? editingData.id || editingData[`${activeSubTab.slice(0, -1)}Id`] || editingData[`${activeSubTab === 'categories' ? 'category' : activeSubTab.replace('ies', 'y').replace('es', 'e')}Id`] 
         : null;
 
-      // Bộ điều phối Call API tùy theo tab hiện tại
       switch (activeSubTab) {
         case "branches": 
           if (isUpdating) await updateBranch({ id: recordId, data }).unwrap(); else await createBranch(data).unwrap(); break;
         case "warehouses": 
           if (isUpdating) await updateWarehouse({ id: recordId, data }).unwrap(); else await createWarehouse(data).unwrap(); break;
         case "bins": 
-          // Bins cần có warehouseId. Do form động cơ bản chưa support Lookup FK, nếu tạo mới ta mặc định gán kho đầu tiên hoặc yêu cầu chọn. Tạm để Backend xử lý hoặc fix cứng cho bản Demo.
           const binData = { ...data, warehouseId: data.warehouseId || (warehouses[0] as any)?.warehouseId };
           if (isUpdating) await updateBin({ id: recordId, data: binData }).unwrap(); else await createBin(binData).unwrap(); break;
         case "departments": 
-          // Cần branchId
           const deptData = { ...data, branchId: data.branchId || (branches[0] as any)?.branchId };
           if (isUpdating) await updateDepartment({ id: recordId, data: deptData }).unwrap(); else await createDepartment(deptData).unwrap(); break;
         case "suppliers": 
@@ -226,7 +222,6 @@ export default function MasterDataPage() {
         case "taxes": 
           if (isUpdating) await updateTax({ id: recordId, data: { ...data, rate: Number(data.rate) } }).unwrap(); else await createTax({ ...data, rate: Number(data.rate) }).unwrap(); break;
         case "currencies": 
-          // Currencies dùng PK là currencyCode
           if (isUpdating) await updateCurrency({ currencyCode: editingData.currencyCode, data: { ...data, exchangeRate: Number(data.exchangeRate) } }).unwrap(); else await createCurrency({ ...data, exchangeRate: Number(data.exchangeRate) }).unwrap(); break;
         case "accounts": 
           if (isUpdating) await updateAccount({ id: recordId, data }).unwrap(); else await createAccount(data).unwrap(); break;
@@ -271,7 +266,8 @@ export default function MasterDataPage() {
     if (activeSubTab === "taxes") {
       baseCols.push({ header: "Thuế suất (%)", accessorKey: "rate", cell: (row) => <span className="font-bold text-rose-500">{row.rate}%</span> });
     } else if (activeSubTab === "currencies") {
-      baseCols.push({ header: "Tỷ giá", accessorKey: "exchangeRate", cell: (row) => <span className="font-bold text-emerald-500">{new Intl.NumberFormat('vi-VN').format(row.exchangeRate)} VND</span> });
+      // Dùng formatVND cho phần Tỷ giá
+      baseCols.push({ header: "Tỷ giá", accessorKey: "exchangeRate", cell: (row) => <span className="font-bold text-emerald-500">{formatVND(row.exchangeRate)}</span> });
     } else if (activeSubTab === "accounts") {
       baseCols.push({ header: "Loại Tài khoản", accessorKey: "accountType", cell: (row) => <span className="text-xs uppercase font-semibold text-indigo-500">{row.accountType}</span> });
     } else if (activeSubTab === "price_lists") {
@@ -287,7 +283,10 @@ export default function MasterDataPage() {
       cell: (row) => {
         const isActive = row.isActive !== false; 
         return (
-          <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${isActive ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'}`}>
+          <span className={cn(
+            "px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider", 
+            isActive ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10" : "bg-slate-100 text-slate-500 dark:bg-slate-800"
+          )}>
             {isActive ? 'Hoạt động' : 'Tạm khóa'}
           </span>
         );
@@ -330,7 +329,10 @@ export default function MasterDataPage() {
             <button 
               key={tab.id}
               onClick={() => handleMainTabChange(tab.id as MainTab)} 
-              className={`relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap ${activeMainTab === tab.id ? tab.color : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}
+              className={cn(
+                "relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap",
+                activeMainTab === tab.id ? tab.color : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+              )}
             >
               {activeMainTab === tab.id && <motion.div layoutId="masterTab" className="absolute inset-0 bg-white dark:bg-slate-700 rounded-xl shadow-sm -z-10" />}
               <tab.icon className="w-4 h-4" /> {tab.label}
@@ -354,13 +356,16 @@ export default function MasterDataPage() {
                 <motion.div 
                   key={mod.id} variants={itemVariants}
                   onClick={() => setActiveSubTab(mod.id)}
-                  className={`cursor-pointer relative overflow-hidden rounded-2xl p-4 transition-all duration-200 border ${isActive ? 'bg-white dark:bg-slate-800 border-blue-500 shadow-md transform scale-[1.02]' : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10'}`}
+                  className={cn(
+                    "cursor-pointer relative overflow-hidden rounded-2xl p-4 transition-all duration-200 border",
+                    isActive ? "bg-white dark:bg-slate-800 border-blue-500 shadow-md transform scale-[1.02]" : "bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10"
+                  )}
                 >
-                  <div className={`absolute -right-4 -bottom-4 p-4 opacity-[0.03] dark:opacity-5 ${isActive ? 'text-blue-500' : 'text-slate-500'}`}>
+                  <div className={cn("absolute -right-4 -bottom-4 p-4 opacity-[0.03] dark:opacity-5", isActive ? "text-blue-500" : "text-slate-500")}>
                     <Icon className="w-24 h-24" />
                   </div>
                   <div className="flex justify-between items-start mb-3 relative z-10">
-                    <div className={`p-2 rounded-xl ${isActive ? 'bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400' : 'bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
+                    <div className={cn("p-2 rounded-xl", isActive ? "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400" : "bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400")}>
                       <Icon className="w-5 h-5" />
                     </div>
                     <span className="text-xl font-black text-slate-800 dark:text-slate-200">
@@ -368,7 +373,7 @@ export default function MasterDataPage() {
                     </span>
                   </div>
                   <div className="relative z-10">
-                    <h4 className={`font-bold text-sm ${isActive ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'}`}>{mod.title}</h4>
+                    <h4 className={cn("font-bold text-sm", isActive ? "text-slate-900 dark:text-white" : "text-slate-600 dark:text-slate-400")}>{mod.title}</h4>
                     <p className="text-[10px] text-slate-500 mt-0.5 truncate">{mod.desc}</p>
                   </div>
                 </motion.div>

@@ -2,15 +2,13 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { 
   UserCircle, Shield, Key, Smartphone, 
   Monitor, Lock, CheckCircle2, AlertTriangle, 
-  Fingerprint, LogOut, QrCode, Loader2, Save
+  Fingerprint, QrCode, Loader2, Save, EyeOff
 } from "lucide-react";
 import { toast } from "react-hot-toast";
-import dayjs from "dayjs";
-import 'dayjs/locale/vi';
 
 // --- REDUX & API ---
 import { useAppSelector, useAppDispatch } from "@/app/redux";
@@ -24,7 +22,9 @@ import {
   useLogoutAllDevicesMutation
 } from "@/state/api";
 
-dayjs.locale('vi');
+// --- UTILS ---
+import { formatDateTime } from "@/utils/formatters";
+import { cn } from "@/utils/helpers";
 
 export default function SecurityPage() {
   const dispatch = useAppDispatch();
@@ -46,10 +46,9 @@ export default function SecurityPage() {
   
   // --- STATE 2FA ---
   const [is2FAEnabled, setIs2FAEnabled] = useState(false);
-  const [setup2FAMode, setSetup2FAMode] = useState(false); // Khi đang quét QR
+  const [setup2FAMode, setSetup2FAMode] = useState(false); 
   const [qrCodeUrl, setQrCodeUrl] = useState("");
   const [otpCode, setOtpCode] = useState("");
-  const [disableOtpCode, setDisableOtpCode] = useState(""); // OTP để tắt 2FA
 
   useEffect(() => {
     setIsMounted(true);
@@ -87,9 +86,7 @@ export default function SecurityPage() {
 
   const handleToggle2FA = async () => {
     if (is2FAEnabled) {
-      // Đang bật -> Muốn tắt (Cần mở form nhập OTP để xác nhận tắt)
       setSetup2FAMode(false);
-      // Hiển thị modal/form nhập OTP để tắt (ở đây làm inline cho mượt)
       const promptOTP = window.prompt("Để TẮT bảo mật 2 lớp, vui lòng nhập mã OTP hiện tại từ ứng dụng:");
       if (promptOTP && promptOTP.length === 6) {
         try {
@@ -102,10 +99,9 @@ export default function SecurityPage() {
         }
       }
     } else {
-      // Đang tắt -> Muốn bật (Gọi API lấy QR)
       try {
         const res = await generate2FA().unwrap();
-        setQrCodeUrl(res.qrCodeUrl || res.data?.qrCodeUrl); // Tùy cấu trúc backend
+        setQrCodeUrl(res.qrCodeUrl || res.data?.qrCodeUrl); 
         setSetup2FAMode(true);
         toast.success("Vui lòng quét mã QR và nhập OTP để hoàn tất.");
       } catch (err: any) {
@@ -232,11 +228,11 @@ export default function SecurityPage() {
           <div className="relative bg-white/70 dark:bg-[#0B0F19]/70 backdrop-blur-2xl border border-slate-200/50 dark:border-white/10 rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.04)] p-6 sm:p-8 transform-gpu overflow-hidden">
             
             {/* Overlay Gradient Xanh Lá Khi Bật 2FA */}
-            <div className={`absolute inset-0 bg-gradient-to-br transition-opacity duration-700 pointer-events-none z-0 ${is2FAEnabled ? "from-emerald-500/10 via-transparent to-transparent opacity-100" : "opacity-0"}`} />
+            <div className={cn("absolute inset-0 bg-gradient-to-br transition-opacity duration-700 pointer-events-none z-0", is2FAEnabled ? "from-emerald-500/10 via-transparent to-transparent opacity-100" : "opacity-0")} />
 
             <div className="flex justify-between items-start relative z-10 mb-2">
               <div className="flex items-start gap-4">
-                <div className={`p-3 rounded-2xl shrink-0 transition-colors duration-500 ${is2FAEnabled ? "bg-emerald-500 text-white shadow-[0_8px_24px_rgba(16,185,129,0.4)]" : "bg-slate-100 dark:bg-white/5 text-slate-400"}`}>
+                <div className={cn("p-3 rounded-2xl shrink-0 transition-colors duration-500", is2FAEnabled ? "bg-emerald-500 text-white shadow-[0_8px_24px_rgba(16,185,129,0.4)]" : "bg-slate-100 dark:bg-white/5 text-slate-400")}>
                   <Fingerprint className="w-6 h-6" />
                 </div>
                 <div>
@@ -249,14 +245,14 @@ export default function SecurityPage() {
               <button 
                 onClick={handleToggle2FA}
                 disabled={isGenerating2FA || isDisabling2FA}
-                className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none shadow-inner disabled:opacity-50 ${is2FAEnabled || setup2FAMode ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'}`}
+                className={cn("relative inline-flex h-8 w-14 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none shadow-inner disabled:opacity-50", is2FAEnabled || setup2FAMode ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700')}
               >
-                <span className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-300 ease-in-out ${is2FAEnabled || setup2FAMode ? 'translate-x-7' : 'translate-x-0.5'}`} />
+                <span className={cn("pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-300 ease-in-out", is2FAEnabled || setup2FAMode ? 'translate-x-7' : 'translate-x-0.5')} />
               </button>
             </div>
 
             {/* Khung Hướng dẫn SETUP 2FA (Khi nhấn Bật) */}
-            <div className={`transition-all duration-500 overflow-hidden relative z-10 ${setup2FAMode && !is2FAEnabled ? "max-h-[500px] opacity-100 mt-8" : "max-h-0 opacity-0 mt-0"}`}>
+            <div className={cn("transition-all duration-500 overflow-hidden relative z-10", setup2FAMode && !is2FAEnabled ? "max-h-[500px] opacity-100 mt-8" : "max-h-0 opacity-0 mt-0")}>
               <div className="p-6 bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-200/60 dark:border-emerald-500/20 rounded-3xl flex flex-col sm:flex-row gap-8 items-center relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-[url('/noise.png')] opacity-20 mix-blend-overlay pointer-events-none" />
 
@@ -310,15 +306,15 @@ export default function SecurityPage() {
                 <p className="text-sm text-slate-500 text-center py-10">Chưa ghi nhận lịch sử nào.</p>
               ) : (
                 loginHistory.map((history: any, index: number) => {
-                  const isCurrent = index === 0; // Giả định record đầu tiên là hiện tại
+                  const isCurrent = index === 0; 
                   const isMobile = history.userAgent?.toLowerCase().includes("mobile");
                   const Icon = isMobile ? Smartphone : Monitor;
 
                   return (
-                    <div key={history.id} className={`flex items-center gap-5 p-4 sm:p-5 rounded-3xl relative overflow-hidden transition-colors ${isCurrent ? 'bg-blue-50/50 dark:bg-blue-500/5 border border-blue-100 dark:border-blue-500/20' : 'border border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/[0.02]'}`}>
+                    <div key={history.id} className={cn("flex items-center gap-5 p-4 sm:p-5 rounded-3xl relative overflow-hidden transition-colors", isCurrent ? 'bg-blue-50/50 dark:bg-blue-500/5 border border-blue-100 dark:border-blue-500/20' : 'border border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/[0.02]')}>
                       {isCurrent && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-500 rounded-l-3xl" />}
                       
-                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${isCurrent ? 'bg-white dark:bg-black/20 shadow-sm border border-slate-100 dark:border-white/5 text-blue-600 dark:text-blue-400' : 'bg-slate-100 dark:bg-white/5 text-slate-500'}`}>
+                      <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center shrink-0", isCurrent ? 'bg-white dark:bg-black/20 shadow-sm border border-slate-100 dark:border-white/5 text-blue-600 dark:text-blue-400' : 'bg-slate-100 dark:bg-white/5 text-slate-500')}>
                         <Icon className="w-6 h-6" />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -327,7 +323,7 @@ export default function SecurityPage() {
                           {isCurrent && <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400 uppercase tracking-widest shrink-0">Hiện tại</span>}
                         </p>
                         <p className="text-xs font-semibold text-slate-500 mt-1 truncate">
-                          IP: {history.ipAddress || "N/A"} • {dayjs(history.timestamp).format("HH:mm - DD/MM/YYYY")}
+                          IP: {history.ipAddress || "N/A"} • {formatDateTime(history.timestamp)}
                         </p>
                       </div>
                     </div>

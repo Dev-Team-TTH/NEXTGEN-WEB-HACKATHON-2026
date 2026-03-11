@@ -1,394 +1,204 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useState } from "react";
 import { 
-  Calculator, Anchor, DollarSign, 
-  Plus, Trash2, Loader2, CheckCircle2,
-  TrendingUp, BarChart3, Package, Hash, AlertOctagon, Ship
+  Anchor, DollarSign, Tag, CheckCircle2, 
+  Trash2, Loader2, ArrowDownUp 
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
 import { 
-  useGetDocumentByIdQuery, 
-  useUpdateDocumentMutation 
+  useGetLandedCostsQuery,
+  useCreateLandedCostMutation,
+  useDeleteLandedCostMutation,
+  useAllocateLandedCostMutation
 } from "@/state/api";
 
-// --- IMPORT CORE MODAL & UTILS ---
+// --- COMPONENTS & UTILS ---
 import Modal from "@/app/(components)/Modal";
 import { formatVND } from "@/utils/formatters";
-
-// ==========================================
-// 1. INTERFACES & HELPERS
-// ==========================================
-interface AdditionalCost {
-  id: number;
-  costType: "FREIGHT" | "CUSTOMS" | "INSURANCE" | "OTHER";
-  amount: number | string;
-  reference: string;
-}
+import { cn } from "@/utils/helpers";
 
 interface LandedCostModalProps {
   isOpen: boolean;
   onClose: () => void;
-  documentId: string | null; 
+  documentId: string | null;
 }
 
-// ==========================================
-// COMPONENT CHÍNH: WIZARD PHÂN BỔ CHI PHÍ
-// ==========================================
 export default function LandedCostModal({ isOpen, onClose, documentId }: LandedCostModalProps) {
+  const { data: landedCosts = [], isLoading: loadingLCs } = useGetLandedCostsQuery({ documentId }, { skip: !isOpen || !documentId });
   
-  // --- API HOOKS ---
-  const { data: document, isLoading: loadingDoc } = useGetDocumentByIdQuery(documentId || "", { skip: !isOpen || !documentId });
-  const [updateDocument, { isLoading: isSubmitting }] = useUpdateDocumentMutation();
+  const [createLandedCost, { isLoading: isCreating }] = useCreateLandedCostMutation();
+  const [deleteLandedCost, { isLoading: isDeleting }] = useDeleteLandedCostMutation();
+  const [allocateCost, { isLoading: isAllocating }] = useAllocateLandedCostMutation();
 
-  // --- LOCAL STATE ---
-  const [allocationMethod, setAllocationMethod] = useState<"VALUE" | "QUANTITY">("VALUE");
-  const [costs, setCosts] = useState<AdditionalCost[]>([
-    { id: Date.now(), costType: "FREIGHT", amount: "", reference: "" }
-  ]);
+  const [formData, setFormData] = useState({
+    expenseName: "",
+    amount: "",
+    allocationMethod: "BY_VALUE"
+  });
 
-  // Khởi tạo form thông minh: Nếu phiếu DRAFT đã có Landed Cost từ trước, load lại luôn!
-  useEffect(() => {
-    if (isOpen && document) {
-      setAllocationMethod("VALUE");
-      
-      const existingCosts = (document as any).landedCosts || [];
-      if (existingCosts.length > 0) {
-        setCosts(existingCosts.map((lc: any, idx: number) => {
-          const parts = (lc.description || "").split(" - ");
-          const type = parts[0] as any;
-          const ref = parts.slice(1).join(" - ") || "";
-          
-          return {
-            id: Date.now() + idx,
-            costType: ["FREIGHT", "CUSTOMS", "INSURANCE", "OTHER"].includes(type) ? type : "OTHER",
-            amount: lc.amount,
-            reference: ref
-          };
-        }));
-      } else {
-        setCosts([{ id: Date.now(), costType: "FREIGHT", amount: "", reference: "" }]);
-      }
-    }
-  }, [isOpen, document]);
-
-  // --- THUẬT TOÁN TÍNH TOÁN & DATA VIZ ---
-  const items = useMemo(() => {
-    return (document as any)?.transactions || [];
-  }, [document]);
-  
-  // 1. Tổng giá trị gốc
-  const totalBaseValue = useMemo(() => {
-    return items.reduce((sum: number, item: any) => sum + (Number(item.totalCost) || (Number(item.quantity) * Number(item.unitCost)) || 0), 0);
-  }, [items]);
-
-  // 2. Tổng số lượng
-  const totalBaseQty = useMemo(() => {
-    return items.reduce((sum: number, item: any) => sum + (Number(item.quantity) || 0), 0);
-  }, [items]);
-
-  // 3. Tổng chi phí phát sinh thêm (Landed Costs)
-  const totalAdditionalCost = useMemo(() => {
-    return costs.reduce((sum, cost) => sum + (Number(cost.amount) || 0), 0);
-  }, [costs]);
-
-  // 4. Bảng Simulation: Tính giá vốn mới (MAC)
-  const previewItems = useMemo(() => {
-    if (totalBaseValue === 0 || items.length === 0) return [];
-
-    return items.map((item: any, idx: number) => {
-      const itemBaseValue = Number(item.totalCost) || (Number(item.quantity) * Number(item.unitCost)) || 0;
-      const itemQty = Number(item.quantity) || 1;
-      
-      let allocatedAmount = 0;
-      if (allocationMethod === "VALUE") {
-        allocatedAmount = (itemBaseValue / totalBaseValue) * totalAdditionalCost;
-      } else if (allocationMethod === "QUANTITY") {
-        allocatedAmount = (itemQty / totalBaseQty) * totalAdditionalCost;
-      }
-
-      const newTotalValue = itemBaseValue + allocatedAmount;
-      const newUnitPrice = itemQty > 0 ? newTotalValue / itemQty : 0;
-      const increasePercent = itemBaseValue > 0 ? (allocatedAmount / itemBaseValue) * 100 : 0;
-
-      return {
-        ...item,
-        id: item.transactionId || idx,
-        oldUnitPrice: Number(item.unitCost) || 0,
-        allocatedAmount,
-        newUnitPrice,
-        newTotalValue,
-        increasePercent
-      };
-    });
-  }, [items, totalBaseValue, totalBaseQty, totalAdditionalCost, allocationMethod]);
-
-  // --- HANDLERS ---
-  const addCostLine = () => setCosts([...costs, { id: Date.now(), costType: "OTHER", amount: "", reference: "" }]);
-  const removeCostLine = (id: number) => setCosts(costs.filter(c => c.id !== id));
-  const updateCost = (id: number, field: keyof AdditionalCost, value: string) => {
-    setCosts(costs.map(c => c.id === id ? { ...c, [field]: value } : c));
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!documentId || !document) return;
+    if (!documentId) return;
 
-    const validCosts = costs.filter(c => Number(c.amount) > 0);
-    if (validCosts.length === 0) {
-      toast.error("Cần ít nhất 1 khoản phí lớn hơn 0 VND!"); return;
+    if (!formData.expenseName || !formData.amount) {
+      return toast.error("Vui lòng nhập tên chi phí và số tiền!");
     }
 
     try {
-      const payload: any = {
-        ...document,
-        landedCosts: validCosts.map(c => ({
-          description: `${c.costType} - ${c.reference || "Không có Ref"}`,
-          amount: Number(c.amount)
-        }))
-      };
-
-      await updateDocument({ id: documentId, data: payload }).unwrap();
+      await createLandedCost({
+        documentId,
+        expenseName: formData.expenseName,
+        amount: Number(formData.amount),
+        allocationMethod: formData.allocationMethod,
+        status: "PENDING"
+      }).unwrap();
       
-      toast.success("Lưu Chi phí thành công! Bấm DUYỆT PHIẾU để hệ thống cấu thành Giá vốn.");
-      onClose();
+      toast.success("Đã thêm chi phí vận chuyển!");
+      setFormData({ ...formData, expenseName: "", amount: "" });
     } catch (err: any) {
-      toast.error(err?.data?.message || "Lỗi hệ thống! Không thể ghi nhận bút toán.");
+      toast.error(err?.data?.message || "Lỗi thêm chi phí");
     }
   };
 
-  // --- FOOTER RENDER CHO CORE MODAL ---
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteLandedCost(id).unwrap();
+      toast.success("Đã xóa chi phí!");
+    } catch (err: any) {
+      toast.error("Lỗi khi xóa chi phí");
+    }
+  };
+
+  const handleAllocate = async (id: string) => {
+    try {
+      await allocateCost(id).unwrap();
+      toast.success("Đã phân bổ chi phí thành công vào giá vốn hàng tồn kho!");
+    } catch (err: any) {
+      toast.error(err?.data?.message || "Lỗi phân bổ");
+    }
+  };
+
   const modalFooter = (
-    <div className="flex w-full items-center justify-between">
-      <div className="hidden sm:block text-[11px] font-bold text-slate-400">
-        * Tổng phụ phí: <span className="text-orange-500">{formatVND(totalAdditionalCost)}</span>
-      </div>
-      <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-        <button 
-          type="button" onClick={onClose} disabled={isSubmitting} 
-          className="px-6 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors disabled:opacity-50"
-        >
-          Hủy & Đóng
-        </button>
-        <button 
-          onClick={handleSubmit} 
-          disabled={isSubmitting || !document || totalAdditionalCost === 0} 
-          className="flex items-center gap-2 px-8 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-bold rounded-xl shadow-xl shadow-blue-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
-          Lưu Phân Bổ
-        </button>
-      </div>
+    <div className="flex w-full justify-end">
+      <button onClick={onClose} className="px-5 py-2.5 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-xl transition-colors">
+        Đóng
+      </button>
     </div>
   );
 
   return (
     <Modal
-      isOpen={isOpen && !!documentId}
+      isOpen={isOpen}
       onClose={onClose}
-      title="Phân bổ Chi phí Nhập khẩu (Landed Cost)"
-      subtitle={`Tham chiếu: ${(document as any)?.documentNumber || documentId}`}
-      icon={<Ship className="w-6 h-6 text-blue-500" />}
-      maxWidth="max-w-6xl"
-      disableOutsideClick={isSubmitting}
+      title="Cấu hình Landed Cost"
+      subtitle="Phân bổ chi phí phụ tùng trực tiếp vào giá vốn (COGS) của phiếu nhập."
+      icon={<Anchor className="w-6 h-6 text-orange-500" />}
+      maxWidth="max-w-4xl"
       footer={modalFooter}
     >
-      <div className="flex flex-col lg:flex-row h-full overflow-hidden bg-slate-50/50 dark:bg-transparent p-6 gap-6">
+      <div className="p-6 flex flex-col gap-6">
         
-        {loadingDoc ? (
-          <div className="w-full flex flex-col items-center justify-center py-32 text-blue-500">
-            <Loader2 className="w-12 h-12 animate-spin mb-4" />
-            <p className="font-bold text-slate-600 dark:text-slate-300">Đang quét dữ liệu Lô hàng...</p>
-          </div>
-        ) : items.length === 0 ? (
-          <div className="w-full flex flex-col items-center justify-center py-32 text-slate-400">
-            <AlertOctagon className="w-16 h-16 text-rose-500 mb-4 opacity-50" />
-            <p className="font-bold text-slate-700 dark:text-slate-300">Lô hàng trống hoặc cấu trúc dữ liệu không khớp.</p>
-          </div>
-        ) : (
-          <>
-            {/* === CỘT TRÁI: CONFIG & INPUTS === */}
-            <div className="w-full lg:w-[380px] flex flex-col gap-6 shrink-0">
-              
-              {/* Panel 1: Thuật toán */}
-              <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm relative overflow-hidden group transition-all hover:shadow-md">
-                <div className="absolute -right-4 -top-4 opacity-[0.03] group-hover:scale-110 transition-transform duration-500"><Calculator className="w-24 h-24 text-blue-500"/></div>
-                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 relative z-10 flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-blue-500" /> Tiêu chí Tính toán
-                </h4>
-                <div className="grid grid-cols-2 gap-3 relative z-10">
-                  <button 
-                    type="button" onClick={() => setAllocationMethod("VALUE")}
-                    className={`flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all duration-300 ${allocationMethod === "VALUE" ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 shadow-[0_4px_15px_rgba(59,130,246,0.15)]' : 'border-slate-100 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
-                  >
-                    <DollarSign className="w-6 h-6 mb-2" />
-                    <span className="text-xs font-bold">Theo Giá Trị</span>
-                  </button>
-                  <button 
-                    type="button" onClick={() => setAllocationMethod("QUANTITY")}
-                    className={`flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all duration-300 ${allocationMethod === "QUANTITY" ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 shadow-[0_4px_15px_rgba(59,130,246,0.15)]' : 'border-slate-100 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
-                  >
-                    <Hash className="w-6 h-6 mb-2" />
-                    <span className="text-xs font-bold">Theo Số Lượng</span>
-                  </button>
-                </div>
-                <p className="text-[10px] text-slate-500 mt-4 text-center px-2">
-                  {allocationMethod === "VALUE" ? "Sản phẩm giá trị cao sẽ gánh nhiều tỷ trọng chi phí hơn." : "Mỗi đơn vị sản phẩm gánh chi phí bằng nhau bất kể giá trị."}
-                </p>
-              </div>
-
-              {/* Panel 2: Chi phí đầu vào */}
-              <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm flex flex-col flex-1">
-                <div className="flex items-center justify-between mb-5">
-                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                    <Anchor className="w-4 h-4 text-orange-500" /> Các khoản phí hóa đơn
-                  </h4>
-                  <button onClick={addCostLine} className="p-2 bg-blue-50 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/30 rounded-xl transition-colors shadow-sm active:scale-95">
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="flex flex-col gap-3">
-                  <AnimatePresence initial={false}>
-                    {costs.map((cost) => (
-                      <motion.div 
-                        key={cost.id}
-                        initial={{ opacity: 0, scale: 0.9, height: 0 }} animate={{ opacity: 1, scale: 1, height: 'auto' }} exit={{ opacity: 0, scale: 0.9, height: 0 }}
-                        className="flex flex-col gap-2.5 p-3.5 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-white/5 group"
-                      >
-                        <div className="flex gap-2">
-                          <select 
-                            value={cost.costType} onChange={(e)=>updateCost(cost.id, "costType", e.target.value)}
-                            className="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold outline-none px-3 py-2.5 focus:ring-2 focus:ring-orange-500 transition-shadow"
-                          >
-                            <option value="FREIGHT">Cước Vận Chuyển</option>
-                            <option value="CUSTOMS">Thuế Hải Quan</option>
-                            <option value="INSURANCE">Phí Bảo hiểm</option>
-                            <option value="OTHER">Phí Khác</option>
-                          </select>
-                          <button onClick={()=>removeCostLine(cost.id)} className="p-2.5 text-rose-400 hover:text-white bg-white hover:bg-rose-500 dark:bg-slate-800 dark:hover:bg-rose-600 border border-slate-200 dark:border-white/10 rounded-xl transition-colors shadow-sm"><Trash2 className="w-4 h-4"/></button>
-                        </div>
-                        <div className="flex gap-2">
-                          <div className="relative flex-1">
-                            <DollarSign className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-orange-500" />
-                            <input 
-                              type="number" placeholder="Số tiền..." value={cost.amount} onChange={(e)=>updateCost(cost.id, "amount", e.target.value)}
-                              className="w-full pl-8 pr-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-orange-600 dark:text-orange-400 outline-none focus:ring-2 focus:ring-orange-500 transition-shadow shadow-inner"
-                            />
-                          </div>
-                          <input 
-                            type="text" placeholder="Số tham chiếu..." value={cost.reference} onChange={(e)=>updateCost(cost.id, "reference", e.target.value)}
-                            className="flex-[0.8] px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-slate-400 transition-shadow"
-                          />
-                        </div>
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-                </div>
-              </div>
+        {/* KHU VỰC 1: FORM THÊM MỚI */}
+        <form onSubmit={handleAdd} className="bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col md:flex-row gap-4 items-end shadow-sm">
+          <div className="flex-1 space-y-1.5 w-full">
+            <label className="text-xs font-bold text-slate-500 uppercase">Tên Chi phí</label>
+            <div className="relative">
+              <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input 
+                type="text" name="expenseName" value={formData.expenseName} onChange={handleChange} required placeholder="VD: Phí vận chuyển ViettelPost"
+                className="w-full pl-9 pr-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none shadow-sm"
+              />
             </div>
-
-            {/* === CỘT PHẢI: BẢNG PREVIEW KẾ TOÁN & DATA VIZ === */}
-            <div className="flex-1 flex flex-col gap-6 min-w-0">
-              
-              {/* Visual Breakdown Bar */}
-              <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm">
-                <div className="flex justify-between items-end mb-4">
-                  <div>
-                    <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-500 uppercase tracking-wider mb-1 flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/> Tiền hàng (Base)</p>
-                    <p className="text-2xl font-black text-emerald-700 dark:text-emerald-400">{formatVND(totalBaseValue)}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[10px] font-bold text-orange-600 dark:text-orange-500 uppercase tracking-wider mb-1 flex items-center justify-end gap-1"><TrendingUp className="w-3 h-3"/> Phí đội lên</p>
-                    <p className="text-2xl font-black text-orange-700 dark:text-orange-400">+{formatVND(totalAdditionalCost)}</p>
-                  </div>
-                </div>
-
-                {/* Stacked Progress Bar Motion */}
-                <div className="w-full h-4 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden flex shadow-inner mb-5">
-                  <motion.div 
-                    layout transition={{ type: "spring", stiffness: 120, damping: 25 }}
-                    style={{ width: `${totalBaseValue > 0 ? (totalBaseValue / (totalBaseValue + totalAdditionalCost)) * 100 : 100}%` }}
-                    className="h-full bg-emerald-500"
-                  />
-                  <motion.div 
-                    layout transition={{ type: "spring", stiffness: 120, damping: 25 }}
-                    className="h-full bg-orange-500"
-                    style={{ 
-                      width: `${totalBaseValue > 0 ? (totalAdditionalCost / (totalBaseValue + totalAdditionalCost)) * 100 : 0}%`,
-                      backgroundImage: 'linear-gradient(45deg, rgba(255,255,255,.15) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.15) 50%, rgba(255,255,255,.15) 75%, transparent 75%, transparent)', 
-                      backgroundSize: '1rem 1rem' 
-                    }}
-                  />
-                </div>
-                
-                <div className="flex items-center justify-between text-sm font-bold bg-gradient-to-r from-slate-50 to-blue-50 dark:from-slate-900 dark:to-blue-900/20 p-4 rounded-2xl border border-slate-100 dark:border-white/5">
-                  <span className="text-slate-700 dark:text-slate-300 flex items-center gap-2"><Calculator className="w-4 h-4 text-blue-500"/> Tổng Giá Vốn Kho (COGS)</span>
-                  <span className="text-2xl text-blue-700 dark:text-blue-400 font-black">{formatVND(totalBaseValue + totalAdditionalCost)}</span>
-                </div>
-              </div>
-
-              {/* Table Simulation */}
-              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-3xl overflow-hidden shadow-sm flex-1 flex flex-col">
-                <div className="px-5 py-4 bg-slate-50 dark:bg-[#0B0F19] border-b border-slate-200 dark:border-white/5 flex items-center gap-2">
-                  <Package className="w-5 h-5 text-blue-500" />
-                  <h4 className="text-sm font-bold text-slate-800 dark:text-white">Bảng Dự phóng Giá vốn Cấu thành (MAC)</h4>
-                </div>
-                
-                <div className="overflow-x-auto flex-1 p-2 scrollbar-hide">
-                  <table className="w-full text-left text-sm whitespace-nowrap">
-                    <thead className="text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100 dark:border-slate-700">
-                      <tr>
-                        <th className="px-4 py-3">Sản phẩm</th>
-                        <th className="px-4 py-3 text-right">SL</th>
-                        <th className="px-4 py-3 text-right">Đơn giá Gốc</th>
-                        <th className="px-4 py-3 text-right text-orange-500 bg-orange-50/50 dark:bg-orange-500/5">+ Phí Gánh</th>
-                        <th className="px-4 py-3 text-right text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-500/5">Đơn giá Mới</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
-                      <AnimatePresence initial={false}>
-                        {previewItems.map((item: any, idx: number) => (
-                          <motion.tr 
-                            key={item.id} 
-                            initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
-                            className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
-                          >
-                            <td className="px-4 py-4">
-                              <p className="font-bold text-slate-800 dark:text-slate-200">{item.product?.name || item.description || "Sản phẩm"}</p>
-                              <p className="text-[10px] text-slate-500 font-mono mt-0.5">{item.product?.productCode || `SKU-${idx}`}</p>
-                            </td>
-                            <td className="px-4 py-4 text-right font-medium">{item.quantity}</td>
-                            <td className="px-4 py-4 text-right text-slate-500">{formatVND(item.oldUnitPrice)}</td>
-                            <td className="px-4 py-4 text-right bg-orange-50/20 dark:bg-orange-900/10">
-                              <span className="font-bold text-orange-500">{formatVND(item.allocatedAmount)}</span>
-                              {item.increasePercent > 0 && (
-                                <div className="flex items-center justify-end gap-1 text-[10px] text-rose-500 mt-1">
-                                  <TrendingUp className="w-3 h-3"/> {item.increasePercent.toFixed(1)}%
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-4 py-4 text-right bg-blue-50/30 dark:bg-blue-900/10">
-                              <div className="inline-flex flex-col items-end">
-                                <span className="font-black text-blue-600 dark:text-blue-400 bg-white dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800/50 shadow-sm group-hover:scale-105 transition-transform duration-300">
-                                  {formatVND(item.newUnitPrice)}
-                                </span>
-                              </div>
-                            </td>
-                          </motion.tr>
-                        ))}
-                      </AnimatePresence>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
+          </div>
+          
+          <div className="flex-1 space-y-1.5 w-full">
+            <label className="text-xs font-bold text-slate-500 uppercase">Số tiền (VND)</label>
+            <div className="relative">
+              <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input 
+                type="number" name="amount" value={formData.amount} onChange={handleChange} required min="1" placeholder="VD: 500000"
+                className="w-full pl-9 pr-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-orange-600 focus:ring-2 focus:ring-orange-500 outline-none shadow-inner"
+              />
             </div>
-          </>
-        )}
+          </div>
+
+          <div className="flex-1 space-y-1.5 w-full">
+            <label className="text-xs font-bold text-slate-500 uppercase">Tiêu chí phân bổ</label>
+            <div className="relative">
+              <ArrowDownUp className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <select 
+                name="allocationMethod" value={formData.allocationMethod} onChange={handleChange}
+                className="w-full pl-9 pr-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none shadow-sm"
+              >
+                <option value="BY_VALUE">Theo Giá trị hàng hóa</option>
+                <option value="BY_QUANTITY">Theo Số lượng hàng</option>
+              </select>
+            </div>
+          </div>
+
+          <button type="submit" disabled={isCreating} className="w-full md:w-auto px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl shadow-lg shadow-orange-500/30 transition-all disabled:opacity-50 shrink-0 h-[42px] flex items-center justify-center gap-2">
+            {isCreating ? <Loader2 className="w-5 h-5 animate-spin"/> : "Thêm"}
+          </button>
+        </form>
+
+        {/* KHU VỰC 2: DANH SÁCH ĐÃ THÊM */}
+        <div className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-100 dark:bg-slate-800 text-slate-500 text-xs font-bold uppercase tracking-wider">
+              <tr>
+                <th className="p-4">Tên Chi phí</th>
+                <th className="p-4">Số tiền (VND)</th>
+                <th className="p-4">Tiêu chí</th>
+                <th className="p-4 text-center">Trạng thái</th>
+                <th className="p-4 text-right">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {loadingLCs ? (
+                <tr><td colSpan={5} className="p-8 text-center text-slate-400"><Loader2 className="w-6 h-6 animate-spin mx-auto"/></td></tr>
+              ) : landedCosts.length === 0 ? (
+                <tr><td colSpan={5} className="p-8 text-center text-slate-400 italic font-medium bg-slate-50/50 dark:bg-transparent">Chưa có chi phí nào được ghi nhận.</td></tr>
+              ) : (
+                landedCosts.map((lc: any) => (
+                  <tr key={lc.landedCostId} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                    <td className="p-4 font-semibold text-slate-800 dark:text-slate-200">{lc.expenseName}</td>
+                    <td className="p-4 font-black text-orange-600 dark:text-orange-400">{formatVND(lc.amount)}</td>
+                    <td className="p-4 text-xs font-medium text-slate-600 dark:text-slate-400">{lc.allocationMethod === "BY_VALUE" ? "Theo Giá trị" : "Theo Số lượng"}</td>
+                    <td className="p-4 text-center">
+                      <span className={cn(
+                        "inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-md border",
+                        lc.isAllocated ? "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-400" : "bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-400"
+                      )}>
+                        {lc.isAllocated ? <CheckCircle2 className="w-3.5 h-3.5"/> : <Loader2 className="w-3.5 h-3.5 animate-spin"/>}
+                        {lc.isAllocated ? "Đã Phân bổ" : "Đang chờ"}
+                      </span>
+                    </td>
+                    <td className="p-4 flex items-center justify-end gap-2">
+                      {!lc.isAllocated && (
+                        <>
+                          <button onClick={() => handleAllocate(lc.landedCostId)} disabled={isAllocating} className="text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 px-3 py-1.5 rounded-lg transition-colors shadow-sm">
+                            Phân bổ
+                          </button>
+                          <button onClick={() => handleDelete(lc.landedCostId)} disabled={isDeleting} className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/20 rounded-lg transition-colors">
+                            <Trash2 className="w-4 h-4"/>
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </Modal>
   );

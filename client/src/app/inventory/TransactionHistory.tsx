@@ -6,18 +6,16 @@ import {
   ArrowDownLeft, ArrowUpRight, ArrowRightLeft, 
   Settings2, FileText, AlertOctagon, RefreshCcw, Download 
 } from "lucide-react";
-import dayjs from "dayjs";
-import 'dayjs/locale/vi';
 import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
 import { useGetInventoryTransactionsQuery, InventoryTransaction } from "@/state/api";
 
-// --- COMPONENTS & UTILS ---
+// --- COMPONENTS & UTILS (SIÊU VŨ KHÍ) ---
 import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
 import { exportToCSV } from "@/utils/exportUtils";
-
-dayjs.locale('vi');
+import { formatDate, formatDateTime } from "@/utils/formatters";
+import { cn } from "@/utils/helpers";
 
 // ==========================================
 // 1. HELPER: UI MAPPERS
@@ -56,14 +54,14 @@ export default function TransactionHistory() {
   // 👉 FETCH DATA THẬT
   const { data: responseData, isLoading, isError, refetch, isFetching } = useGetInventoryTransactionsQuery({});
 
-  // 🚀 FIX LỖI TS: Bóc tách mảng data từ PaginatedResponse một cách an toàn
+  // Bóc tách mảng data
   const transactions: InventoryTransaction[] = useMemo(() => {
     if (!responseData) return [];
     if (Array.isArray(responseData)) return responseData;
     return (responseData as any).data || [];
   }, [responseData]);
 
-  // Lọc dữ liệu (Ép kiểu rõ ràng cho tham số tx)
+  // Lọc dữ liệu
   const filteredData = useMemo(() => {
     if (filterDirection === "ALL") return transactions;
     return transactions.filter((tx: InventoryTransaction) => tx.movementDirection === filterDirection);
@@ -75,9 +73,8 @@ export default function TransactionHistory() {
       toast.error("Không có dữ liệu thẻ kho để xuất!"); return;
     }
     
-    // Ép kiểu rõ ràng cho tham số tx
     const exportData = filteredData.map((tx: InventoryTransaction) => ({
-      "Thời gian": dayjs(tx.timestamp).format('DD/MM/YYYY HH:mm:ss'),
+      "Thời gian": formatDateTime(tx.timestamp), // SỬ DỤNG UTILS
       "Loại giao dịch": getDirectionUI(tx.movementDirection).label,
       "Mã Sản phẩm": tx.product?.productCode || "N/A",
       "Tên Sản phẩm": tx.product?.name || "N/A",
@@ -100,10 +97,10 @@ export default function TransactionHistory() {
       cell: (row) => (
         <div className="flex flex-col">
           <span className="font-semibold text-slate-800 dark:text-slate-200">
-            {dayjs(row.timestamp).format('DD/MM/YYYY')}
+            {formatDate(row.timestamp)} {/* SỬ DỤNG UTILS */}
           </span>
           <span className="text-xs text-slate-500">
-            {dayjs(row.timestamp).format('HH:mm:ss')}
+            {formatDate(row.timestamp, "HH:mm:ss")} {/* SỬ DỤNG UTILS */}
           </span>
         </div>
       )
@@ -114,7 +111,7 @@ export default function TransactionHistory() {
       cell: (row) => {
         const { label, color, bg, icon: Icon } = getDirectionUI(row.movementDirection);
         return (
-          <div className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold ${bg} ${color}`}>
+          <div className={cn("inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold", bg, color)}>
             <Icon className="w-4 h-4" /> {label}
           </div>
         );
@@ -137,7 +134,10 @@ export default function TransactionHistory() {
       cell: (row) => {
         const isPositive = row.quantity > 0;
         return (
-          <span className={`font-extrabold text-base ${row.movementDirection === 'OUT' ? 'text-rose-500' : row.movementDirection === 'IN' ? 'text-emerald-500' : 'text-slate-700 dark:text-slate-300'}`}>
+          <span className={cn(
+            "font-extrabold text-base", 
+            row.movementDirection === 'OUT' ? 'text-rose-500' : row.movementDirection === 'IN' ? 'text-emerald-500' : 'text-slate-700 dark:text-slate-300'
+          )}>
             {isPositive ? "+" : ""}{formatQty(row.quantity)}
           </span>
         );
@@ -191,7 +191,7 @@ export default function TransactionHistory() {
         <AlertOctagon className="w-12 h-12 text-rose-500 mb-3 animate-pulse" />
         <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-2">Lỗi tải dữ liệu Thẻ kho</h3>
         <button onClick={() => refetch()} className="px-5 py-2 mt-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 flex items-center gap-2">
-          <RefreshCcw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} /> Thử lại
+          <RefreshCcw className={cn("w-4 h-4", isFetching && "animate-spin")} /> Thử lại
         </button>
       </div>
     );
@@ -203,16 +203,28 @@ export default function TransactionHistory() {
       {/* KHU VỰC BỘ LỌC VÀ EXPORT */}
       <motion.div variants={itemVariants} className="flex flex-wrap items-center gap-2 mb-2">
         {/* Buttons Filter */}
-        <button onClick={() => setFilterDirection("ALL")} className={`px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border ${filterDirection === "ALL" ? "bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900" : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"}`}>
+        <button onClick={() => setFilterDirection("ALL")} className={cn(
+          "px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border",
+          filterDirection === "ALL" ? "bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900" : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+        )}>
           Tất cả
         </button>
-        <button onClick={() => setFilterDirection("IN")} className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border ${filterDirection === "IN" ? "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-500/20 dark:border-emerald-500/30" : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"}`}>
+        <button onClick={() => setFilterDirection("IN")} className={cn(
+          "flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border",
+          filterDirection === "IN" ? "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-500/20 dark:border-emerald-500/30" : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+        )}>
           <ArrowDownLeft className="w-4 h-4" /> Nhập kho
         </button>
-        <button onClick={() => setFilterDirection("OUT")} className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border ${filterDirection === "OUT" ? "bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-500/20 dark:border-rose-500/30" : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"}`}>
+        <button onClick={() => setFilterDirection("OUT")} className={cn(
+          "flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border",
+          filterDirection === "OUT" ? "bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-500/20 dark:border-rose-500/30" : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+        )}>
           <ArrowUpRight className="w-4 h-4" /> Xuất kho
         </button>
-        <button onClick={() => setFilterDirection("ADJUSTMENT")} className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border ${filterDirection === "ADJUSTMENT" ? "bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-500/20 dark:border-amber-500/30" : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"}`}>
+        <button onClick={() => setFilterDirection("ADJUSTMENT")} className={cn(
+          "flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border",
+          filterDirection === "ADJUSTMENT" ? "bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-500/20 dark:border-amber-500/30" : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+        )}>
           <Settings2 className="w-4 h-4" /> Điều chỉnh
         </button>
 

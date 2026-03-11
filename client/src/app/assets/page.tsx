@@ -9,8 +9,6 @@ import {
   Ban, ShieldAlert, Laptop, Building, Activity, Search, 
   Filter, Crown, TrendingDown, PackageOpen, LayoutGrid, Zap, Download
 } from "lucide-react";
-import dayjs from "dayjs";
-import 'dayjs/locale/vi';
 import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
@@ -27,9 +25,10 @@ import {
 import Header from "@/app/(components)/Header";
 import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
 
-// --- UTILS ---
-import { formatVND } from "@/utils/formatters";
+// --- UTILS (SIÊU VŨ KHÍ) ---
+import { formatVND, formatDate } from "@/utils/formatters";
 import { exportToCSV } from "@/utils/exportUtils";
+import { cn } from "@/utils/helpers";
 
 // --- SUB-MODALS NGHIỆP VỤ ---
 import CreateAssetModal from "./CreateAssetModal";
@@ -37,8 +36,6 @@ import RunDepreciationModal from "./RunDepreciationModal";
 import HandoverModal from "./HandoverModal";
 import LiquidateModal from "./LiquidateModal";
 import AdvancedAssetOperationsModal from "./AdvancedAssetOperationsModal";
-
-dayjs.locale('vi');
 
 // ==========================================
 // 1. HELPERS & FORMATTERS
@@ -145,7 +142,8 @@ export default function AssetsPage() {
     if (!description?.trim()) return;
     
     try {
-      await logMaintenance({ id, data: { maintenanceDate: dayjs().format('YYYY-MM-DD'), description, cost: 0 } }).unwrap();
+      // Dùng formatDate để sinh chuỗi ngày tháng chuẩn xác
+      await logMaintenance({ id, data: { maintenanceDate: formatDate(new Date(), "YYYY-MM-DD"), description, cost: 0 } }).unwrap();
       toast.success(`Đã đưa ${name} vào diện bảo trì thành công!`);
     } catch (err: any) {
       toast.error(err?.data?.message || "Lỗi ghi nhận bảo trì vào cơ sở dữ liệu!");
@@ -180,7 +178,6 @@ export default function AssetsPage() {
     }));
 
     exportToCSV(exportData, "Danh_Sach_Tai_San");
-    toast.success("Xuất File dữ liệu thành công!");
   };
 
   // --- CỘT BẢNG (DATATABLE COLUMNS) ---
@@ -191,11 +188,16 @@ export default function AssetsPage() {
       sortable: true,
       cell: (row) => (
         <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${row.status === "LIQUIDATED" ? 'bg-slate-100 border-slate-200 dark:bg-slate-800 dark:border-slate-700' : 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 dark:from-blue-900/20 dark:to-indigo-900/20 dark:border-blue-700/50 shadow-sm'}`}>
-            <Laptop className={`w-5 h-5 ${row.status === "LIQUIDATED" ? 'text-slate-400' : 'text-blue-600 dark:text-blue-400'}`} />
+          <div className={cn(
+            "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border shadow-sm",
+            row.status === "LIQUIDATED" 
+              ? "bg-slate-100 border-slate-200 dark:bg-slate-800 dark:border-slate-700" 
+              : "bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 dark:from-blue-900/20 dark:to-indigo-900/20 dark:border-blue-700/50"
+          )}>
+            <Laptop className={cn("w-5 h-5", row.status === "LIQUIDATED" ? "text-slate-400" : "text-blue-600 dark:text-blue-400")} />
           </div>
           <div className="flex flex-col max-w-[200px]">
-            <span className={`font-bold truncate ${row.status === "LIQUIDATED" ? 'text-slate-500 line-through' : 'text-slate-900 dark:text-white'}`} title={row.name}>
+            <span className={cn("font-bold truncate", row.status === "LIQUIDATED" ? "text-slate-500 line-through" : "text-slate-900 dark:text-white")} title={row.name}>
               {row.name}
             </span>
             <span className="text-[10px] font-mono text-slate-500 mt-0.5 px-1.5 py-0.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded w-fit">
@@ -233,14 +235,14 @@ export default function AssetsPage() {
           <div className="flex flex-col w-40 sm:w-48">
             <div className="flex justify-between items-end mb-1 text-[11px]">
               <span className="text-slate-400">Gốc: <span className="font-medium text-slate-600 dark:text-slate-300">{formatVND(purchase)}</span></span>
-              <span className={`font-bold ${isLiquidated ? 'text-slate-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+              <span className={cn("font-bold", isLiquidated ? "text-slate-400" : "text-emerald-600 dark:text-emerald-400")}>
                 {formatVND(current)}
               </span>
             </div>
             <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner">
               <motion.div 
                 initial={{ width: 0 }} animate={{ width: `${percentRemain}%` }} transition={{ duration: 1, ease: "easeOut" }}
-                className={`h-full rounded-full ${isLiquidated ? 'bg-slate-400' : percentRemain < 20 ? 'bg-rose-500' : percentRemain < 50 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                className={cn("h-full rounded-full", isLiquidated ? "bg-slate-400" : percentRemain < 20 ? "bg-rose-500" : percentRemain < 50 ? "bg-amber-500" : "bg-emerald-500")}
               />
             </div>
           </div>
@@ -253,7 +255,7 @@ export default function AssetsPage() {
       cell: (row) => {
         const { label, icon: Icon, color } = getStatusUI(row.status);
         return (
-          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold border ${color}`}>
+          <span className={cn("inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold border", color)}>
             <Icon className="w-3 h-3" /> {label}
           </span>
         );
@@ -302,7 +304,7 @@ export default function AssetsPage() {
         <AlertOctagon className="w-16 h-16 text-rose-500 mb-4 animate-pulse" />
         <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Lỗi kết nối Hệ thống Tài sản</h2>
         <button onClick={() => refetch()} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg active:scale-95 flex items-center gap-2 mt-4 transition-transform">
-          <RefreshCcw className={`w-5 h-5 ${isFetching ? 'animate-spin' : ''}`} /> Tải lại dữ liệu
+          <RefreshCcw className={cn("w-5 h-5", isFetching && "animate-spin")} /> Tải lại dữ liệu
         </button>
       </div>
     );
@@ -386,17 +388,17 @@ export default function AssetsPage() {
               </div>
               <div className="flex items-center gap-2 mt-2 relative z-10">
                 <div className="flex-1 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                  <motion.div initial={{ width: 0 }} animate={{ width: `${kpis.utilizationRate}%` }} transition={{ duration: 1 }} className={`h-full rounded-full ${kpis.utilizationRate > 85 ? 'bg-amber-500' : 'bg-indigo-500'}`} />
+                  <motion.div initial={{ width: 0 }} animate={{ width: `${kpis.utilizationRate}%` }} transition={{ duration: 1 }} className={cn("h-full rounded-full", kpis.utilizationRate > 85 ? "bg-amber-500" : "bg-indigo-500")} />
                 </div>
                 <span className="text-[10px] font-bold text-slate-400">Lý tưởng {'>'} 85%</span>
               </div>
             </motion.div>
             
-            <motion.div variants={itemVariants} className={`glass p-5 rounded-3xl border shadow-sm flex flex-col justify-center relative overflow-hidden group transition-colors ${kpis.maintenanceCount > 0 ? 'border-amber-200 bg-amber-50/50 dark:border-amber-500/30 dark:bg-amber-900/10' : 'border-slate-200 dark:border-white/10'}`}>
+            <motion.div variants={itemVariants} className={cn("glass p-5 rounded-3xl border shadow-sm flex flex-col justify-center relative overflow-hidden group transition-colors", kpis.maintenanceCount > 0 ? "border-amber-200 bg-amber-50/50 dark:border-amber-500/30 dark:bg-amber-900/10" : "border-slate-200 dark:border-white/10")}>
               <div className="absolute -right-2 -bottom-2 opacity-[0.05] group-hover:scale-110 transition-transform"><Wrench className="w-20 h-20 text-amber-500"/></div>
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Thiết bị đang bảo trì</p>
               <div className="flex items-center gap-3 relative z-10">
-                <h3 className={`text-3xl font-black ${kpis.maintenanceCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
+                <h3 className={cn("text-3xl font-black", kpis.maintenanceCount > 0 ? "text-amber-600 dark:text-amber-400" : "text-slate-400")}>
                   {kpis.maintenanceCount}
                 </h3>
                 {kpis.maintenanceCount > 0 && (
@@ -424,7 +426,10 @@ export default function AssetsPage() {
               ].map(tab => (
                 <button 
                   key={tab.id} onClick={() => setActiveTab(tab.id as TabType)} 
-                  className={`relative px-4 py-2 text-xs font-bold rounded-lg transition-colors whitespace-nowrap z-10 ${activeTab === tab.id ? "text-slate-900 dark:text-white" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}
+                  className={cn(
+                    "relative px-4 py-2 text-xs font-bold rounded-lg transition-colors whitespace-nowrap z-10",
+                    activeTab === tab.id ? "text-slate-900 dark:text-white" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                  )}
                 >
                   {activeTab === tab.id && <motion.div layoutId="assetFilterTab" className="absolute inset-0 bg-white dark:bg-slate-700 shadow-sm rounded-lg -z-10 border border-slate-200/50 dark:border-slate-600" />}
                   {tab.label}
@@ -448,14 +453,14 @@ export default function AssetsPage() {
                   className="flex-1 sm:w-auto px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 outline-none"
                 >
                   <option value="">Tất cả Nhóm</option>
-                  {categories.map(c => <option key={c.categoryId} value={c.categoryId}>{c.name}</option>)}
+                  {categories.map((c: any) => <option key={c.categoryId} value={c.categoryId}>{c.name}</option>)}
                 </select>
                 <select 
                   value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)}
                   className="flex-1 sm:w-auto px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 outline-none"
                 >
                   <option value="">Phòng ban</option>
-                  {departments.map(d => <option key={d.departmentId} value={d.departmentId}>{d.name}</option>)}
+                  {departments.map((d: any) => <option key={d.departmentId} value={d.departmentId}>{d.name}</option>)}
                 </select>
               </div>
             </div>

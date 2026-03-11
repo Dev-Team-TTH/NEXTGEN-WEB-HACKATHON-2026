@@ -6,7 +6,6 @@ import {
   X, ArrowRightLeft, AlertTriangle, ShieldAlert, 
   CheckCircle2, Loader2, FileText, History, Info
 } from "lucide-react";
-import dayjs from "dayjs";
 import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
@@ -17,10 +16,9 @@ import {
   JournalLine
 } from "@/state/api";
 
-// ==========================================
-// 1. HELPERS & FORMATTERS
-// ==========================================
-const formatVND = (val: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val || 0);
+// --- UTILS ---
+import { formatVND } from "@/utils/formatters";
+import { cn } from "@/utils/helpers";
 
 interface ReverseEntryModalProps {
   isOpen: boolean;
@@ -34,11 +32,9 @@ interface ReverseEntryModalProps {
 export default function ReverseEntryModal({ isOpen, onClose, journalId }: ReverseEntryModalProps) {
 
   // --- API HOOKS ---
-  // Tận dụng cache của query danh sách để lấy data chi tiết không cần fetch lại
   const { data: entries = [] } = useGetJournalEntriesQuery(undefined, { skip: !isOpen });
   const [reverseEntry, { isLoading: isReversing }] = useReverseJournalEntryMutation();
 
-  // Lấy chi tiết bút toán đang cần đảo
   const originalEntry = useMemo(() => {
     return entries.find((e: JournalEntry) => e.journalId === journalId);
   }, [entries, journalId]);
@@ -46,7 +42,6 @@ export default function ReverseEntryModal({ isOpen, onClose, journalId }: Revers
   // --- LOCAL STATE ---
   const [reason, setReason] = useState("");
 
-  // Reset form khi mở Modal
   useEffect(() => {
     if (isOpen) {
       setReason("");
@@ -57,11 +52,10 @@ export default function ReverseEntryModal({ isOpen, onClose, journalId }: Revers
   const reversedLines = useMemo(() => {
     if (!originalEntry || !originalEntry.lines) return [];
     
-    // Đảo ngược vị trí Nợ thành Có, Có thành Nợ
     return originalEntry.lines.map((line: JournalLine) => ({
       ...line,
-      newDebit: line.credit || 0, // Tiền CÓ cũ chuyển thành NỢ mới
-      newCredit: line.debit || 0  // Tiền NỢ cũ chuyển thành CÓ mới
+      newDebit: line.credit || 0, 
+      newCredit: line.debit || 0  
     }));
   }, [originalEntry]);
 
@@ -116,7 +110,7 @@ export default function ReverseEntryModal({ isOpen, onClose, journalId }: Revers
             variants={modalVariants} initial="hidden" animate="visible" exit="exit"
             className="relative w-full max-w-4xl bg-white dark:bg-[#0B0F19] rounded-3xl shadow-[0_30px_80px_rgba(0,0,0,0.5)] border border-orange-500/30 overflow-hidden z-10 flex flex-col max-h-[90vh]"
           >
-            {/* 1. HEADER (CẢNH BÁO MÀU CAM) */}
+            {/* 1. HEADER */}
             <div className="flex items-center justify-between px-6 py-5 border-b border-orange-200 dark:border-orange-500/20 bg-orange-50/80 dark:bg-orange-950/20 backdrop-blur-md shrink-0 z-20">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-gradient-to-br from-orange-400 to-rose-500 rounded-2xl text-white shadow-lg shadow-orange-500/30">

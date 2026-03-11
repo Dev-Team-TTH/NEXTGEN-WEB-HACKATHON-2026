@@ -7,7 +7,6 @@ import {
   Scale, ShieldAlert, CheckCircle2, Loader2, 
   AlignLeft, Hash
 } from "lucide-react";
-import dayjs from "dayjs";
 import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
@@ -21,7 +20,8 @@ import {
 
 // --- IMPORT CORE MODAL & UTILS ---
 import Modal from "@/app/(components)/Modal";
-import { formatVND } from "@/utils/formatters";
+import { formatVND, safeRound } from "@/utils/formatters";
+import { cn } from "@/utils/helpers";
 
 // ==========================================
 // 1. INTERFACES
@@ -41,12 +41,21 @@ interface ManualJournalModalProps {
   entry?: JournalEntry | null; // Truyền vào nếu là Edit Bản Nháp
 }
 
+const getTodayInputFormat = () => new Date().toISOString().split('T')[0];
+
+const generateJVReference = () => {
+  const d = new Date();
+  const dateStr = `${d.getFullYear().toString().slice(-2)}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  const rand = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+  return `JV-${dateStr}-${rand}`;
+};
+
 // ==========================================
 // COMPONENT CHÍNH: WIZARD TẠO BÚT TOÁN KÉP
 // ==========================================
 export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJournalModalProps) {
 
-  // --- API HOOKS (Dữ liệu nền) ---
+  // --- API HOOKS ---
   const { data: accounts = [], isLoading: loadingAccs } = useGetAccountsQuery(undefined, { skip: !isOpen });
   const { data: costCenters = [], isLoading: loadingCCs } = useGetCostCentersQuery(undefined, { skip: !isOpen });
   
@@ -56,19 +65,17 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
   const isSubmitting = isCreating || isUpdating;
 
   // --- STATE BẢN GHI (HEADER) ---
-  const [entryDate, setEntryDate] = useState(dayjs().format('YYYY-MM-DD'));
+  const [entryDate, setEntryDate] = useState(getTodayInputFormat());
   const [reference, setReference] = useState("");
   const [description, setDescription] = useState("");
 
   // --- STATE CHI TIẾT BÚT TOÁN (LINES) ---
   const [lines, setLines] = useState<JournalLineForm[]>([]);
 
-  // Khởi tạo Form khi mở Modal
   useEffect(() => {
     if (isOpen) {
       if (entry) {
-        // Chế độ Edit Bản Nháp
-        setEntryDate(dayjs(entry.entryDate).format('YYYY-MM-DD'));
+        setEntryDate(new Date(entry.entryDate).toISOString().split('T')[0]);
         setReference(entry.reference || "");
         setDescription(entry.description || "");
         
@@ -82,9 +89,8 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
         })) || [];
         setLines(existingLines.length > 0 ? existingLines : generateEmptyLines(2));
       } else {
-        // Chế độ Tạo mới (Mặc định 2 dòng: Nợ / Có)
-        setEntryDate(dayjs().format('YYYY-MM-DD'));
-        setReference(`JV-${dayjs().format('YYMMDD')}-${Math.floor(Math.random() * 1000)}`);
+        setEntryDate(getTodayInputFormat());
+        setReference(generateJVReference());
         setDescription("");
         setLines(generateEmptyLines(2));
       }
@@ -102,7 +108,7 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
     }));
   };
 
-  // --- HANDLERS CÁC DÒNG (GRID LOGIC) ---
+  // --- HANDLERS CÁC DÒNG ---
   const addLine = () => setLines([...lines, ...generateEmptyLines(1)]);
   
   const removeLine = (id: string) => {
@@ -115,7 +121,6 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
       if (line.id !== id) return line;
       const updatedLine = { ...line, [field]: value };
       
-      // UX Logic: Gõ Nợ thì tự xóa Có, và ngược lại
       if (field === 'debit' && Number(value) > 0) updatedLine.credit = "";
       if (field === 'credit' && Number(value) > 0) updatedLine.debit = "";
       
@@ -123,18 +128,18 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
     }));
   };
 
-  // --- AUTO-BALANCING ENGINE (DATA VIZ) ---
+  // --- AUTO-BALANCING ENGINE (SỬ DỤNG SAFE ROUND CHỐNG LỖI KẾ TOÁN) ---
   const balanceCheck = useMemo(() => {
     let totalDebit = 0;
     let totalCredit = 0;
 
     lines.forEach(line => {
-      totalDebit += Number(line.debit) || 0;
-      totalCredit += Number(line.credit) || 0;
+      totalDebit = safeRound(totalDebit + (Number(line.debit) || 0));
+      totalCredit = safeRound(totalCredit + (Number(line.credit) || 0));
     });
 
     const isBalanced = totalDebit === totalCredit && totalDebit > 0;
-    const diff = Math.abs(totalDebit - totalCredit);
+    const diff = safeRound(Math.abs(totalDebit - totalCredit));
 
     return { totalDebit, totalCredit, isBalanced, diff };
   }, [lines]);
@@ -156,7 +161,7 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
         entryDate: new Date(entryDate).toISOString(),
         reference,
         description,
-        postingStatus: "DRAFT", // Luôn lưu dưới dạng nháp trước
+        postingStatus: "DRAFT", 
         lines: validLines.map(l => ({
           accountId: l.accountId,
           costCenterId: l.costCenterId || null,
@@ -332,7 +337,12 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
         {/* 3. BẢNG CÂN ĐỐI (BALANCE CHECK) */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mt-2 bg-slate-50 dark:bg-slate-800/30 p-5 rounded-2xl border border-slate-200 dark:border-white/5">
           {/* Trạng thái Lệch/Cân */}
-          <div className={`px-4 py-3 rounded-2xl border flex items-center gap-3 transition-colors shadow-sm ${balanceCheck.isBalanced ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-400' : 'bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/30 dark:text-rose-400'}`}>
+          <div className={cn(
+            "px-4 py-3 rounded-2xl border flex items-center gap-3 transition-colors shadow-sm",
+            balanceCheck.isBalanced 
+              ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-400" 
+              : "bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/30 dark:text-rose-400"
+          )}>
             {balanceCheck.isBalanced ? <CheckCircle2 className="w-6 h-6"/> : <ShieldAlert className="w-6 h-6 animate-pulse"/>}
             <div>
               <h4 className="font-black">{balanceCheck.isBalanced ? "SỔ ĐÃ CÂN BẰNG" : "SỔ ĐANG LỆCH TỔNG"}</h4>

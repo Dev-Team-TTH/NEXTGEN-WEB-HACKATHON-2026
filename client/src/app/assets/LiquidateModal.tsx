@@ -2,11 +2,10 @@
 
 import React, { useState, useEffect } from "react";
 import { 
-  ShieldAlert, Loader2, CheckCircle2, 
-  Ban, AlertOctagon, TrendingDown, DollarSign, CalendarDays, FileText
+  ShieldAlert, Loader2, Ban, AlertOctagon, 
+  TrendingDown, DollarSign, CalendarDays, FileText
 } from "lucide-react";
 import { toast } from "react-hot-toast";
-import dayjs from "dayjs";
 
 // --- REDUX & API ---
 import { 
@@ -16,7 +15,8 @@ import {
 
 // --- IMPORT CORE MODAL & UTILS ---
 import Modal from "@/app/(components)/Modal";
-import { formatVND } from "@/utils/formatters";
+import { formatVND, formatDate } from "@/utils/formatters";
+import { cn } from "@/utils/helpers";
 
 // ==========================================
 // COMPONENT: MODAL THANH LÝ TÀI SẢN (LIQUIDATION)
@@ -29,21 +29,17 @@ interface LiquidateModalProps {
 
 export default function LiquidateModal({ assetId, isOpen, onClose }: LiquidateModalProps) {
   // --- API HOOKS ---
-  const { data: asset, isLoading: isLoadingAsset } = useGetAssetByIdQuery(assetId || "", {
-    skip: !assetId || !isOpen
-  });
-  
+  const { data: asset, isLoading: isLoadingAsset } = useGetAssetByIdQuery(assetId || "", { skip: !assetId || !isOpen });
   const [liquidateAsset, { isLoading: isSubmitting }] = useLiquidateAssetMutation();
 
-  // --- LOCAL STATE (FORM) ---
-  const [liquidationDate, setLiquidationDate] = useState(dayjs().format('YYYY-MM-DD'));
+  // --- LOCAL STATE ---
+  const [liquidationDate, setLiquidationDate] = useState(new Date().toISOString().split('T')[0]);
   const [liquidationValue, setLiquidationValue] = useState("");
   const [reason, setReason] = useState("");
 
-  // Reset form
   useEffect(() => {
     if (isOpen) {
-      setLiquidationDate(dayjs().format('YYYY-MM-DD'));
+      setLiquidationDate(new Date().toISOString().split('T')[0]);
       setLiquidationValue("0");
       setReason("");
     }
@@ -55,8 +51,7 @@ export default function LiquidateModal({ assetId, isOpen, onClose }: LiquidateMo
     if (!assetId) return;
 
     if (!reason.trim()) {
-      toast.error("Vui lòng nhập lý do thanh lý/hủy bỏ tài sản!");
-      return;
+      toast.error("Vui lòng nhập lý do thanh lý/hủy bỏ tài sản!"); return;
     }
 
     if (window.confirm(`XÁC NHẬN THANH LÝ TÀI SẢN\n\nTài sản sẽ bị xóa khỏi bảng cân đối kế toán. Thao tác này không thể hoàn tác!`)) {
@@ -73,16 +68,13 @@ export default function LiquidateModal({ assetId, isOpen, onClose }: LiquidateMo
         toast.success("Thanh lý tài sản thành công! Bút toán lãi/lỗ đã được tự động ghi nhận.");
         onClose();
       } catch (error: any) {
-        console.error("Lỗi thanh lý:", error);
         toast.error(error?.data?.message || "Lỗi hệ thống khi thực hiện thanh lý!");
       }
     }
   };
   
-  // Tính toán Lãi / Lỗ (P&L) khi thanh lý
   const currentValue = asset?.currentValue || 0;
-  const recoverValue = Number(liquidationValue) || 0;
-  const netProfitLoss = recoverValue - currentValue;
+  const netProfitLoss = (Number(liquidationValue) || 0) - currentValue;
 
   // --- FOOTER RENDER ---
   const modalFooter = (
@@ -99,11 +91,7 @@ export default function LiquidateModal({ assetId, isOpen, onClose }: LiquidateMo
           type="submit" form="liquidate-form" disabled={isSubmitting || isLoadingAsset} 
           className="flex items-center gap-2 px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-rose-500/30 transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
         >
-          {isSubmitting ? (
-            <><Loader2 className="w-4 h-4 animate-spin" /> Đang xử lý...</>
-          ) : (
-            <><Ban className="w-4 h-4" /> Xác nhận Thanh lý</>
-          )}
+          {isSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Đang xử lý...</> : <><Ban className="w-4 h-4" /> Xác nhận Thanh lý</>}
         </button>
       )}
     </>
@@ -137,7 +125,6 @@ export default function LiquidateModal({ assetId, isOpen, onClose }: LiquidateMo
           </div>
         ) : (
           <>
-            {/* Cảnh báo Nghiệp vụ */}
             <div className="flex items-start gap-3 p-4 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 shadow-inner">
               <AlertOctagon className="w-5 h-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
               <div className="text-sm text-amber-800 dark:text-amber-200">
@@ -146,7 +133,6 @@ export default function LiquidateModal({ assetId, isOpen, onClose }: LiquidateMo
               </div>
             </div>
 
-            {/* DATA VIZ: TÓM TẮT GIÁ TRỊ TÀI SẢN */}
             <div className="flex flex-col p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 shadow-sm gap-4">
               <div className="flex justify-between items-center border-b border-slate-100 dark:border-white/5 pb-3">
                 <div>
@@ -159,21 +145,20 @@ export default function LiquidateModal({ assetId, isOpen, onClose }: LiquidateMo
                 </div>
               </div>
 
-              {/* Hiển thị tính toán Lỗ Lãi động */}
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Dự kiến (Lỗ) / Lãi:</p>
-                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-sm ${netProfitLoss < 0 ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400'}`}>
+                <div className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-sm",
+                  netProfitLoss < 0 ? "bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400" : "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"
+                )}>
                   {netProfitLoss < 0 ? <TrendingDown className="w-4 h-4" /> : <DollarSign className="w-4 h-4" />}
                   {netProfitLoss < 0 ? "-" : "+"}{formatVND(Math.abs(netProfitLoss))}
                 </div>
               </div>
             </div>
 
-            {/* FORM NHẬP LIỆU */}
             <form id="liquidate-form" onSubmit={handleSubmit} className="flex flex-col gap-5">
-              
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                {/* Ngày thanh lý */}
                 <div className="space-y-1.5 group">
                   <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 group-focus-within:text-rose-500 transition-colors">
                     <CalendarDays className="w-4 h-4" /> Ngày ghi nhận <span className="text-rose-500">*</span>
@@ -184,10 +169,9 @@ export default function LiquidateModal({ assetId, isOpen, onClose }: LiquidateMo
                   />
                 </div>
 
-                {/* Tiền thu hồi */}
                 <div className="space-y-1.5 group">
                   <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 group-focus-within:text-emerald-500 transition-colors">
-                    <DollarSign className="w-4 h-4" /> Tiền thu hồi được (VND) <span className="text-rose-500">*</span>
+                    <DollarSign className="w-4 h-4" /> Tiền thu hồi (VND) <span className="text-rose-500">*</span>
                   </label>
                   <input 
                     type="number" value={liquidationValue} onChange={(e) => setLiquidationValue(e.target.value)} min="0" required placeholder="0 nếu hỏng vứt đi"
@@ -196,19 +180,16 @@ export default function LiquidateModal({ assetId, isOpen, onClose }: LiquidateMo
                 </div>
               </div>
 
-              {/* Lý do */}
               <div className="space-y-1.5 group">
                 <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 group-focus-within:text-rose-500 transition-colors">
-                  <FileText className="w-4 h-4" /> Lý do thanh lý / Tình trạng <span className="text-rose-500">*</span>
+                  <FileText className="w-4 h-4" /> Lý do thanh lý <span className="text-rose-500">*</span>
                 </label>
                 <textarea
                   value={reason} required onChange={(e) => setReason(e.target.value)}
-                  placeholder="VD: Máy hỏng mainboard không thể sửa chữa, thanh lý bán phế liệu..."
-                  rows={3}
+                  placeholder="VD: Máy hỏng mainboard không thể sửa chữa..." rows={3}
                   className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none text-slate-900 dark:text-white resize-none focus:ring-2 focus:ring-rose-500 shadow-sm"
                 />
               </div>
-
             </form>
           </>
         )}

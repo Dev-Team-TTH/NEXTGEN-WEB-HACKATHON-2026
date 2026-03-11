@@ -10,13 +10,15 @@ import {
   Globe
 } from "lucide-react";
 
+// --- UTILS ---
+import { cn } from "@/utils/helpers";
+
 // ==========================================
 // COMPONENT: CỔNG KHÔNG GIAN (IMMERSIVE LANDING PAGE)
 // Dành cho Hackathon: Phô diễn sức mạnh giao diện trước khi vào App
 // ==========================================
 
 export default function HomePage() {
-  // Cấu hình Animation với kiểu Variants chuẩn và 'as const' để TS hiểu literal type
   const containerVariants: Variants = {
     hidden: { opacity: 0 },
     show: {
@@ -137,7 +139,8 @@ export default function HomePage() {
                 {/* Ánh sáng khi hover */}
                 <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-b from-white/5 to-transparent"></div>
                 
-                <div className={`p-4 rounded-2xl bg-gradient-to-br ${feat.color} bg-opacity-10 mb-4 shadow-lg`}>
+                {/* ÁP DỤNG CN LÀM SẠCH GRADIENT */}
+                <div className={cn("p-4 rounded-2xl bg-gradient-to-br bg-opacity-10 mb-4 shadow-lg", feat.color)}>
                   <Icon className="w-8 h-8 text-white drop-shadow-md" />
                 </div>
                 <h3 className="font-bold text-slate-200">{feat.name}</h3>

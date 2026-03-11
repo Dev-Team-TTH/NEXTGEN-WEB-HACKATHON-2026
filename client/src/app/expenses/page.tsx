@@ -22,9 +22,10 @@ import Header from "@/app/(components)/Header";
 import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
 import CreateExpenseModal from "./CreateExpenseModal";
 
-// --- UTILS ---
+// --- UTILS (SIÊU VŨ KHÍ) ---
 import { formatVND, formatDate } from "@/utils/formatters"; 
 import { exportToCSV } from "@/utils/exportUtils";
+import { cn } from "@/utils/helpers";
 
 // ==========================================
 // 1. HELPER: TÍNH TỔNG TIỀN TỪ CÁC DÒNG (LINES)
@@ -59,7 +60,7 @@ export default function ExpensesPage() {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
   // --- API HOOKS ---
-  const { data: rawExpenses, isLoading, isError, refetch } = useGetExpensesQuery({});
+  const { data: rawExpenses, isLoading, isError, refetch, isFetching } = useGetExpensesQuery({});
   const [deleteExpense, { isLoading: isDeleting }] = useDeleteExpenseMutation();
   const [postExpense, { isLoading: isPosting }] = usePostExpenseMutation();
 
@@ -177,7 +178,12 @@ export default function ExpensesPage() {
         const isPosted = row.postingStatus === "POSTED";
         return (
           <div className="flex justify-center">
-             <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border shadow-sm ${isPosted ? 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30' : 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30'}`}>
+             {/* SỬ DỤNG HÀM CN LÀM SẠCH CSS */}
+             <span className={cn(
+               "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border shadow-sm",
+               isPosted ? "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30" 
+                        : "bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30"
+             )}>
               {isPosted ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
               {isPosted ? "Đã Ghi Sổ" : "Bản Nháp"}
             </span>
@@ -223,7 +229,9 @@ export default function ExpensesPage() {
     <div className="flex flex-col items-center justify-center h-[70vh] w-full text-center">
       <AlertOctagon className="w-16 h-16 text-rose-500 mb-4 animate-pulse" />
       <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Lỗi truy xuất Dữ liệu Chi phí</h2>
-      <button onClick={() => refetch()} className="px-6 py-3 mt-4 bg-rose-600 text-white rounded-xl shadow-lg active:scale-95 flex items-center gap-2"><RefreshCcw className="w-5 h-5" /> Thử lại</button>
+      <button onClick={() => refetch()} className="px-6 py-3 mt-4 bg-rose-600 text-white rounded-xl shadow-lg active:scale-95 flex items-center gap-2">
+        <RefreshCcw className={cn("w-5 h-5", isFetching && "animate-spin")} /> Thử lại
+      </button>
     </div>
   );
 
@@ -300,7 +308,6 @@ export default function ExpensesPage() {
       <CreateExpenseModal 
         isOpen={isModalOpen} 
         onClose={() => { setIsModalOpen(false); setEditingExpense(null); }} 
-        existingExpense={editingExpense} 
       />
 
     </div>

@@ -10,10 +10,11 @@ import toast from "react-hot-toast";
 import QRCode from "react-qr-code";
 
 // --- REDUX & API ---
-import { useGetProductsQuery } from "@/state/api";
+import { useGetProductsQuery, Product } from "@/state/api";
 
-// --- IMPORT CORE MODAL ---
+// --- IMPORT CORE MODAL & UTILS ---
 import Modal from "@/app/(components)/Modal";
+import { cn } from "@/utils/helpers";
 
 // ==========================================
 // COMPONENT: MODAL IN TEM NHÃN MÃ VẠCH / QR
@@ -26,7 +27,9 @@ interface BarcodePrintModalProps {
 
 export default function BarcodePrintModal({ isOpen, onClose, defaultProductId = "" }: BarcodePrintModalProps) {
   // --- API HOOKS ---
-  const { data: products, isLoading: loadingProducts } = useGetProductsQuery({});
+  // FIX LỖI TS2339: Lấy data từ PaginatedResponse và thêm limit lớn để chọn được mọi SP
+  const { data: productsResponse, isLoading: loadingProducts } = useGetProductsQuery({ limit: 1000 }, { skip: !isOpen });
+  const productsList = productsResponse?.data || [];
 
   // --- LOCAL STATE ---
   const [selectedProductId, setSelectedProductId] = useState<string>(defaultProductId);
@@ -35,7 +38,8 @@ export default function BarcodePrintModal({ isOpen, onClose, defaultProductId = 
   
   const printRef = useRef<HTMLDivElement>(null);
 
-  const selectedProduct = products?.find(p => p.productId === selectedProductId);
+  // FIX LỖI TS7006: Khai báo kiểu Product rõ ràng
+  const selectedProduct = productsList.find((p: Product) => p.productId === selectedProductId || (p as any).id === selectedProductId);
 
   // --- HANDLERS ---
   const handlePrint = () => {
@@ -106,8 +110,8 @@ export default function BarcodePrintModal({ isOpen, onClose, defaultProductId = 
                 className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white shadow-sm"
               >
                 <option value="">-- Chọn sản phẩm cần in tem --</option>
-                {products?.map(p => (
-                  <option key={p.productId} value={p.productId}>[{p.productCode}] {p.name}</option>
+                {productsList.map((p: Product) => (
+                  <option key={p.productId} value={p.productId || (p as any).id}>[{p.productCode}] {p.name}</option>
                 ))}
               </select>
             </div>
@@ -148,13 +152,23 @@ export default function BarcodePrintModal({ isOpen, onClose, defaultProductId = 
               <div className="grid grid-cols-2 gap-3">
                 <button 
                   onClick={() => setLabelSize("LARGE")}
-                  className={`p-3 border rounded-xl flex flex-col items-center justify-center gap-1 transition-all active:scale-95 ${labelSize === "LARGE" ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold shadow-md" : "border-slate-200 dark:border-white/10 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800"}`}
+                  className={cn(
+                    "p-3 border rounded-xl flex flex-col items-center justify-center gap-1 transition-all active:scale-95",
+                    labelSize === "LARGE" 
+                      ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold shadow-md" 
+                      : "border-slate-200 dark:border-white/10 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800"
+                  )}
                 >
                   <span className="text-sm">Tem Thùng (100x100)</span>
                 </button>
                 <button 
                   onClick={() => setLabelSize("SMALL")}
-                  className={`p-3 border rounded-xl flex flex-col items-center justify-center gap-1 transition-all active:scale-95 ${labelSize === "SMALL" ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold shadow-md" : "border-slate-200 dark:border-white/10 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800"}`}
+                  className={cn(
+                    "p-3 border rounded-xl flex flex-col items-center justify-center gap-1 transition-all active:scale-95",
+                    labelSize === "SMALL" 
+                      ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold shadow-md" 
+                      : "border-slate-200 dark:border-white/10 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800"
+                  )}
                 >
                   <span className="text-sm">Tem Dán (50x30)</span>
                 </button>
@@ -196,15 +210,16 @@ export default function BarcodePrintModal({ isOpen, onClose, defaultProductId = 
                 <motion.div 
                   key="preview"
                   initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.8, opacity: 0 }}
-                  className={`bg-white shadow-xl rounded-lg p-6 flex flex-col border border-slate-200 text-black transition-all ${
+                  className={cn(
+                    "bg-white shadow-xl rounded-lg p-6 flex flex-col border border-slate-200 text-black transition-all",
                     labelSize === "LARGE" ? "w-[300px] aspect-square justify-between" : "w-[250px] h-[150px] justify-center gap-2"
-                  }`}
+                  )}
                 >
-                  <div className={`${labelSize === "LARGE" ? "text-center" : "flex items-center justify-between"}`}>
-                    <h1 className={`font-black uppercase truncate ${labelSize === "LARGE" ? "text-xl mb-1" : "text-sm max-w-[150px]"}`}>
+                  <div className={cn(labelSize === "LARGE" ? "text-center" : "flex items-center justify-between")}>
+                    <h1 className={cn("font-black uppercase truncate", labelSize === "LARGE" ? "text-xl mb-1" : "text-sm max-w-[150px]")}>
                       {selectedProduct.name}
                     </h1>
-                    <p className={`font-mono text-slate-500 ${labelSize === "LARGE" ? "text-sm" : "text-xs"}`}>
+                    <p className={cn("font-mono text-slate-500", labelSize === "LARGE" ? "text-sm" : "text-xs")}>
                       {selectedProduct.productCode}
                     </p>
                   </div>

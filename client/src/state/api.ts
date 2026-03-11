@@ -592,7 +592,6 @@ const baseQuery = fetchBaseQuery({
 // 3. XÂY DỰNG LÁ CHẮN "INTERCEPTOR" THÔNG MINH (CHỐNG CHẾT TOKEN)
 // ==========================================
 
-// Biến cờ (Mutex Flag) để tránh Gọi Refresh Token nhiều lần cùng lúc khi có hàng loạt API bị 401
 let isRefreshing = false;
 let refreshPromise: Promise<string | null> | null = null;
 
@@ -601,43 +600,38 @@ const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQue
   api,
   extraOptions
 ) => {
-  // Bước 1: Vẫn gọi API như bình thường
   let result = await baseQuery(args, api, extraOptions);
 
-  // Bước 2: NẾU BỊ 401 UNAUTHORIZED (Mặc dù đã cố gắng gửi token) -> TOKEN HẾT HẠN
-  if (result.error && result.error.status === 401) {
+  // Trích xuất URL hiện tại đang gọi
+  const url = typeof args === "string" ? args : args.url;
+
+  // FIX LỖI ENTERPRISE: Bỏ qua Interceptor nếu API đang gọi là Login hoặc Refresh Token
+  // Nếu đăng nhập sai, hãy để nguyên lỗi 401 trả về cho form hiển thị thông báo.
+  if (result.error && result.error.status === 401 && !url.includes('/auth/login') && !url.includes('/auth/refresh-token')) {
     
-    // Khóa luồng (Race Condition Lock)
     if (!isRefreshing) {
       isRefreshing = true;
       
       refreshPromise = (async () => {
         try {
           const state = api.getState() as any;
-          // Cố gắng lấy từ RAM trước
           let refreshToken = state.global?.refreshToken;
           
-          // GIẢI MÃ REDUX PERSIST TÌM REFRESH TOKEN (Chống F5 Race Condition)
           if (!refreshToken && typeof window !== "undefined") {
             const persistKeys = ["persist:root", "persist:global", "persist:auth"];
             for (const key of persistKeys) {
               const persistData = localStorage.getItem(key);
               if (persistData) {
                 const parsedData = JSON.parse(persistData);
-                // Slice global hoặc auth thường bị JSON.stringify lần 2 bởi redux-persist
                 const globalSlice = parsedData.global ? JSON.parse(parsedData.global) : null;
-                
-                // Ép móc Refresh Token ra!
                 refreshToken = globalSlice?.refreshToken || refreshToken;
                 if (refreshToken) break;
               }
             }
-            // Fallback cuối cùng nếu app tự lưu key rời
             if (!refreshToken) refreshToken = localStorage.getItem("refreshToken");
           }
 
           if (refreshToken) {
-            // GỌI API REFRESH TOKEN NGẦM
             const refreshResult = await baseQuery(
               {
                 url: "/auth/refresh-token",
@@ -650,13 +644,10 @@ const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQue
 
             if (refreshResult.data) {
               const data = refreshResult.data as any;
-              
-              // Trích xuất Token mới tùy theo cấu trúc trả về của Backend
               const newAccessToken = data.accessToken || data.metadata?.accessToken || data.data?.accessToken;
               const newRefreshToken = data.refreshToken || data.metadata?.refreshToken || data.data?.refreshToken;
 
               if (newAccessToken) {
-                // Đập thẳng Token mới vào Redux 
                 if (newRefreshToken) {
                   api.dispatch(setAuthTokens({ accessToken: newAccessToken, refreshToken: newRefreshToken }));
                 } else {
@@ -667,23 +658,21 @@ const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQue
             }
           }
           
-          // Đã cố gắng mọi cách nhưng vô vọng (Refresh token chết nốt) -> Đá ra trang Đăng nhập
           api.dispatch(logout());
           return null;
         } catch (err) {
           api.dispatch(logout());
           return null;
         } finally {
-          isRefreshing = false; // Xả khóa
+          isRefreshing = false; 
         }
       })();
     }
 
-    // Đợi đến khi quá trình đổi token hoàn tất (Các API khác bị 401 cùng lúc sẽ đứng ở đây chờ)
     const newAccessToken = await refreshPromise;
 
-    // Bước 3: NẾU THAY MÁU THÀNH CÔNG -> GỌI LẠI CÁI API VỪA BỊ XỊT!
     if (newAccessToken) {
+      // Nếu có token mới, gửi lại request ban đầu bị lỗi
       result = await baseQuery(args, api, extraOptions);
     }
   }
@@ -766,7 +755,10 @@ export const api = createApi({
     getOrganizationStructure: build.query<any, void>({ query: () => "/org-rbac/organization", providesTags: ["Companies", "Branches", "Departments"] }),
     
     // Tổng hợp Logs
-    getSystemAuditLogs: build.query<SystemAuditLog[], any>({ query: (params) => ({ url: "/org-rbac/audit-logs", params }), providesTags: ["AuditLogs"] }),
+    getSystemAuditLogs: build.query<PaginatedResponse<SystemAuditLog>, any>({ 
+      query: (params) => ({ url: "/org-rbac/audit-logs", params }), 
+      providesTags: ["AuditLogs"] 
+    }),
     getAuditLogsByRecord: build.query<SystemAuditLog[], { tableName: string; recordId: string }>({ query: (params) => ({ url: "/org-rbac/audit-logs/detail", params }), providesTags: ["AuditLogs"] }),
     
     // NÂNG CẤP DASHBOARD: API lấy danh sách Hoạt động gần đây (Limit 10)

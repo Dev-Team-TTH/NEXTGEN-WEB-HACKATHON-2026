@@ -15,6 +15,9 @@ import { useAppDispatch } from "@/app/redux";
 import { useLoginMutation, useVerify2FALoginMutation } from "@/state/api";
 import { setAuthTokens, setCurrentUser } from "@/state/index";
 
+// --- UTILS (SIÊU VŨ KHÍ) ---
+import { cn } from "@/utils/helpers";
+
 // ==========================================
 // CÁC TRẠNG THÁI CỦA MÀN HÌNH ĐĂNG NHẬP
 // ==========================================
@@ -351,7 +354,11 @@ export default function Login() {
                       onKeyDown={handleCheckCapsLock}
                       onClick={handleCheckCapsLock}
                       disabled={isLoggingIn}
-                      className={`block w-full pl-11 pr-12 py-3 bg-gray-50/50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-2xl text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-sm [&::-ms-reveal]:hidden [&::-ms-clear]:hidden [&::-webkit-contacts-auto-fill-button]:hidden ${capsLockActive ? "ring-2 ring-amber-500/50 border-amber-500" : ""}`}
+                      // ÁP DỤNG CN THẦN THÁNH
+                      className={cn(
+                        "block w-full pl-11 pr-12 py-3 bg-gray-50/50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-2xl text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-sm [&::-ms-reveal]:hidden [&::-ms-clear]:hidden [&::-webkit-contacts-auto-fill-button]:hidden",
+                        capsLockActive && "ring-2 ring-amber-500/50 border-amber-500"
+                      )}
                       placeholder="••••••••" 
                       required
                     />

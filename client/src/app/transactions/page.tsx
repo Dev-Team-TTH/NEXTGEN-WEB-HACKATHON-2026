@@ -23,11 +23,12 @@ import {
 // --- COMPONENTS GIAO DIỆN LÕI ---
 import Header from "@/app/(components)/Header";
 import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
-import RequirePermission from "@/app/(components)/RequirePermission"; // ĐÃ THÊM LÁ CHẮN BẢO MẬT
+import RequirePermission from "@/app/(components)/RequirePermission";
 
-// --- UTILS (KIẾN TRÚC MỚI) ---
-import { formatVND } from "@/utils/formatters";
+// --- UTILS (SIÊU VŨ KHÍ) ---
+import { formatVND, formatDateTime } from "@/utils/formatters";
 import { exportToCSV } from "@/utils/exportUtils";
+import { cn } from "@/utils/helpers";
 
 // --- SIÊU COMPONENTS VỆ TINH (MODALS) ---
 import LandedCostModal from "./LandedCostModal";
@@ -37,7 +38,7 @@ import PaymentModal from "./PaymentModal";
 dayjs.locale('vi');
 
 // ==========================================
-// 1. HELPERS & FORMATTERS (DATA VIZ)
+// 1. HELPERS (DATA VIZ)
 // ==========================================
 const getDocTypeUI = (type: string) => {
   switch (type) {
@@ -148,16 +149,13 @@ export default function TransactionsPage() {
   const handleApprove = async (id: string, docNum: string) => {
     if (window.confirm(`Duyệt Nhanh Chứng từ [${docNum}]?\nHệ thống sẽ tự động sinh phiếu nhập/xuất kho và hạch toán kế toán.`)) {
       try {
-        // Nhờ Optimistic UI, giao diện sẽ đổi ngay lập tức không cần đợi 
         const promise = approveDocument({ id, data: { action: "APPROVE", comment: "Duyệt nhanh từ Dashboard" } }).unwrap();
         toast.promise(promise, {
           loading: 'Đang xử lý phê duyệt...',
           success: `Đã duyệt chứng từ ${docNum}!`,
           error: (err) => err?.data?.message || "Lỗi khi duyệt chứng từ!"
         });
-      } catch (err: any) {
-        // Lỗi đã được Toast Promise bắt
-      }
+      } catch (err: any) {}
     }
   };
 
@@ -186,7 +184,7 @@ export default function TransactionsPage() {
         "Số chứng từ": doc.documentNumber,
         "Loại chứng từ": getDocTypeUI(doc.type).label,
         "Đối tác": partnerName,
-        "Ngày tạo": dayjs(doc.issueDate || doc.createdAt).format('DD/MM/YYYY HH:mm'),
+        "Ngày tạo": formatDateTime(doc.issueDate || doc.createdAt),
         "Tổng giá trị": total,
         "Đã thanh toán": paid,
         "Còn nợ": remaining > 0 ? remaining : 0,
@@ -209,12 +207,12 @@ export default function TransactionsPage() {
         const Icon = ui.icon;
         return (
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${ui.color} shadow-sm group-hover:scale-105 transition-transform`}>
+            <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border shadow-sm group-hover:scale-105 transition-transform", ui.color)}>
               <Icon className="w-5 h-5" />
             </div>
             <div className="flex flex-col">
               <span className="font-bold text-slate-900 dark:text-white uppercase tracking-wider">{row.documentNumber || "N/A"}</span>
-              <span className="text-[10px] text-slate-500 font-medium mt-0.5">{dayjs(row.issueDate || row.createdAt).format('HH:mm - DD/MM/YYYY')}</span>
+              <span className="text-[10px] text-slate-500 font-medium mt-0.5">{formatDateTime(row.issueDate || row.createdAt)}</span>
             </div>
           </div>
         );
@@ -232,7 +230,7 @@ export default function TransactionsPage() {
               {partnerName}
             </span>
             <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1 mt-1">
-              <Building className={`w-3 h-3 ${isSupplier ? 'text-orange-500' : 'text-emerald-500'}`} />
+              <Building className={cn("w-3 h-3", isSupplier ? "text-orange-500" : "text-emerald-500")} />
               {isSupplier ? "Nhà Cung Cấp" : "Khách Hàng"}
             </span>
           </div>
@@ -252,12 +250,12 @@ export default function TransactionsPage() {
           <div className="flex flex-col w-48">
             <div className="flex justify-between items-end mb-1 text-[11px]">
               <span className="font-black text-slate-800 dark:text-white">{formatVND(total)}</span>
-              <span className={`font-bold ${payUI.color}`}>{payUI.percent}%</span>
+              <span className={cn("font-bold", payUI.color)}>{payUI.percent}%</span>
             </div>
             <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700/50 rounded-full overflow-hidden shadow-inner">
               <motion.div 
                 initial={{ width: 0 }} animate={{ width: `${payUI.percent}%` }} transition={{ duration: 1, ease: "easeOut" }}
-                className={`h-full rounded-full ${payUI.bar}`}
+                className={cn("h-full rounded-full", payUI.bar)}
               />
             </div>
             <div className="text-[10px] text-slate-500 mt-1 flex justify-between">
@@ -274,7 +272,12 @@ export default function TransactionsPage() {
       cell: (row) => {
         const isPending = row.status === "PENDING" || row.status === "DRAFT";
         return (
-          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border shadow-sm ${isPending ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30' : 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30'}`}>
+          <span className={cn(
+            "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border shadow-sm",
+            isPending 
+              ? "bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30" 
+              : "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30"
+          )}>
             {isPending ? <Clock className="w-3.5 h-3.5 animate-pulse" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
             {row.status}
           </span>
@@ -348,7 +351,7 @@ export default function TransactionsPage() {
         <AlertOctagon className="w-16 h-16 text-rose-500 mb-4 animate-pulse" />
         <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Lỗi truy xuất hệ thống Giao dịch</h2>
         <button onClick={() => refetch()} className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg active:scale-95 flex items-center gap-2 mt-4">
-          <RefreshCcw className={`w-5 h-5 ${isFetching ? 'animate-spin' : ''}`} /> Tải lại dữ liệu
+          <RefreshCcw className={cn("w-5 h-5", isFetching && "animate-spin")} /> Tải lại dữ liệu
         </button>
       </div>
     );
@@ -414,11 +417,11 @@ export default function TransactionsPage() {
                 </p>
               </motion.div>
 
-              <motion.div variants={itemVariants} className={`glass p-5 rounded-3xl border shadow-sm relative overflow-hidden group transition-colors ${kpis.pendingDocs > 0 ? 'border-amber-300 bg-amber-50/30 dark:border-amber-500/30 dark:bg-amber-900/10' : 'border-slate-200 dark:border-white/10'}`}>
+              <motion.div variants={itemVariants} className={cn("glass p-5 rounded-3xl border shadow-sm relative overflow-hidden group transition-colors", kpis.pendingDocs > 0 ? "border-amber-300 bg-amber-50/30 dark:border-amber-500/30 dark:bg-amber-900/10" : "border-slate-200 dark:border-white/10")}>
                 <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform"><Clock className="w-20 h-20 text-amber-500"/></div>
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Chứng từ Chờ Duyệt</p>
                 <div className="flex items-center gap-3 relative z-10">
-                  <h3 className={`text-3xl font-black ${kpis.pendingDocs > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
+                  <h3 className={cn("text-3xl font-black", kpis.pendingDocs > 0 ? "text-amber-600 dark:text-amber-400" : "text-slate-400")}>
                     {kpis.pendingDocs}
                   </h3>
                   {kpis.pendingDocs > 0 && (
@@ -454,7 +457,10 @@ export default function TransactionsPage() {
                 ].map(tab => (
                   <button 
                     key={tab.id} onClick={() => setActiveTab(tab.id as DocTab)} 
-                    className={`relative px-4 py-2.5 text-xs font-bold rounded-xl transition-colors whitespace-nowrap z-10 ${activeTab === tab.id ? "text-slate-900 dark:text-white" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}
+                    className={cn(
+                      "relative px-4 py-2.5 text-xs font-bold rounded-xl transition-colors whitespace-nowrap z-10",
+                      activeTab === tab.id ? "text-slate-900 dark:text-white" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                    )}
                   >
                     {activeTab === tab.id && <motion.div layoutId="docFilterTab" className="absolute inset-0 bg-white dark:bg-slate-700 shadow-sm rounded-xl -z-10 border border-slate-200/50 dark:border-slate-600" />}
                     {tab.label}
@@ -529,7 +535,6 @@ export default function TransactionsPage() {
           {/* HEADER CHỨNG TỪ */}
           <div className="flex justify-between items-start border-b-2 border-black pb-4 mb-6">
             <div className="flex items-center gap-4">
-              {/* Giả lập Logo */}
               <div className="w-20 h-20 bg-gray-100 border border-black flex items-center justify-center font-bold text-lg">
                 LOGO
               </div>
@@ -643,7 +648,7 @@ export default function TransactionsPage() {
           </div>
           
           <div className="text-center text-xs italic mt-16 text-gray-500">
-            Chứng từ được kết xuất tự động từ Hệ thống TTH ERP - Ngày in: {dayjs().format('DD/MM/YYYY HH:mm')}
+            Chứng từ được kết xuất tự động từ Hệ thống TTH ERP - Ngày in: {formatDateTime(new Date())}
           </div>
         </div>
       )}

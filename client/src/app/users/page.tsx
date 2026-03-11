@@ -10,7 +10,6 @@ import {
   Phone, CalendarDays, Clock, MapPin, Lock, Fingerprint, EyeOff, Key
 } from "lucide-react";
 import { toast } from "react-hot-toast";
-import dayjs from "dayjs";
 
 // --- REDUX & API ---
 import { 
@@ -24,13 +23,16 @@ import {
   User 
 } from "@/state/api";
 
-// --- COMPONENTS ---
+// --- COMPONENTS & UTILS ---
 import Header from "@/app/(components)/Header";
 import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
 import Modal from "@/app/(components)/Modal";
 import RolePermissionModal from "./RolePermissionModal";
 import SystemAuditLog from "./SystemAuditLog";
 import OrganizationChart from "./OrganizationChart";
+
+import { formatDate, formatDateTime, getInitials } from "@/utils/formatters";
+import { cn, generateAvatarColor } from "@/utils/helpers";
 
 // ==========================================
 // 1. THUẬT TOÁN BÓC TÁCH DỮ LIỆU ĐA NĂNG
@@ -131,7 +133,6 @@ export default function UsersPage() {
     e.preventDefault();
     if (!editingUser) return;
     try {
-      // HOÀN TOÀN BẢO MẬT: Chuyển trách nhiệm xác thực PIN cho Backend
       const response = await resetPassword({ userId: editingUser.userId, adminPin }).unwrap();
       setRevealedPassword(response.newPassword);
       setShowPasswordAuth(false);
@@ -196,8 +197,8 @@ export default function UsersPage() {
       sortable: true,
       cell: (row) => (
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-black shadow-md shrink-0 border border-white/20">
-            {row.fullName?.charAt(0).toUpperCase() || "U"}
+          <div className={cn("w-10 h-10 rounded-full flex items-center justify-center font-black shadow-md shrink-0 border border-white/20", generateAvatarColor(row.fullName))}>
+            {getInitials(row.fullName)}
           </div>
           <div className="flex flex-col">
             <span className="font-bold text-slate-900 dark:text-white truncate max-w-[150px] sm:max-w-[200px]">{row.fullName}</span>
@@ -244,7 +245,9 @@ export default function UsersPage() {
         const { label, icon: Icon, color } = getStatusUI(row.status);
         return (
           <div className="flex flex-col gap-1.5 items-start">
-            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border shadow-sm ${color}`}><Icon className="w-3 h-3" /> {label}</span>
+            <span className={cn("inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border shadow-sm", color)}>
+              <Icon className="w-3 h-3" /> {label}
+            </span>
             {row.is2FAEnabled ? (
               <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1"><ShieldCheck className="w-3 h-3"/> Đã bật 2FA</span>
             ) : (
@@ -262,8 +265,8 @@ export default function UsersPage() {
         const lastLoginAt = (row as any).lastLoginAt;
         return (
           <div className="flex flex-col gap-1.5">
-            <span className="text-[11px] text-slate-500 flex items-center gap-1.5"><CalendarDays className="w-3.5 h-3.5"/> Tham gia: {createdAt ? dayjs(createdAt).format('DD/MM/YYYY') : '--'}</span>
-            {lastLoginAt && <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium flex items-center gap-1.5"><Clock className="w-3.5 h-3.5"/> Auth: {dayjs(lastLoginAt).format('HH:mm - DD/MM')}</span>}
+            <span className="text-[11px] text-slate-500 flex items-center gap-1.5"><CalendarDays className="w-3.5 h-3.5"/> Tham gia: {formatDate(createdAt)}</span>
+            {lastLoginAt && <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium flex items-center gap-1.5"><Clock className="w-3.5 h-3.5"/> Auth: {formatDateTime(lastLoginAt)}</span>}
           </div>
         )
       }
@@ -318,15 +321,15 @@ export default function UsersPage() {
               <p className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 mt-2 relative z-10 flex items-center gap-1"><UserCheck className="w-3.5 h-3.5"/> {summary.activeCount} account active</p>
             </motion.div>
             
-            <motion.div variants={itemVariants} className={`glass p-5 rounded-3xl border shadow-sm relative overflow-hidden group transition-all duration-300 ${summary.twoFactorRate >= 80 ? 'border-emerald-200 dark:border-emerald-900/30 hover:shadow-emerald-500/10' : 'border-rose-300 bg-rose-50/30 dark:border-rose-500/30 dark:bg-rose-900/10 hover:shadow-rose-500/10'}`}>
-              <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform duration-500"><ShieldCheck className={`w-24 h-24 ${summary.twoFactorRate >= 80 ? 'text-emerald-500' : 'text-rose-500'}`}/></div>
+            <motion.div variants={itemVariants} className={cn("glass p-5 rounded-3xl border shadow-sm relative overflow-hidden group transition-all duration-300", summary.twoFactorRate >= 80 ? "border-emerald-200 dark:border-emerald-900/30 hover:shadow-emerald-500/10" : "border-rose-300 bg-rose-50/30 dark:border-rose-500/30 dark:bg-rose-900/10 hover:shadow-rose-500/10")}>
+              <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform duration-500"><ShieldCheck className={cn("w-24 h-24", summary.twoFactorRate >= 80 ? "text-emerald-500" : "text-rose-500")} /></div>
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 relative z-10 flex items-center gap-1"><ShieldCheck className="w-3.5 h-3.5"/> Sức khỏe Bảo mật (2FA)</p>
               <div className="flex items-end gap-2 relative z-10">
-                <h3 className={`text-4xl font-black tracking-tight ${summary.twoFactorRate >= 80 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>{summary.twoFactorRate}%</h3>
+                <h3 className={cn("text-4xl font-black tracking-tight", summary.twoFactorRate >= 80 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400")}>{summary.twoFactorRate}%</h3>
                 {summary.twoFactorRate < 80 && <ShieldAlert className="w-5 h-5 text-rose-500 mb-1.5 animate-pulse" />}
               </div>
               <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mt-2 relative z-10 shadow-inner">
-                <motion.div initial={{ width: 0 }} animate={{ width: `${summary.twoFactorRate}%` }} transition={{ duration: 1, ease: "easeOut" }} className={`h-full rounded-full ${summary.twoFactorRate >= 80 ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                <motion.div initial={{ width: 0 }} animate={{ width: `${summary.twoFactorRate}%` }} transition={{ duration: 1, ease: "easeOut" }} className={cn("h-full rounded-full", summary.twoFactorRate >= 80 ? "bg-emerald-500" : "bg-rose-500")} />
               </div>
             </motion.div>
             
@@ -350,19 +353,19 @@ export default function UsersPage() {
 
           <div className="w-full overflow-x-auto scrollbar-hide sticky top-4 z-30">
             <div className="flex items-center gap-2 p-1.5 bg-white/70 dark:bg-[#0B0F19]/70 backdrop-blur-xl rounded-2xl w-fit border border-slate-200/50 dark:border-white/10 shadow-lg shadow-slate-200/20 dark:shadow-black/50">
-              <button onClick={() => setActiveTab("USERS")} className={`relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap ${activeTab === "USERS" ? "text-indigo-600 dark:text-indigo-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}>
+              <button onClick={() => setActiveTab("USERS")} className={cn("relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap", activeTab === "USERS" ? "text-indigo-600 dark:text-indigo-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300")}>
                 {activeTab === "USERS" && <motion.div layoutId="rbacTab" className="absolute inset-0 bg-white dark:bg-slate-800 border border-slate-200/50 dark:border-white/5 rounded-xl shadow-sm -z-10" />}
                 <Users className="w-4 h-4" /> Quản trị Người dùng
               </button>
-              <button onClick={() => setActiveTab("ROLES")} className={`relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap ${activeTab === "ROLES" ? "text-purple-600 dark:text-purple-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}>
+              <button onClick={() => setActiveTab("ROLES")} className={cn("relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap", activeTab === "ROLES" ? "text-purple-600 dark:text-purple-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300")}>
                 {activeTab === "ROLES" && <motion.div layoutId="rbacTab" className="absolute inset-0 bg-white dark:bg-slate-800 border border-slate-200/50 dark:border-white/5 rounded-xl shadow-sm -z-10" />}
                 <KeyRound className="w-4 h-4" /> Quản trị Vai trò (Roles)
               </button>
-              <button onClick={() => setActiveTab("ORG_CHART")} className={`relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap ${activeTab === "ORG_CHART" ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}>
+              <button onClick={() => setActiveTab("ORG_CHART")} className={cn("relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap", activeTab === "ORG_CHART" ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300")}>
                 {activeTab === "ORG_CHART" && <motion.div layoutId="rbacTab" className="absolute inset-0 bg-white dark:bg-slate-800 border border-slate-200/50 dark:border-white/5 rounded-xl shadow-sm -z-10" />}
                 <Network className="w-4 h-4" /> Sơ đồ Tổ chức
               </button>
-              <button onClick={() => setActiveTab("AUDIT_LOGS")} className={`relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap ${activeTab === "AUDIT_LOGS" ? "text-blue-600 dark:text-blue-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}>
+              <button onClick={() => setActiveTab("AUDIT_LOGS")} className={cn("relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap", activeTab === "AUDIT_LOGS" ? "text-blue-600 dark:text-blue-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300")}>
                 {activeTab === "AUDIT_LOGS" && <motion.div layoutId="rbacTab" className="absolute inset-0 bg-white dark:bg-slate-800 border border-slate-200/50 dark:border-white/5 rounded-xl shadow-sm -z-10" />}
                 <History className="w-4 h-4" /> Audit Logs
               </button>

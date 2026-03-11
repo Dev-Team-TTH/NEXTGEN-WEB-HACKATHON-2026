@@ -6,11 +6,8 @@ import { useTranslation } from "react-i18next";
 import { 
   CheckCircle2, XCircle, Clock, FileText, 
   Search, AlertOctagon, RefreshCcw, DollarSign,
-  ShieldCheck, User, Filter, Eye, RotateCcw, Download
+  ShieldCheck, User, Eye, RotateCcw, Download
 } from "lucide-react";
-import dayjs from "dayjs";
-import relativeTime from "dayjs/plugin/relativeTime";
-import 'dayjs/locale/vi';
 import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
@@ -20,17 +17,15 @@ import {
   ApprovalRequest
 } from "@/state/api";
 
-// --- UTILS (KIẾN TRÚC MỚI) ---
-import { formatVND } from "@/utils/formatters";
+// --- UTILS (SIÊU VŨ KHÍ) ---
+import { formatVND, timeAgo, formatDateTime } from "@/utils/formatters";
 import { exportToCSV } from "@/utils/exportUtils";
+import { cn } from "@/utils/helpers";
 
 // --- COMPONENTS ---
 import Header from "@/app/(components)/Header";
 import ApprovalDetail from "./ApprovalDetail";
 import ActionModal, { ActionConfig } from "./ActionModal";
-
-dayjs.extend(relativeTime);
-dayjs.locale('vi');
 
 // ==========================================
 // 1. HELPERS & FORMATTERS (DATA VIZ)
@@ -121,7 +116,7 @@ export default function ApprovalsPage() {
       "Người đệ trình": req.requester?.fullName || "Hệ thống",
       "Giá trị (VND)": req.document?.totalAmount || req.document?.amount || 0,
       "Trạng thái": req.status === "PENDING" ? "Đang chờ" : req.status === "APPROVED" ? "Đã duyệt" : "Bị từ chối",
-      "Ngày tạo": dayjs(req.createdAt).format('DD/MM/YYYY HH:mm')
+      "Ngày tạo": formatDateTime(req.createdAt)
     }));
 
     exportToCSV(exportData, `Bang_Ke_Phe_Duyet_${activeBoard}`);
@@ -157,11 +152,11 @@ export default function ApprovalsPage() {
         className="flex flex-col p-4 bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-white/10 rounded-2xl shadow-sm hover:shadow-md transition-shadow group relative overflow-hidden"
       >
         <div className="flex justify-between items-start mb-3">
-          <span className={`text-[10px] font-bold px-2 py-1 rounded-md border uppercase tracking-wider ${docTypeUI.color}`}>
+          <span className={cn("text-[10px] font-bold px-2 py-1 rounded-md border uppercase tracking-wider", docTypeUI.color)}>
             {docTypeUI.label}
           </span>
           <span className="text-[10px] font-medium text-slate-400 flex items-center gap-1">
-            <Clock className="w-3 h-3" /> {dayjs(req.createdAt).fromNow()}
+            <Clock className="w-3 h-3" /> {timeAgo(req.createdAt)}
           </span>
         </div>
 
@@ -261,14 +256,20 @@ export default function ApprovalsPage() {
             <div className="flex items-center gap-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-white/5 overflow-x-auto">
               <button 
                 onClick={() => setActiveBoard("PENDING_APPROVALS")} 
-                className={`relative px-4 py-2 text-sm font-bold rounded-lg transition-colors z-10 flex items-center gap-2 whitespace-nowrap ${activeBoard === "PENDING_APPROVALS" ? "text-indigo-700 dark:text-indigo-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}
+                className={cn(
+                  "relative px-4 py-2 text-sm font-bold rounded-lg transition-colors z-10 flex items-center gap-2 whitespace-nowrap",
+                  activeBoard === "PENDING_APPROVALS" ? "text-indigo-700 dark:text-indigo-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                )}
               >
                 {activeBoard === "PENDING_APPROVALS" && <motion.div layoutId="appTab" className="absolute inset-0 bg-white dark:bg-slate-700 shadow-sm rounded-lg -z-10" />}
                 <ShieldCheck className="w-4 h-4" /> Cần Tôi Duyệt
               </button>
               <button 
                 onClick={() => setActiveBoard("MY_REQUESTS")} 
-                className={`relative px-4 py-2 text-sm font-bold rounded-lg transition-colors z-10 flex items-center gap-2 whitespace-nowrap ${activeBoard === "MY_REQUESTS" ? "text-indigo-700 dark:text-indigo-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}
+                className={cn(
+                  "relative px-4 py-2 text-sm font-bold rounded-lg transition-colors z-10 flex items-center gap-2 whitespace-nowrap",
+                  activeBoard === "MY_REQUESTS" ? "text-indigo-700 dark:text-indigo-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                )}
               >
                 {activeBoard === "MY_REQUESTS" && <motion.div layoutId="appTab" className="absolute inset-0 bg-white dark:bg-slate-700 shadow-sm rounded-lg -z-10" />}
                 <FileText className="w-4 h-4" /> Tờ trình của Tôi

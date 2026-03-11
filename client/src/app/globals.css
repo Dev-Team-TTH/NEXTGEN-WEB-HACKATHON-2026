@@ -2,124 +2,96 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ==========================================
-   1. HỆ THỐNG BIẾN TOÀN CỤC (THEMING & COLORS)
-   Được tinh chỉnh cho màu Slate tinh tế của Apple
-========================================== */
 @layer base {
   :root {
-    --background: #f8fafc; /* slate-50 */
-    --foreground: #0f172a; /* slate-900 */
-    --card: #ffffff;
-    --card-foreground: #0f172a;
-    --border: #e2e8f0; /* slate-200 */
-    --ring: #3b82f6; /* blue-500 */
-    --radius: 1rem;
+    --foreground-rgb: 15, 23, 42; /* slate-900 */
+    --background-start-rgb: 248, 250, 252; /* slate-50 */
+    --background-end-rgb: 255, 255, 255;
   }
 
-  .dark {
-    --background: #0B0F19; /* Nền tối sâu thẳm - Immersive Dark */
-    --foreground: #f8fafc; /* slate-50 */
-    --card: #1e293b; /* slate-800 */
-    --card-foreground: #f8fafc;
-    --border: #1e293b; /* slate-800 */
-    --ring: #3b82f6; /* blue-500 */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --foreground-rgb: 248, 250, 252; /* slate-50 */
+      --background-start-rgb: 11, 15, 25; /* #0B0F19 */
+      --background-end-rgb: 11, 15, 25;
+    }
   }
-}
 
-/* ==========================================
-   2. THIẾT LẬP NỀN TẢNG CỐT LÕI (BASE)
-========================================== */
-@layer base {
-  * {
-    @apply border-gray-200 dark:border-white/10;
-  }
-  
+  /* ==========================================
+     VŨ KHÍ 1: TRỊ TẬN GỐC LỖI FLICKERING SCROLLBAR
+     ========================================== */
   html {
-    scroll-behavior: smooth; /* Cuộn mượt mà chuẩn 60fps */
-    -webkit-tap-highlight-color: transparent; /* Tắt nháy xanh khi bấm trên Mobile */
+    /* Công nghệ mới: Luôn giữ chỗ cho thanh cuộn dọc (dù có nội dung tràn hay không) */
+    /* Điều này triệt tiêu hoàn toàn sự co kéo layout khi trang dài ra/ngắn lại đột ngột */
+    scrollbar-gutter: stable;
   }
 
   body {
-    @apply bg-slate-50 dark:bg-[#0B0F19] text-slate-900 dark:text-slate-50 antialiased;
-    /* Bật tăng tốc phần cứng (GPU Acceleration) cho toàn trang */
-    transform: translateZ(0); 
+    color: rgb(var(--foreground-rgb));
+    background: rgb(var(--background-start-rgb));
+    /* Khóa tuyệt đối scroll ngang (chống vỡ layout trên mobile) */
+    overflow-x: hidden;
+    width: 100%;
+    position: relative;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
 /* ==========================================
-   3. CÁC TIỆN ÍCH UI/UX ĐẶC QUYỀN (UTILITIES)
-========================================== */
+   VŨ KHÍ 2: ĐÈ THANH CUỘN GỐC BẰNG CUSTOM SCROLLBAR CHUẨN MACOS
+   ========================================== */
+
+/* Trình duyệt Webkit (Chrome, Safari, Edge, Cốc Cốc) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.4); /* slate-400 mờ */
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(148, 163, 184, 0.8);
+}
+
+/* Tương thích chế độ Dark Mode */
+.dark ::-webkit-scrollbar-thumb {
+  background-color: rgba(71, 85, 105, 0.5); /* slate-600 mờ */
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(71, 85, 105, 0.9);
+}
+
+/* Trình duyệt Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+}
+
 @layer utilities {
-  /* --- A. CHẤT LIỆU KÍNH MỜ (GLASSMORPHISM) --- */
-  .glass {
-    @apply bg-white/70 dark:bg-[#0B0F19]/70 backdrop-blur-2xl border border-white/40 dark:border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)];
+  /* Class tiện ích ẩn scrollbar cho các danh sách cuộn ngang nhỏ (vd: Tabs) */
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
   }
-
-  .glass-panel {
-    @apply bg-white/50 dark:bg-white/5 backdrop-blur-xl border border-white/60 dark:border-white/10;
-  }
-
-  /* --- B. HIỆU ỨNG TEXT GRADIENT NỔI BẬT --- */
-  .text-gradient {
-    @apply text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400;
-  }
-
-  /* --- C. THANH CUỘN TÀNG HÌNH & TÙY CHỈNH --- */
   .scrollbar-hide {
-    -ms-overflow-style: none; /* IE and Edge */
+    -ms-overflow-style: none; /* IE & Edge */
     scrollbar-width: none; /* Firefox */
   }
-  .scrollbar-hide::-webkit-scrollbar {
-    display: none; /* Chrome, Safari and Opera */
+  
+  /* Các class UI Core chung toàn dự án */
+  .glass {
+    @apply bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border border-slate-200/50 dark:border-slate-700/50 shadow-sm;
   }
-
-  /* Tùy chỉnh thanh cuộn thanh mảnh (Thin Scrollbar) */
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+  
+  .glass-panel {
+    @apply bg-white dark:bg-[#0B0F19] border border-slate-200 dark:border-slate-800 shadow-sm;
   }
-  .scrollbar-thin::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    @apply bg-slate-300 dark:bg-slate-700 rounded-full;
-  }
-  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    @apply bg-slate-400 dark:bg-slate-600;
-  }
-
-  /* --- D. ADAPTIVE MOBILE (SAFE AREA INSETS) --- */
-  /* Cực kỳ quan trọng để UI không bị thanh vuốt Home của iPhone đè lên */
-  .pb-safe {
-    padding-bottom: env(safe-area-inset-bottom, 20px);
-  }
-  .pt-safe {
-    padding-top: env(safe-area-inset-top, 20px);
-  }
-}
-
-/* ==========================================
-   4. HOẠT ẢNH TÙY CHỈNH CHUYÊN SÂU (CUSTOM ANIMATIONS)
-========================================== */
-@keyframes spin-slow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.animate-spin-slow {
-  animation: spin-slow 3s linear infinite;
-}
-
-/* Hiệu ứng tia Laser quét mã vạch (Dùng trong UniversalScanner) */
-@keyframes scan-laser {
-  0% { top: 0%; opacity: 0; }
-  10% { opacity: 1; }
-  50% { box-shadow: 0 0 20px 2px #10b981; }
-  90% { opacity: 1; }
-  100% { top: 100%; opacity: 0; }
-}
-
-.animate-scan-laser {
-  animation: scan-laser 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }

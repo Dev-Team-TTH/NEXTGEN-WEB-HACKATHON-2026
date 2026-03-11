@@ -5,11 +5,9 @@ import {
   FileText, Clock, CheckCircle2, XCircle, 
   User, Loader2, DollarSign, AlignLeft, 
   Package, MessageSquare, ArrowRight, ShieldCheck,
-  AlertOctagon, X // Đã bổ sung AlertOctagon và X
+  AlertOctagon, X 
 } from "lucide-react";
 import { toast } from "react-hot-toast";
-import dayjs from "dayjs";
-import 'dayjs/locale/vi';
 
 // --- REDUX & API ---
 import { 
@@ -20,9 +18,8 @@ import {
 
 // --- IMPORT CORE MODAL & UTILS ---
 import Modal from "@/app/(components)/Modal";
-import { formatVND } from "@/utils/formatters";
-
-dayjs.locale('vi');
+import { formatVND, formatDateTime } from "@/utils/formatters";
+import { cn } from "@/utils/helpers";
 
 // ==========================================
 // 1. HELPERS & FORMATTERS
@@ -60,7 +57,7 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
   const { data: logs = [], isLoading: loadingLogs } = useGetApprovalLogsQuery(requestId || "", { skip: !requestId || !isOpen });
   const [processApproval, { isLoading: isProcessing }] = useProcessApprovalMutation();
 
-  // --- LOCAL STATE CỦA INLINE ACTION ---
+  // --- LOCAL STATE ---
   const [actionComment, setActionComment] = useState("");
   const [activeAction, setActiveAction] = useState<"APPROVE" | "REJECT" | null>(null);
 
@@ -96,7 +93,7 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
 
     return (
       <div className="flex flex-col gap-4">
-        {/* Row 1: Thông tin lõi */}
+        {/* Row 1 */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-white/5 shadow-sm">
           <div>
             <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Mã tham chiếu</p>
@@ -112,7 +109,7 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
           </div>
         </div>
 
-        {/* Row 2: Ghi chú / Diễn giải */}
+        {/* Row 2 */}
         {(doc.notes || doc.description) && (
           <div className="p-4 bg-blue-50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-900/30">
             <p className="text-[10px] uppercase font-bold text-blue-500 mb-1 flex items-center gap-1"><AlignLeft className="w-3 h-3"/> Nội dung / Diễn giải</p>
@@ -120,7 +117,7 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
           </div>
         )}
 
-        {/* Row 3: Chi tiết các dòng hàng (Items/Lines) */}
+        {/* Row 3 */}
         {items.length > 0 && (
           <div className="border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm">
             <div className="bg-slate-100 dark:bg-slate-800/80 px-4 py-3 border-b border-slate-200 dark:border-white/10 flex items-center gap-2">
@@ -150,7 +147,7 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
     );
   };
 
-  // --- FOOTER ĐỘNG (Chỉ cho phép duyệt khi PENDING) ---
+  // --- FOOTER ĐỘNG ---
   const modalFooter = request?.status === "PENDING" ? (
     <div className="flex flex-col w-full gap-4">
       <div className="relative w-full">
@@ -168,7 +165,10 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
         <button 
           onClick={() => { setActiveAction("REJECT"); handleAction("REJECT"); }}
           disabled={isProcessing} 
-          className={`flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${activeAction === "REJECT" && isProcessing ? 'bg-rose-100 text-rose-500 dark:bg-rose-900/30' : 'bg-white dark:bg-slate-800 text-rose-600 border border-rose-200 dark:border-rose-900/50 hover:bg-rose-50 dark:hover:bg-rose-900/20'}`}
+          className={cn(
+            "flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all",
+            activeAction === "REJECT" && isProcessing ? "bg-rose-100 text-rose-500 dark:bg-rose-900/30" : "bg-white dark:bg-slate-800 text-rose-600 border border-rose-200 dark:border-rose-900/50 hover:bg-rose-50 dark:hover:bg-rose-900/20"
+          )}
         >
           {activeAction === "REJECT" && isProcessing ? <Loader2 className="w-4 h-4 animate-spin"/> : <XCircle className="w-4 h-4" />} Từ chối Tờ trình
         </button>
@@ -192,7 +192,7 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
       isOpen={isOpen}
       onClose={onClose}
       title={request?.workflow?.name || "Chi tiết Tờ trình"}
-      subtitle={`Ngày tạo: ${dayjs(request?.createdAt).format('HH:mm - DD/MM/YYYY')}`}
+      subtitle={request ? `Ngày tạo: ${formatDateTime(request.createdAt)}` : ""}
       icon={<FileText className="w-6 h-6 text-blue-500" />}
       maxWidth="max-w-4xl"
       disableOutsideClick={isProcessing}
@@ -211,14 +211,13 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
       ) : (
         <div className="flex flex-col gap-8 p-6 sm:p-8">
           
-          {/* Status Badge nằm chèn ở góc */}
           <div className="flex items-center gap-2 mb-2">
-            <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border ${getStatusUI(request.status).color}`}>
+            <span className={cn("px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border", getStatusUI(request.status).color)}>
               Trạng thái: {getStatusUI(request.status).label}
             </span>
           </div>
 
-          {/* Khu vực 1: Người trình */}
+          {/* Người trình */}
           <div className="flex items-center gap-4 p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-500/20">
             <div className="w-12 h-12 rounded-full bg-white dark:bg-indigo-800 flex items-center justify-center shadow-sm">
               <User className="w-6 h-6 text-indigo-500 dark:text-indigo-300" />
@@ -230,7 +229,7 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
             </div>
           </div>
 
-          {/* Khu vực 2: Nội dung Đính kèm (Document) */}
+          {/* Nội dung */}
           <div>
             <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-4 flex items-center gap-2">
               <FileText className="w-4 h-4 text-blue-500" /> Hồ sơ / Chứng từ gốc
@@ -238,7 +237,7 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
             {renderDocumentDetails(request.document)}
           </div>
 
-          {/* Khu vực 3: Dòng thời gian Luân chuyển (Timeline) */}
+          {/* Timeline */}
           <div>
             <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-4 flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-amber-500" /> Dấu vết Phê duyệt (Audit Trail)
@@ -251,22 +250,20 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
                 
                 return (
                   <div key={log.logId} className="relative flex gap-4 items-start">
-                    {/* Chấm tròn Icon trên Timeline */}
-                    <div className={`relative z-10 w-7 h-7 rounded-full flex items-center justify-center ring-4 ring-white dark:ring-[#0B0F19] mt-0.5 ${ui.color}`}>
+                    <div className={cn("relative z-10 w-7 h-7 rounded-full flex items-center justify-center ring-4 ring-white dark:ring-[#0B0F19] mt-0.5", ui.color)}>
                       <LogIcon className="w-3.5 h-3.5" />
                     </div>
                     
-                    {/* Nội dung Log */}
                     <div className="flex-1 bg-white dark:bg-slate-800 border border-slate-100 dark:border-white/5 rounded-2xl p-4 shadow-sm">
                       <div className="flex justify-between items-start mb-1">
                         <span className="font-bold text-sm text-slate-900 dark:text-white">
                           Bước {log.step}: {log.processor?.fullName || "Hệ thống"}
                         </span>
                         <span className="text-[10px] font-medium text-slate-400">
-                          {dayjs(log.createdAt).format('HH:mm DD/MM/YYYY')}
+                          {formatDateTime(log.createdAt)}
                         </span>
                       </div>
-                      <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider mb-2 ${ui.color.replace('bg-', 'bg-opacity-20 text-')}`}>
+                      <span className={cn("inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider mb-2", ui.color.replace('bg-', 'bg-opacity-20 text-'))}>
                         {log.action}
                       </span>
                       

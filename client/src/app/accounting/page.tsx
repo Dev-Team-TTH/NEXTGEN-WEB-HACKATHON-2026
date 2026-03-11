@@ -9,8 +9,6 @@ import {
   FileEdit, ArrowRightLeft, Scale, ShieldAlert, FileText,
   TrendingDown, TrendingUp, CalendarDays, Download
 } from "lucide-react";
-import dayjs from "dayjs";
-import 'dayjs/locale/vi';
 import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
@@ -30,11 +28,10 @@ import FiscalPeriodModal from "./FiscalPeriodModal";
 import ManualJournalModal from "./ManualJournalModal";
 import ReverseEntryModal from "./ReverseEntryModal";
 
-// --- UTILS (KIẾN TRÚC MỚI) ---
-import { formatVND } from "@/utils/formatters";
+// --- UTILS (SIÊU VŨ KHÍ) ---
+import { formatVND, formatDate, safeRound } from "@/utils/formatters";
 import { exportToCSV } from "@/utils/exportUtils";
-
-dayjs.locale('vi');
+import { cn } from "@/utils/helpers";
 
 // ==========================================
 // 1. HELPERS & FORMATTERS
@@ -99,7 +96,7 @@ export default function AccountingPage() {
     });
   }, [rawEntries, activeTab, searchQuery]);
 
-  // --- TÍNH TOÁN KPI (DATA VIZ SỔ CÁI) ---
+  // --- TÍNH TOÁN KPI (DATA VIZ SỔ CÁI) CHỐNG LỖI SỐ THẬP PHÂN ---
   const kpis = useMemo(() => {
     let totalDebit = 0, totalCredit = 0;
     let draftCount = 0, postedCount = 0;
@@ -112,8 +109,8 @@ export default function AccountingPage() {
       if (entry.postingStatus === "POSTED") {
         const entryDebit = entry.lines?.reduce((sum, line) => sum + (line.debit || 0), 0) || 0;
         const entryCredit = entry.lines?.reduce((sum, line) => sum + (line.credit || 0), 0) || 0;
-        totalDebit += entryDebit;
-        totalCredit += entryCredit;
+        totalDebit = safeRound(totalDebit + entryDebit);
+        totalCredit = safeRound(totalCredit + entryCredit);
       }
     });
 
@@ -150,15 +147,20 @@ export default function AccountingPage() {
       return;
     }
     
-    const exportData = entries.map(e => ({
-      "Ngày hạch toán": dayjs(e.entryDate).format('DD/MM/YYYY'),
-      "Mã tham chiếu": e.reference,
-      "Diễn giải": e.description,
-      "Tổng Nợ (VND)": e.lines?.reduce((sum, line) => sum + (line.debit || 0), 0) || 0,
-      "Tổng Có (VND)": e.lines?.reduce((sum, line) => sum + (line.credit || 0), 0) || 0,
-      "Trạng thái": getPostingStatusUI(e.postingStatus).label,
-      "Đảo sổ": e.isReversed ? "Đã bị đảo" : "Bình thường"
-    }));
+    const exportData = entries.map(e => {
+      const entryDebit = e.lines?.reduce((sum, line) => sum + (line.debit || 0), 0) || 0;
+      const entryCredit = e.lines?.reduce((sum, line) => sum + (line.credit || 0), 0) || 0;
+
+      return {
+        "Ngày hạch toán": formatDate(e.entryDate),
+        "Mã tham chiếu": e.reference,
+        "Diễn giải": e.description,
+        "Tổng Nợ (VND)": safeRound(entryDebit),
+        "Tổng Có (VND)": safeRound(entryCredit),
+        "Trạng thái": getPostingStatusUI(e.postingStatus).label,
+        "Đảo sổ": e.isReversed ? "Đã bị đảo" : "Bình thường"
+      };
+    });
 
     exportToCSV(exportData, "So_Nhat_Ky_Chung");
   };
@@ -172,14 +174,17 @@ export default function AccountingPage() {
       cell: (row) => (
         <div className="flex flex-col max-w-[200px]">
           <span 
-            className={`font-black uppercase tracking-wider transition-colors ${row.postingStatus === "DRAFT" ? "text-indigo-600 dark:text-indigo-400 cursor-pointer hover:text-indigo-800 hover:underline" : "text-slate-800 dark:text-slate-200"}`} 
+            className={cn(
+              "font-black uppercase tracking-wider transition-colors",
+              row.postingStatus === "DRAFT" ? "text-indigo-600 dark:text-indigo-400 cursor-pointer hover:text-indigo-800 hover:underline" : "text-slate-800 dark:text-slate-200"
+            )}
             onClick={() => row.postingStatus === "DRAFT" && setSelectedEntryForEdit(row)}
             title={row.postingStatus === "DRAFT" ? "Click để xem chi tiết / sửa" : ""}
           >
             {row.reference || "JV-AUTO"}
           </span>
           <span className="text-[11px] font-bold text-slate-500 mt-0.5 flex items-center gap-1">
-            <CalendarDays className="w-3.5 h-3.5"/> {dayjs(row.entryDate).format('DD/MM/YYYY')}
+            <CalendarDays className="w-3.5 h-3.5"/> {formatDate(row.entryDate)}
           </span>
         </div>
       )
@@ -205,7 +210,7 @@ export default function AccountingPage() {
       accessorKey: "debit",
       align: "right",
       cell: (row) => {
-        const totalDebit = row.lines?.reduce((sum, line) => sum + (line.debit || 0), 0) || 0;
+        const totalDebit = safeRound(row.lines?.reduce((sum, line) => sum + (line.debit || 0), 0) || 0);
         return <span className="font-black text-slate-800 dark:text-slate-200">{formatVND(totalDebit)}</span>;
       }
     },
@@ -214,7 +219,7 @@ export default function AccountingPage() {
       accessorKey: "credit",
       align: "right",
       cell: (row) => {
-        const totalCredit = row.lines?.reduce((sum, line) => sum + (line.credit || 0), 0) || 0;
+        const totalCredit = safeRound(row.lines?.reduce((sum, line) => sum + (line.credit || 0), 0) || 0);
         return <span className="font-black text-slate-800 dark:text-slate-200">{formatVND(totalCredit)}</span>;
       }
     },
@@ -223,8 +228,8 @@ export default function AccountingPage() {
       accessorKey: "balance",
       align: "center",
       cell: (row) => {
-        const totalDebit = row.lines?.reduce((sum, line) => sum + (line.debit || 0), 0) || 0;
-        const totalCredit = row.lines?.reduce((sum, line) => sum + (line.credit || 0), 0) || 0;
+        const totalDebit = safeRound(row.lines?.reduce((sum, line) => sum + (line.debit || 0), 0) || 0);
+        const totalCredit = safeRound(row.lines?.reduce((sum, line) => sum + (line.credit || 0), 0) || 0);
         const isBalanced = totalDebit === totalCredit && totalDebit > 0;
 
         return (
@@ -249,7 +254,7 @@ export default function AccountingPage() {
         const ui = getPostingStatusUI(row.postingStatus);
         const Icon = ui.icon;
         return (
-          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider border shadow-sm ${ui.color}`}>
+          <span className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider border shadow-sm", ui.color)}>
             <Icon className="w-3.5 h-3.5" /> {ui.label}
           </span>
         );
@@ -310,7 +315,7 @@ export default function AccountingPage() {
         <AlertOctagon className="w-16 h-16 text-rose-500 mb-4 animate-pulse" />
         <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Lỗi truy xuất Dữ liệu Kế toán</h2>
         <button onClick={() => refetch()} className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg active:scale-95 flex items-center gap-2 mt-4">
-          <RefreshCcw className={`w-5 h-5 ${isFetching ? 'animate-spin' : ''}`} /> Thử lại
+          <RefreshCcw className={cn("w-5 h-5", isFetching && "animate-spin")} /> Thử lại
         </button>
       </div>
     );
@@ -363,11 +368,11 @@ export default function AccountingPage() {
               <p className="text-[11px] font-bold text-slate-500 mt-2 relative z-10">Tất cả phát sinh trong hệ thống</p>
             </motion.div>
             
-            <motion.div variants={itemVariants} className={`glass p-5 rounded-3xl border shadow-sm relative overflow-hidden group transition-colors ${kpis.draftCount > 0 ? 'border-amber-300 bg-amber-50/30 dark:border-amber-500/30 dark:bg-amber-900/10' : 'border-slate-200 dark:border-white/10'}`}>
+            <motion.div variants={itemVariants} className={cn("glass p-5 rounded-3xl border shadow-sm relative overflow-hidden group transition-colors", kpis.draftCount > 0 ? "border-amber-300 bg-amber-50/30 dark:border-amber-500/30 dark:bg-amber-900/10" : "border-slate-200 dark:border-white/10")}>
               <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform"><FileEdit className="w-20 h-20 text-amber-500"/></div>
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Bút toán Nháp (Drafts)</p>
               <div className="flex items-center gap-3 relative z-10">
-                <h3 className={`text-3xl font-black ${kpis.draftCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
+                <h3 className={cn("text-3xl font-black", kpis.draftCount > 0 ? "text-amber-600 dark:text-amber-400" : "text-slate-400")}>
                   {kpis.draftCount}
                 </h3>
                 {kpis.draftCount > 0 && (
@@ -411,7 +416,10 @@ export default function AccountingPage() {
               ].map(tab => (
                 <button 
                   key={tab.id} onClick={() => setActiveTab(tab.id as JournalTab)} 
-                  className={`relative px-5 py-2.5 text-xs font-bold rounded-xl transition-colors whitespace-nowrap z-10 ${activeTab === tab.id ? "text-slate-900 dark:text-white" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}
+                  className={cn(
+                    "relative px-5 py-2.5 text-xs font-bold rounded-xl transition-colors whitespace-nowrap z-10",
+                    activeTab === tab.id ? "text-slate-900 dark:text-white" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                  )}
                 >
                   {activeTab === tab.id && <motion.div layoutId="journalTab" className="absolute inset-0 bg-white dark:bg-slate-700 shadow-sm rounded-xl -z-10 border border-slate-200/50 dark:border-slate-600" />}
                   {tab.label}

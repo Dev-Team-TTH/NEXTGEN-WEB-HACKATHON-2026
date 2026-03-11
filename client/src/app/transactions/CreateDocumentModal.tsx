@@ -3,9 +3,9 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import { 
-  Plus, Trash2, Calculator, ShoppingCart, 
-  TrendingUp, Truck, Receipt, Building, Package,
-  Hash, DollarSign, Loader2, Save, FileText, Percent, Zap, Warehouse
+  Plus, Trash2, ShoppingCart, TrendingUp, Truck, 
+  Receipt, Building, Package, Hash, DollarSign, 
+  Loader2, Save, FileText, Percent, Zap, Warehouse
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -22,10 +22,11 @@ import {
   useGetWarehousesQuery               
 } from "@/state/api";
 
-// --- IMPORT CORE MODAL & UTILS ---
+// --- COMPONENTS & UTILS (SIÊU VŨ KHÍ) ---
 import Modal from "@/app/(components)/Modal";
-import FileDropzone from "@/app/(components)/FileDropzone"; // TÍCH HỢP UPLOAD FILE
-import { formatVND } from "@/utils/formatters";
+import FileDropzone from "@/app/(components)/FileDropzone";
+import { formatVND, safeRound } from "@/utils/formatters";
+import { cn } from "@/utils/helpers";
 
 // ==========================================
 // 1. INTERFACES & HELPERS
@@ -53,12 +54,11 @@ interface CreateDocModalProps {
 export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalProps) {
   
   // --- BỐI CẢNH (CONTEXT) TỪ REDUX ---
-  const { activeBranchId } = useAppSelector(state => state.global);
+  const { activeBranchId } = useAppSelector((state: any) => state.global);
 
-  // --- API HOOKS (SỬ DỤNG DỮ LIỆU THỰC TẾ) ---
-  // FIX LỖI TS2339: API getProducts trả về object phân trang, cần lấy limit lớn để nạp đủ dropdown
+  // --- API HOOKS ---
   const { data: productsResponse, isLoading: loadingProds } = useGetProductsQuery({ limit: 1000 }, { skip: !isOpen });
-  const products = productsResponse?.data || []; // TRÍCH XUẤT MẢNG DATA
+  const products = productsResponse?.data || []; 
 
   const { data: suppliers = [], isLoading: loadingSupps } = useGetSuppliersQuery(undefined, { skip: !isOpen });
   const { data: customers = [], isLoading: loadingCusts } = useGetCustomersQuery(undefined, { skip: !isOpen });
@@ -78,10 +78,9 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
   const [partnerId, setPartnerId] = useState("");
   const [warehouseId, setWarehouseId] = useState(""); 
   const [note, setNote] = useState("");
-  const [documentUrl, setDocumentUrl] = useState(""); // FILE ĐÍNH KÈM (PDF/HÌNH ẢNH)
+  const [documentUrl, setDocumentUrl] = useState(""); 
   const [lines, setLines] = useState<LineItem[]>([]);
 
-  // Khởi tạo trạng thái ban đầu khi mở Modal
   useEffect(() => {
     if (isOpen) {
       setDocType("PURCHASE_ORDER");
@@ -93,7 +92,6 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
     }
   }, [isOpen]);
 
-  // --- ĐỘNG NĂNG: XÁC ĐỊNH MÔI TRƯỜNG ---
   const isPurchasing = docType === "PURCHASE_ORDER" || docType === "PURCHASE_RECEIPT";
   const partners = isPurchasing ? suppliers : customers;
   const partnerLabel = isPurchasing ? "Nhà Cung Cấp" : "Khách Hàng";
@@ -107,7 +105,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
   const theme = getDocTheme();
   const ThemeIcon = theme.icon;
 
-  // --- ⚡ ĐỘNG CƠ ĐỊNH GIÁ LẠI TOÀN BỘ KHI ĐỔI ĐỐI TÁC ---
+  // --- ENGINE ĐỊNH GIÁ LẠI KHI ĐỔI ĐỐI TÁC ---
   useEffect(() => {
     if (partnerId && isOpen) {
       const repriceAllLines = async () => {
@@ -121,7 +119,8 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
             
             const qty = Number(line.quantity) || 0;
             const price = res.finalPrice;
-            const taxAmount = qty * price * (line.taxRate / 100);
+            // ÁP DỤNG safeRound CHỐNG SAI SỐ KẾ TOÁN
+            const taxAmount = safeRound(qty * price * (line.taxRate / 100));
 
             return { ...line, unitCost: price, taxAmount, isAutoPriced: res.appliedPriceList !== null };
           } catch { return line; }
@@ -133,7 +132,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partnerId, isPurchasing]);
 
-  // --- HANDLERS DÒNG HÀNG HÓA ---
+  // --- HANDLERS ---
   const addLine = () => {
     setLines([...lines, { id: Date.now().toString(), productId: "", uomId: "", quantity: 1, unitCost: "", taxId: "", taxRate: 0, taxAmount: 0 }]);
   };
@@ -155,7 +154,6 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
     const currentQty = field === "quantity" ? Number(value) : Number(currentLine.quantity || 1);
     const currentProdId = field === "productId" ? value : currentLine.productId;
 
-    // 1. Khi chọn Sản phẩm mới -> Tự động kéo giá và UOM (ĐÃ FIX TÌM THEO PRODUCTS MỚI)
     if (field === "productId" && value) {
       const prod = products.find((p: any) => p.productId === value || p.id === value);
       if (prod) {
@@ -173,7 +171,6 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
       }
     }
 
-    // 2. Khi đổi Số lượng -> Chạy lại Engine để xem có đạt mốc giảm giá hay không
     if (field === "quantity" && currentProdId) {
       try {
         const res = await calculateDynamicPrice({
@@ -185,13 +182,11 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
       } catch(e) {}
     }
 
-    // 3. Khi đổi Thuế
     if (field === "taxId") {
       const tax = taxes.find((t: any) => (t.taxId || t.id) === value);
       selectedTaxRate = tax ? Number(tax.rate) : 0;
     }
 
-    // Cập nhật State
     setLines(prev => prev.map(line => {
       if (line.id !== id) return line;
       const newLine = { ...line, [field]: value };
@@ -202,27 +197,27 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
       if (isAuto) newLine.isAutoPriced = true;
       if (updatedPrice !== null && !isAuto) newLine.isAutoPriced = false;
 
-      // Tính tự động tiền thuế
+      // ÁP DỤNG safeRound CHỐNG SAI SỐ THUẾ
       const qty = Number(newLine.quantity) || 0;
       const price = Number(newLine.unitCost) || 0;
-      newLine.taxAmount = qty * price * (newLine.taxRate / 100);
+      newLine.taxAmount = safeRound(qty * price * (newLine.taxRate / 100));
 
       return newLine;
     }));
   };
 
-  // --- AUTO-CALCULATING ENGINE ---
+  // --- ENGINE TÍNH TỔNG KẾ TOÁN (Sử dụng safeRound tuyệt đối an toàn) ---
   const summary = useMemo(() => {
     let subTotal = 0;
     let totalTax = 0;
     lines.forEach(line => {
-      subTotal += (Number(line.quantity) || 0) * (Number(line.unitCost) || 0);
+      subTotal += safeRound((Number(line.quantity) || 0) * (Number(line.unitCost) || 0));
       totalTax += line.taxAmount;
     });
     return { subTotal, totalTax, grandTotal: subTotal + totalTax };
   }, [lines]);
 
-  // --- SUBMIT FORM TỚI PRISMA BACKEND ---
+  // --- SUBMIT ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeBranchId) return toast.error("Không tìm thấy bối cảnh Chi nhánh. Vui lòng F5 lại trang!");
@@ -245,7 +240,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
         currencyCode: "VND", 
         exchangeRate: 1,
         totalAmount: summary.grandTotal, 
-        documentSnapshot: documentUrl ? JSON.stringify({ attachmentUrl: documentUrl }) : null, // Lưu file đính kèm
+        documentSnapshot: documentUrl ? JSON.stringify({ attachmentUrl: documentUrl }) : null, 
         
         ...(isPurchasing ? { supplierId: partnerId } : { customerId: partnerId }),
 
@@ -272,10 +267,9 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
     }
   };
 
-  // --- FOOTER RENDER (Cho Core Modal) ---
+  // --- FOOTER RENDER ---
   const modalFooter = (
     <div className="flex w-full items-center justify-between">
-      {/* Khối Summary tích hợp vào Footer cho gọn */}
       <div className="hidden sm:flex items-center gap-6">
         <div className="text-right">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Cộng tiền hàng</p>
@@ -288,7 +282,8 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
         <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" />
         <div className="text-right">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tổng thanh toán</p>
-          <p className={`text-xl font-black ${theme.color}`}>{formatVND(summary.grandTotal)}</p>
+          {/* ÁP DỤNG CN CHO CLASS ĐỘNG */}
+          <p className={cn("text-xl font-black", theme.color)}>{formatVND(summary.grandTotal)}</p>
         </div>
       </div>
 
@@ -317,7 +312,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
       onClose={onClose}
       title={theme.label}
       subtitle="Hệ thống Lập chứng từ Thông minh (Tự động kéo giá & Thuế)"
-      icon={<ThemeIcon className={`w-6 h-6 ${theme.color}`} />}
+      icon={<ThemeIcon className={cn("w-6 h-6", theme.color)} />}
       maxWidth="max-w-7xl"
       disableOutsideClick={isSubmitting}
       footer={modalFooter}
@@ -328,7 +323,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
         <div className="flex-1 p-6 flex flex-col gap-4 overflow-hidden border-r border-slate-200 dark:border-white/5">
           <div className="flex items-center justify-between mb-2 shrink-0">
             <h3 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
-              <Package className={`w-4 h-4 ${theme.color}`}/> Danh sách Hàng hóa Giao dịch
+              <Package className={cn("w-4 h-4", theme.color)}/> Danh sách Hàng hóa Giao dịch
             </h3>
             <button onClick={addLine} className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-white bg-indigo-50 hover:bg-indigo-600 dark:bg-indigo-500/20 dark:hover:bg-indigo-600 px-3 py-1.5 rounded-lg transition-colors shadow-sm">
               <Plus className="w-3.5 h-3.5"/> Thêm dòng
@@ -352,7 +347,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
                 <AnimatePresence initial={false}>
                   {lines.map((line, index) => {
-                    const lineTotal = (Number(line.quantity) || 0) * (Number(line.unitCost) || 0);
+                    const lineTotal = safeRound((Number(line.quantity) || 0) * (Number(line.unitCost) || 0));
                     return (
                       <motion.tr 
                         key={line.id}
@@ -367,7 +362,6 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
                             className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800 dark:text-slate-200"
                           >
                             <option value="">-- Chọn mặt hàng --</option>
-                            {/* FIX LỖI TÌM THEO PRODUCTS MỚI */}
                             {products.map((p: any) => (
                               <option key={p.productId || p.id} value={p.productId || p.id}>{p.productCode} - {p.name}</option>
                             ))}
@@ -399,10 +393,21 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
                         <td className="px-4 py-3">
                           <div className="relative flex items-center gap-1.5">
                             <div className="relative flex-1">
-                              <DollarSign className={`absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 ${line.isAutoPriced ? "text-orange-500" : "text-slate-400"}`} />
+                              {/* ÁP DỤNG CN CHO ICON */}
+                              <DollarSign className={cn(
+                                "absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 transition-colors",
+                                line.isAutoPriced ? "text-orange-500" : "text-slate-400"
+                              )} />
+                              
+                              {/* ÁP DỤNG CN THẦN THÁNH CHO INPUT ĐỂ LOẠI BỎ TEMPLATE LITERAL RỐI RẮM */}
                               <input 
                                 type="number" min="0" value={line.unitCost} onChange={(e) => updateLine(line.id, "unitCost", e.target.value)}
-                                className={`w-full pl-8 pr-2 py-2 bg-slate-100 dark:bg-slate-900 border rounded-lg outline-none focus:ring-2 font-bold ${line.isAutoPriced ? "text-orange-600 dark:text-orange-400 border-orange-300 dark:border-orange-500/50 focus:ring-orange-500" : "text-emerald-600 dark:text-emerald-400 border-slate-200 dark:border-slate-700 focus:ring-indigo-500"}`}
+                                className={cn(
+                                  "w-full pl-8 pr-2 py-2 bg-slate-100 dark:bg-slate-900 border rounded-lg outline-none focus:ring-2 font-bold transition-all",
+                                  line.isAutoPriced 
+                                    ? "text-orange-600 dark:text-orange-400 border-orange-300 dark:border-orange-500/50 focus:ring-orange-500" 
+                                    : "text-emerald-600 dark:text-emerald-400 border-slate-200 dark:border-slate-700 focus:ring-indigo-500"
+                                )}
                               />
                             </div>
                             {line.isAutoPriced && (
@@ -453,7 +458,6 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
           <div className="flex flex-col gap-5 flex-1">
             <h3 className="text-sm font-bold text-slate-800 dark:text-white border-b border-slate-100 dark:border-slate-800 pb-3">Cấu hình Chứng từ</h3>
             
-            {/* Bộ chọn Loại Chứng từ */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5">Phân loại Giao dịch *</label>
               <select 
@@ -514,7 +518,6 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
               />
             </div>
 
-            {/* KHU VỰC UPLOAD FILE ĐÍNH KÈM */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5">Hồ sơ / Hợp đồng đính kèm</label>
               <FileDropzone 

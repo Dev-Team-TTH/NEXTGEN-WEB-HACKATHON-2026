@@ -12,11 +12,13 @@ import { useTranslation } from "react-i18next";
 // --- Components & Store ---
 import Navbar from "@/app/(components)/Navbar";
 import Sidebar from "@/app/(components)/Sidebar";
-// ĐÃ MỞ KHÓA IMPORT AICHATBOT
 import AIChatbot from "@/app/(components)/AiChatbot"; 
 import StoreProvider, { useAppSelector, useAppDispatch } from "@/app/redux";
 import SplashScreen from "@/app/(components)/SplashScreen";
 import { setIsDarkMode } from "@/state";
+
+// --- UTILS ---
+import { cn } from "@/utils/helpers";
 
 // ==========================================
 // COMPONENT 1: LÕI ĐIỀU HƯỚNG VÀ GIAO DIỆN
@@ -25,10 +27,9 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
   const pathname = usePathname();
   const router = useRouter();
   
-  // Không cần lấy setTheme ở đây nữa vì Navbar đã tự quản lý việc đổi theme
   const { resolvedTheme } = useTheme(); 
   const dispatch = useAppDispatch();
-  const { t, i18n } = useTranslation();
+  const { i18n } = useTranslation();
 
   // Redux State
   const isDarkMode = useAppSelector((state) => state.global.isDarkMode);
@@ -47,7 +48,7 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
     }
   }, [i18n]);
 
-  // 2. ĐỒNG BỘ THEME (VÁ LỖI INFINITE LOOP)
+  // 2. ĐỒNG BỘ THEME
   useEffect(() => {
     if (isMounted && resolvedTheme) {
       const isDark = resolvedTheme === "dark";
@@ -55,8 +56,6 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
         dispatch(setIsDarkMode(isDark));
       }
     }
-    // KIẾN TRÚC SSoT: Chỉ lắng nghe resolvedTheme.
-    // TUYỆT ĐỐI KHÔNG đưa isDarkMode vào mảng này để tránh vòng lặp.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedTheme, isMounted, dispatch]);
 
@@ -90,10 +89,8 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const appVisibilityClass = isMounted ? "opacity-100" : "opacity-0";
-
   return (
-    <div className={`transition-opacity duration-300 ${appVisibilityClass}`}>
+    <div className={cn("transition-opacity duration-300", isMounted ? "opacity-100" : "opacity-0")}>
       {!isAuthenticated ? (
         // LUỒNG 1: CHƯA ĐĂNG NHẬP
         <div className="w-full min-h-screen flex bg-slate-50 dark:bg-[#0B0F19] text-gray-900 dark:text-white transition-colors duration-500">

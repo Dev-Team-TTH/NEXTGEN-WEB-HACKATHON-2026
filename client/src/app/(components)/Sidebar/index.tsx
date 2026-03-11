@@ -10,13 +10,17 @@ import {
   LayoutDashboard, Package, ShoppingCart, WalletCards,
   MonitorSmartphone, ClipboardCheck, Database, Users,
   Settings, ChevronLeft, ChevronRight, Menu as MenuIcon, X,
-  Receipt, // [NEW] Thêm icon Receipt cho Chi phí
+  Receipt, 
   LucideIcon
 } from "lucide-react";
 
+// --- REDUX & API ---
 import { useAppDispatch, useAppSelector } from "@/app/redux";
 import { setIsSidebarCollapsed } from "@/state";
 import { useGetPendingApprovalsQuery } from "@/state/api";
+
+// --- UTILS ---
+import { cn } from "@/utils/helpers";
 
 interface MenuItem {
   id: string;
@@ -43,7 +47,7 @@ const MENU_GROUPS: MenuGroup[] = [
       { id: "inventory", label: "Kho bãi & Vật tư", shortLabel: "Kho bãi", icon: Package, href: "/inventory", permissions: ["VIEW_INVENTORY", "SYSTEM_ADMIN"] },
       { id: "transactions", label: "Mua bán & Giao dịch", shortLabel: "Giao dịch", icon: ShoppingCart, href: "/transactions", permissions: ["VIEW_TRANSACTION", "SYSTEM_ADMIN"] },
       { id: "accounting", label: "Kế toán Tài chính", shortLabel: "Kế toán", icon: WalletCards, href: "/accounting", permissions: ["VIEW_ACCOUNTING", "SYSTEM_ADMIN"] },
-      { id: "expenses", label: "Quản lý Chi phí", shortLabel: "Chi phí", icon: Receipt, href: "/expenses", permissions: ["VIEW_EXPENSES", "SYSTEM_ADMIN"] }, // [NEW] Đã thêm trang Chi phí vào Sidebar
+      { id: "expenses", label: "Quản lý Chi phí", shortLabel: "Chi phí", icon: Receipt, href: "/expenses", permissions: ["VIEW_EXPENSES", "SYSTEM_ADMIN"] }, 
       { id: "assets", label: "Tài sản Cố định", shortLabel: "Tài sản", icon: MonitorSmartphone, href: "/assets", permissions: ["VIEW_ASSET", "SYSTEM_ADMIN"] },
     ]
   },
@@ -111,8 +115,8 @@ export default function Sidebar() {
           return (
             <Link key={item.id} href={item.href} className="relative flex flex-col items-center justify-center flex-1 h-full group">
               <div className="relative z-10 flex flex-col items-center mt-1 transition-transform duration-200 active:scale-90">
-                <Icon className={`w-6 h-6 mb-1 transition-colors ${isActive ? "text-blue-600 dark:text-blue-400" : "text-slate-500"}`} />
-                <span className={`text-[10px] font-semibold transition-colors line-clamp-1 text-center ${isActive ? "text-blue-600 dark:text-blue-400" : "text-slate-500"}`}>
+                <Icon className={cn("w-6 h-6 mb-1 transition-colors", isActive ? "text-blue-600 dark:text-blue-400" : "text-slate-500")} />
+                <span className={cn("text-[10px] font-semibold transition-colors line-clamp-1 text-center", isActive ? "text-blue-600 dark:text-blue-400" : "text-slate-500")}>
                   {t(item.shortLabel || item.label)}
                 </span>
                 
@@ -174,7 +178,6 @@ export default function Sidebar() {
 
       {/* ==========================================
           2. GIAO DIỆN DESKTOP (STICKY SIDEBAR)
-          Chỉ hiện trên PC (hidden lg:flex) - Luôn bám chặt lề trái
           ========================================== */}
       <motion.aside
         variants={sidebarContainerVariants}
@@ -241,9 +244,10 @@ export default function Sidebar() {
                   return (
                     <Link href={item.href} key={item.id} title={t(item.label)} className="block px-2">
                       <div
-                        className={`relative flex items-center h-[46px] rounded-2xl group transition-all duration-200 hover:scale-[1.015] active:scale-[0.98] ${
+                        className={cn(
+                          "relative flex items-center h-[46px] rounded-2xl group transition-all duration-200 hover:scale-[1.015] active:scale-[0.98]",
                           isActive ? "text-blue-700 dark:text-blue-300 font-bold" : "text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-100/60 dark:hover:bg-white/5"
-                        }`}
+                        )}
                       >
                         {isActive && (
                           <motion.div 
@@ -254,7 +258,7 @@ export default function Sidebar() {
                         )}
 
                         <div className="relative z-10 w-16 h-full shrink-0 flex items-center justify-center">
-                          <Icon className={`w-5 h-5 transition-colors duration-200 ${isActive ? "text-blue-600 dark:text-blue-400" : "group-hover:text-blue-500"}`} />
+                          <Icon className={cn("w-5 h-5 transition-colors duration-200", isActive ? "text-blue-600 dark:text-blue-400" : "group-hover:text-blue-500")} />
                           
                           {isSidebarCollapsed && badgeCount > 0 && (
                             <span className="absolute top-2.5 right-4 w-2 h-2 bg-rose-500 rounded-full border border-white dark:border-[#0B0F19] shadow-[0_0_8px_rgba(225,29,72,0.8)] animate-pulse" />

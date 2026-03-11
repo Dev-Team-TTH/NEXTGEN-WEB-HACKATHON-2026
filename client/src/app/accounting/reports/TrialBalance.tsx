@@ -6,8 +6,6 @@ import {
   Scale, AlertOctagon, RefreshCcw, FileSpreadsheet, 
   CalendarDays, Download, CheckCircle2, Search
 } from "lucide-react";
-import dayjs from "dayjs";
-import 'dayjs/locale/vi';
 import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
@@ -16,10 +14,9 @@ import { useGetTrialBalanceReportQuery, TrialBalanceData } from "@/state/api";
 // --- COMPONENTS & UTILS ---
 import Header from "@/app/(components)/Header";
 import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
-import { formatVND } from "@/utils/formatters";
+import { formatVND, formatDate } from "@/utils/formatters";
 import { exportToCSV } from "@/utils/exportUtils";
-
-dayjs.locale('vi');
+import { cn } from "@/utils/helpers";
 
 // ==========================================
 // 1. HELPERS & FORMATTERS
@@ -28,6 +25,15 @@ const formatVNDDisplay = (val: number) => {
   if (!val || val === 0) return "-";
   return formatVND(val);
 };
+
+// Lấy ngày đầu tháng hiện tại theo format YYYY-MM-DD để làm giá trị mặc định
+const getStartOfMonth = () => {
+  const d = new Date();
+  d.setDate(1);
+  return d.toISOString().split('T')[0];
+};
+
+const getToday = () => new Date().toISOString().split('T')[0];
 
 // ==========================================
 // 2. SKELETON LOADING
@@ -47,9 +53,8 @@ const TrialBalanceSkeleton = () => (
 // ==========================================
 export default function TrialBalanceReport() {
   // --- STATE LỌC THỜI GIAN ---
-  // Mặc định lấy từ đầu tháng đến hiện tại
-  const [startDate, setStartDate] = useState(dayjs().startOf('month').format('YYYY-MM-DD'));
-  const [endDate, setEndDate] = useState(dayjs().format('YYYY-MM-DD'));
+  const [startDate, setStartDate] = useState(getStartOfMonth());
+  const [endDate, setEndDate] = useState(getToday());
 
   // 👉 FETCH DATA THẬT
   const { data: trialBalance = [], isLoading, isError, refetch, isFetching } = useGetTrialBalanceReportQuery({
@@ -97,7 +102,7 @@ export default function TrialBalanceReport() {
       "Dư Có CK (VND)": row.closingCredit || 0
     }));
 
-    // Thêm dòng Tổng Cộng vào file Excel
+    // Thêm dòng Tổng Cộng vào file CSV
     exportData.push({
       "Số hiệu TK": "TỔNG CỘNG",
       "Tên Tài khoản": "",
@@ -186,7 +191,7 @@ export default function TrialBalanceReport() {
         <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Lỗi truy xuất Báo cáo</h2>
         <p className="text-slate-500 mb-6">Mất kết nối với máy chủ hoặc dữ liệu tài chính bị lỗi.</p>
         <button onClick={() => refetch()} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg active:scale-95 flex items-center gap-2 transition-transform">
-          <RefreshCcw className={`w-5 h-5 ${isFetching ? 'animate-spin' : ''}`} /> Tải lại dữ liệu
+          <RefreshCcw className={cn("w-5 h-5", isFetching && "animate-spin")} /> Tải lại dữ liệu
         </button>
       </div>
     );
@@ -232,11 +237,12 @@ export default function TrialBalanceReport() {
 
         <div className="ml-auto flex items-center gap-3">
           {/* Badge Báo động Cân bằng */}
-          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider shadow-inner ${
+          <div className={cn(
+            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider shadow-inner",
             isBalanced 
               ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400" 
               : "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400 animate-pulse"
-          }`}>
+          )}>
             {isBalanced ? <CheckCircle2 className="w-4 h-4" /> : <AlertOctagon className="w-4 h-4" />}
             {isBalanced ? "Đã cân đối Nợ/Có" : "LỆCH BẢNG CÂN ĐỐI!"}
           </div>

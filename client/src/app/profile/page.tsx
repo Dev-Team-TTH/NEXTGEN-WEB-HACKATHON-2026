@@ -2,13 +2,11 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { 
-  UserCircle, Shield, Camera, Save, 
-  Mail, Phone, MapPin, Building, 
-  Briefcase, Calendar, Fingerprint, Globe, 
-  Activity, Users, Sparkles, CheckCircle2, Loader2
+  UserCircle, Shield, Mail, Phone, 
+  MapPin, CalendarDays, Camera, Edit, 
+  Save, Loader2, Briefcase, Activity
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -17,79 +15,59 @@ import { useAppSelector, useAppDispatch } from "@/app/redux";
 import { setCurrentUser } from "@/state/index";
 import { useUpdateUserMutation } from "@/state/api";
 
-export default function ProfilePage() {
-  const pathname = usePathname();
-  const currentUser = useAppSelector((state) => state.global.currentUser);
-  const dispatch = useAppDispatch();
+// --- UTILS (SIÊU VŨ KHÍ) ---
+import { formatDate, getInitials } from "@/utils/formatters";
+import { cn, generateAvatarColor } from "@/utils/helpers";
 
+export default function ProfilePage() {
+  const dispatch = useAppDispatch();
+  const currentUser = useAppSelector((state) => state.global.currentUser);
+  
   const [isMounted, setIsMounted] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   
-  // 👉 SỬ DỤNG ĐỘNG CƠ CẬP NHẬT THỰC TẾ TỪ RTK QUERY
-  const [updateUser, { isLoading: isSaving }] = useUpdateUserMutation();
-  
-  // State quản lý Form
+  // --- FORM STATE ---
   const [formData, setFormData] = useState({
-    fullName: "",
-    gender: "Male",
-    dob: "1995-08-15",
-    jobTitle: "Chuyên viên hệ thống",
-    empId: "EMP-2026",
-    department: "Vận hành",
-    nationality: "Việt Nam",
-    email: "",
-    phone: "",
-    address: ""
+    fullName: "", phone: "", address: ""
   });
+
+  const [updateUser, { isLoading: isUpdating }] = useUpdateUserMutation();
 
   useEffect(() => {
     setIsMounted(true);
     if (currentUser) {
-      setFormData(prev => ({
-        ...prev,
+      setFormData({
         fullName: currentUser.fullName || "",
-        email: currentUser.email || "",
-        // FIX LỖI TS2339: Sử dụng ép kiểu an toàn (as any) để tránh lỗi Interface thiếu trường
+        // FIX LỖI TS2339 BẰNG CÁCH ÉP KIỂU ANY
         phone: (currentUser as any).phone || (currentUser as any).phoneNumber || "",
         address: (currentUser as any).address || ""
-      }));
+      });
     }
   }, [currentUser]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
+  if (!isMounted || !currentUser) return null;
 
-  // 👉 HÀM GHI DỮ LIỆU THẬT VÀO DATABASE
-  const handleSaveProfile = async () => {
-    if (!currentUser?.userId) {
-      toast.error("Không xác định được ID người dùng!");
-      return;
+  // --- HANDLERS ---
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.fullName.trim()) {
+      toast.error("Họ và tên không được để trống!"); return;
     }
 
     try {
-      // Gọi API thực tế
-      const updatedUser = await updateUser({ 
-        id: currentUser.userId, 
-        // Ép kiểu as any để truyền được các field linh động
-        data: {
-          fullName: formData.fullName,
-          phone: formData.phone,
-          address: formData.address
-          // Không cho phép sửa email đăng nhập ở đây
-        } as any
+      await updateUser({
+        id: currentUser.userId,
+        data: formData as any
       }).unwrap();
-
-      // Cập nhật lại Redux Store Global để header/menu nhận diện tên mới ngay lập tức
-      dispatch(setCurrentUser(updatedUser));
       
-      toast.success("Hồ sơ cá nhân đã được đồng bộ lên máy chủ!");
+      // Cập nhật Redux State ngay lập tức (Optimistic UI)
+      dispatch(setCurrentUser({ ...currentUser, ...formData } as any));
+      setIsEditing(false);
+      toast.success("Cập nhật thông tin cá nhân thành công!");
     } catch (error: any) {
-      toast.error(error?.data?.message || "Lỗi giao tiếp máy chủ khi cập nhật hồ sơ.");
+      toast.error(error?.data?.message || "Lỗi khi cập nhật hồ sơ!");
     }
   };
-
-  if (!isMounted) return null;
 
   return (
     <div className="w-full max-w-7xl mx-auto pb-24 px-4 sm:px-6 lg:px-8 mt-6">
@@ -97,16 +75,15 @@ export default function ProfilePage() {
       {/* 1. HEADER & SUB-NAVIGATION */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
         <div>
-          <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
-            Hồ sơ <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600">Cá nhân</span>
-            <Sparkles className="w-6 h-6 text-purple-500 animate-pulse" />
+          <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+            Hồ sơ <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">Cá nhân</span>
           </h1>
           <p className="text-sm font-medium text-slate-500 mt-2">Quản lý thông tin định danh và liên hệ của bạn trên hệ thống.</p>
         </div>
         
-        {/* Sub-Nav Tabs Dạng Viên Thuốc (Pill) */}
+        {/* Sub-Nav sử dụng CN làm sạch CSS */}
         <div className="flex items-center p-1.5 bg-slate-200/50 dark:bg-black/40 rounded-full backdrop-blur-xl border border-slate-200/80 dark:border-white/10 shadow-inner w-fit">
-          <Link href="/profile" className="relative px-6 py-2.5 rounded-full text-sm font-bold transition-colors text-blue-700 dark:text-blue-300">
+          <Link href="/profile" className="relative px-6 py-2.5 rounded-full text-sm font-bold transition-colors text-blue-700 dark:text-blue-400">
             <motion.div layoutId="profileTab" className="absolute inset-0 bg-white dark:bg-white/10 rounded-full shadow-[0_2px_12px_rgba(0,0,0,0.08)] border border-slate-200/50 dark:border-white/5 z-0" transition={{ type: "spring", stiffness: 500, damping: 35 }} />
             <span className="relative z-10 flex items-center gap-2"><UserCircle className="w-4.5 h-4.5" /> Hồ sơ</span>
           </Link>
@@ -116,149 +93,133 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* 2. HERO BANNER & AVATAR */}
-      <div className="relative w-full rounded-3xl bg-white dark:bg-[#0B0F19] border border-slate-200/50 dark:border-white/10 shadow-[0_20px_40px_rgba(0,0,0,0.04)] mb-8 overflow-hidden">
-        {/* Cover Photo Gradient Mesh */}
-        <div className="absolute top-0 left-0 right-0 h-48 sm:h-64 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 overflow-hidden z-0">
-          <div className="absolute inset-0 bg-[url('/noise.png')] opacity-20 mix-blend-overlay" />
-          <div className="absolute -top-24 -right-24 w-96 h-96 bg-white/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-purple-500/20 rounded-full blur-3xl pointer-events-none" />
-        </div>
-
-        {/* Nội dung đè lên Cover */}
-        <div className="relative z-10 pt-32 sm:pt-44 px-6 sm:px-12 pb-8 flex flex-col sm:flex-row items-center sm:items-end gap-6 sm:gap-8">
-          
-          {/* Avatar */}
-          <div className="relative group cursor-pointer shrink-0">
-            <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-slate-900/50 backdrop-blur-2xl border-4 sm:border-8 border-white dark:border-[#0B0F19] shadow-[0_12px_40px_rgba(0,0,0,0.2)] flex items-center justify-center text-5xl font-black text-white overflow-hidden relative z-10">
-              {formData.fullName.charAt(0).toUpperCase() || "U"}
-              
-              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center text-white backdrop-blur-md">
-                <Camera className="w-8 h-8 sm:w-10 sm:h-10 mb-2" />
-                <span className="text-xs font-bold uppercase tracking-widest">Đổi ảnh</span>
-              </div>
-            </div>
-            
-            {/* Huy hiệu Online */}
-            <div className="absolute bottom-2 right-2 sm:bottom-4 sm:right-4 w-8 h-8 sm:w-10 sm:h-10 bg-emerald-500 border-4 border-white dark:border-[#0B0F19] rounded-full flex items-center justify-center shadow-lg z-20" title="Đang hoạt động">
-              <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 bg-white rounded-full animate-pulse" />
-            </div>
-          </div>
-
-          {/* Thông tin Tóm tắt */}
-          <div className="flex-1 text-center sm:text-left pb-2 sm:pb-4">
-            <h2 className="text-2xl sm:text-4xl font-black text-slate-900 dark:text-white flex items-center justify-center sm:justify-start gap-3">
-              {formData.fullName} 
-              <span title="Tài khoản đã xác thực" className="flex items-center">
-                <CheckCircle2 className="w-6 h-6 text-blue-500" />
-              </span>
-            </h2>
-            <p className="text-base font-bold text-indigo-600 dark:text-indigo-400 mt-1 sm:mt-2">{formData.jobTitle} <span className="text-slate-400 mx-2">•</span> {formData.department}</p>
-          </div>
-
-          {/* Nút Hành động */}
-          <div className="pb-2 sm:pb-4 flex w-full sm:w-auto">
-            <button 
-              onClick={handleSaveProfile}
-              disabled={isSaving}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-2xl font-black text-sm shadow-[0_8px_20px_rgba(37,99,235,0.3)] hover:shadow-[0_12px_24px_rgba(37,99,235,0.4)] transition-all duration-300 hover:-translate-y-1 active:translate-y-0 transform-gpu disabled:opacity-70 disabled:hover:translate-y-0"
-            >
-              {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-              Ghi nhận Đồng bộ
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. BENTO GRID FORM */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8">
         
-        {/* KHỐI 1: THÔNG TIN LIÊN HỆ */}
-        <div className="lg:col-span-1 flex flex-col gap-6 sm:gap-8">
-          <div className="bg-white/70 dark:bg-[#0B0F19]/70 backdrop-blur-2xl border border-slate-200/50 dark:border-white/10 rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.04)] p-6 sm:p-8">
-            <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mb-6 flex items-center gap-3">
-              <div className="p-2 bg-emerald-100 dark:bg-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400"><MapPin className="w-5 h-5" /></div>
-              Liên hệ
-            </h3>
+        {/* CỘT TRÁI: AVATAR & TÓM TẮT */}
+        <div className="lg:col-span-4 flex flex-col gap-6">
+          <div className="bg-white/70 dark:bg-[#0B0F19]/70 backdrop-blur-2xl border border-slate-200/50 dark:border-white/10 rounded-3xl shadow-sm p-8 flex flex-col items-center text-center relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-blue-500/20 to-transparent dark:from-blue-600/20"></div>
             
-            <div className="flex flex-col gap-5">
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5"><Mail className="w-3.5 h-3.5"/> Email Công ty</label>
-                <input type="email" name="email" value={formData.email} disabled className="w-full bg-slate-100/50 dark:bg-white/[0.03] border border-slate-200/50 dark:border-white/5 rounded-2xl px-4 py-3 text-sm font-bold text-slate-500 cursor-not-allowed" />
+            {/* AVATAR TỰ ĐỘNG BẰNG UTILS */}
+            <div className="relative z-10 mb-5 group cursor-pointer">
+              <div className={cn(
+                "w-28 h-28 rounded-full flex items-center justify-center font-black text-4xl shadow-xl border-4 border-white dark:border-[#0B0F19] transition-transform duration-300 group-hover:scale-105",
+                generateAvatarColor(currentUser.fullName)
+              )}>
+                {getInitials(currentUser.fullName)}
               </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5"><Phone className="w-3.5 h-3.5"/> Số điện thoại</label>
-                <input type="text" name="phone" value={formData.phone} onChange={handleInputChange} placeholder="09xxxx..." className="w-full bg-slate-50 dark:bg-black/40 border border-slate-200/80 dark:border-white/10 rounded-2xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white outline-none focus:bg-white dark:focus:bg-[#0B0F19] focus:ring-2 focus:ring-emerald-500/50 transition-all shadow-sm" />
+              <div className="absolute bottom-0 right-0 p-2 bg-indigo-600 text-white rounded-full border-2 border-white dark:border-[#0B0F19] shadow-md hover:bg-indigo-700 transition-colors">
+                <Camera className="w-4 h-4" />
               </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5"/> Địa chỉ hiện tại</label>
-                <textarea name="address" value={formData.address} onChange={handleInputChange} rows={4} placeholder="Nhập địa chỉ..." className="w-full bg-slate-50 dark:bg-black/40 border border-slate-200/80 dark:border-white/10 rounded-2xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white outline-none focus:bg-white dark:focus:bg-[#0B0F19] focus:ring-2 focus:ring-emerald-500/50 transition-all shadow-sm resize-none" />
+            </div>
+
+            <h2 className="text-xl font-black text-slate-900 dark:text-white relative z-10">{currentUser.fullName}</h2>
+            <p className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 mt-1 mb-4 relative z-10">{currentUser.role || "Nhân viên"}</p>
+            
+            <div className="w-full flex flex-col gap-3 mt-4 relative z-10">
+              <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-white/5 rounded-2xl text-left border border-slate-100 dark:border-white/5">
+                <div className="p-2 bg-emerald-100 dark:bg-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 shrink-0"><Activity className="w-4 h-4"/></div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase">Trạng thái</p>
+                  <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 truncate">Đang hoạt động</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-white/5 rounded-2xl text-left border border-slate-100 dark:border-white/5">
+                <div className="p-2 bg-blue-100 dark:bg-blue-500/20 rounded-xl text-blue-600 dark:text-blue-400 shrink-0"><CalendarDays className="w-4 h-4"/></div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase">Ngày tham gia</p>
+                  <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate">{formatDate((currentUser as any).createdAt)}</p>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* KHỐI 2 & 3: CÁ NHÂN & CÔNG VIỆC */}
-        <div className="lg:col-span-2 flex flex-col gap-6 sm:gap-8">
-          
-          {/* CÁ NHÂN */}
-          <div className="bg-white/70 dark:bg-[#0B0F19]/70 backdrop-blur-2xl border border-slate-200/50 dark:border-white/10 rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.04)] p-6 sm:p-8">
-            <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mb-6 flex items-center gap-3">
-              <div className="p-2 bg-blue-100 dark:bg-blue-500/20 rounded-xl text-blue-600 dark:text-blue-400"><UserCircle className="w-5 h-5" /></div>
-              Thông tin Cơ bản
-            </h3>
+        {/* CỘT PHẢI: FORM CHỈNH SỬA CHI TIẾT */}
+        <div className="lg:col-span-8 flex flex-col">
+          <div className="bg-white/70 dark:bg-[#0B0F19]/70 backdrop-blur-2xl border border-slate-200/50 dark:border-white/10 rounded-3xl shadow-sm overflow-hidden flex-1 flex flex-col">
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              <div className="flex flex-col gap-2 sm:col-span-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Họ và Tên đầy đủ</label>
-                <input type="text" name="fullName" value={formData.fullName} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-black/40 border border-slate-200/80 dark:border-white/10 rounded-2xl px-4 py-3.5 text-base font-bold text-slate-900 dark:text-white outline-none focus:bg-white dark:focus:bg-[#0B0F19] focus:ring-2 focus:ring-blue-500/50 transition-all shadow-sm" />
-              </div>
+            <div className="flex justify-between items-center px-6 sm:px-8 py-5 border-b border-slate-200/50 dark:border-white/5 bg-slate-50/50 dark:bg-black/20 shrink-0">
+              <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                <Briefcase className="w-5 h-5 text-indigo-500" /> Thông tin Định danh
+              </h3>
+              {!isEditing ? (
+                <button onClick={() => setIsEditing(true)} className="flex items-center gap-2 px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 dark:text-indigo-400 text-sm font-bold rounded-xl transition-colors">
+                  <Edit className="w-4 h-4" /> Chỉnh sửa
+                </button>
+              ) : (
+                <button onClick={() => setIsEditing(false)} className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 text-sm font-bold rounded-xl transition-colors">
+                  Hủy
+                </button>
+              )}
+            </div>
+
+            <form onSubmit={handleSaveProfile} className="p-6 sm:p-8 flex-1 flex flex-col gap-6">
               
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5"><Activity className="w-3.5 h-3.5"/> Giới tính</label>
-                <select name="gender" value={formData.gender} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-black/40 border border-slate-200/80 dark:border-white/10 rounded-2xl px-4 py-3.5 text-sm font-bold text-slate-900 dark:text-white outline-none focus:bg-white dark:focus:bg-[#0B0F19] focus:ring-2 focus:ring-blue-500/50 transition-all shadow-sm appearance-none cursor-pointer">
-                  <option value="Male">Nam giới</option>
-                  <option value="Female">Nữ giới</option>
-                  <option value="Other">Khác</option>
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="space-y-1.5 group">
+                  <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5 group-focus-within:text-indigo-500 transition-colors">Họ và Tên <span className="text-rose-500">*</span></label>
+                  <div className="relative">
+                    <UserCircle className="absolute left-3 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-slate-400" />
+                    <input 
+                      type="text" required disabled={!isEditing}
+                      value={formData.fullName} onChange={(e) => setFormData({...formData, fullName: e.target.value})}
+                      className={cn("w-full pl-10 pr-4 py-3 border rounded-xl text-sm font-bold outline-none transition-all shadow-sm", isEditing ? "bg-white dark:bg-slate-900 border-indigo-300 dark:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white" : "bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-white/10 text-slate-500 cursor-not-allowed")}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 group">
+                  <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5">Email (Không thể sửa)</label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-slate-400" />
+                    <input 
+                      type="email" disabled value={currentUser.email}
+                      className="w-full pl-10 pr-4 py-3 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-white/5 rounded-xl text-sm font-bold text-slate-500 outline-none cursor-not-allowed opacity-70"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 group">
+                  <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5 group-focus-within:text-indigo-500 transition-colors">Số điện thoại</label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-slate-400" />
+                    <input 
+                      type="tel" disabled={!isEditing}
+                      value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                      placeholder="Chưa cập nhật"
+                      className={cn("w-full pl-10 pr-4 py-3 border rounded-xl text-sm font-bold outline-none transition-all shadow-sm", isEditing ? "bg-white dark:bg-slate-900 border-indigo-300 dark:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white" : "bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-white/10 text-slate-500 cursor-not-allowed")}
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5"/> Ngày sinh</label>
-                <input type="date" name="dob" value={formData.dob} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-black/40 border border-slate-200/80 dark:border-white/10 rounded-2xl px-4 py-3.5 text-sm font-bold text-slate-900 dark:text-white outline-none focus:bg-white dark:focus:bg-[#0B0F19] focus:ring-2 focus:ring-blue-500/50 transition-all shadow-sm" />
+              <div className="space-y-1.5 group">
+                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5 group-focus-within:text-indigo-500 transition-colors">Địa chỉ liên hệ</label>
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-3.5 w-4.5 h-4.5 text-slate-400" />
+                  <textarea 
+                    rows={3} disabled={!isEditing}
+                    value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})}
+                    placeholder="Chưa cập nhật"
+                    className={cn("w-full pl-10 pr-4 py-3 border rounded-xl text-sm font-bold outline-none transition-all resize-none shadow-sm", isEditing ? "bg-white dark:bg-slate-900 border-indigo-300 dark:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white" : "bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-white/10 text-slate-500 cursor-not-allowed")}
+                  />
+                </div>
               </div>
 
-              <div className="flex flex-col gap-2 sm:col-span-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5"><Globe className="w-3.5 h-3.5"/> Quốc tịch</label>
-                <input type="text" name="nationality" value={formData.nationality} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-black/40 border border-slate-200/80 dark:border-white/10 rounded-2xl px-4 py-3.5 text-sm font-bold text-slate-900 dark:text-white outline-none focus:bg-white dark:focus:bg-[#0B0F19] focus:ring-2 focus:ring-blue-500/50 transition-all shadow-sm" />
-              </div>
-            </div>
+              {isEditing && (
+                <div className="mt-auto pt-6 border-t border-slate-200/50 dark:border-white/5 flex justify-end">
+                  <button type="submit" disabled={isUpdating} className="flex items-center gap-2 px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-70">
+                    {isUpdating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                    Lưu Hồ sơ
+                  </button>
+                </div>
+              )}
+
+            </form>
           </div>
-
-          {/* CÔNG VIỆC */}
-          <div className="bg-white/70 dark:bg-[#0B0F19]/70 backdrop-blur-2xl border border-slate-200/50 dark:border-white/10 rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.04)] p-6 sm:p-8">
-            <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mb-6 flex items-center gap-3">
-              <div className="p-2 bg-indigo-100 dark:bg-indigo-500/20 rounded-xl text-indigo-600 dark:text-indigo-400"><Briefcase className="w-5 h-5" /></div>
-              Hồ sơ Công việc
-            </h3>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5"><Fingerprint className="w-3.5 h-3.5" /> Mã nhân viên</label>
-                <input type="text" name="empId" value={formData.empId} disabled className="w-full bg-slate-100/50 dark:bg-white/[0.03] border border-slate-200/50 dark:border-white/5 rounded-2xl px-4 py-3.5 text-sm font-bold text-slate-500 cursor-not-allowed" />
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> Vị trí làm việc</label>
-                <input type="text" name="jobTitle" value={formData.jobTitle} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-black/40 border border-slate-200/80 dark:border-white/10 rounded-2xl px-4 py-3.5 text-sm font-bold text-slate-900 dark:text-white outline-none focus:bg-white dark:focus:bg-[#0B0F19] focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm" />
-              </div>
-              <div className="flex flex-col gap-2 sm:col-span-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5"><Building className="w-3.5 h-3.5"/> Trực thuộc Phòng ban</label>
-                <input type="text" name="department" value={formData.department} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-black/40 border border-slate-200/80 dark:border-white/10 rounded-2xl px-4 py-3.5 text-sm font-bold text-slate-900 dark:text-white outline-none focus:bg-white dark:focus:bg-[#0B0F19] focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm" />
-              </div>
-            </div>
-          </div>
-
         </div>
+
       </div>
     </div>
   );

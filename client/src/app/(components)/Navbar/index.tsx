@@ -23,44 +23,47 @@ import {
   useLogoutMutation, 
   useGetPendingApprovalsQuery, 
   useGetRecentActivitiesQuery,
-  api // Import API để chủ động bắn Invalidate Cache
+  api 
 } from "@/state/api";
 
 // --- COMPONENTS ---
 import UniversalScanner from "@/app/(components)/UniversalScanner";
 import GlobalSearch from "@/app/(components)/GlobalSearch";
 
-// --- HELPER: HÀM TÍNH THỜI GIAN ---
-const timeAgo = (dateString: string) => {
-  const date = new Date(dateString);
-  const now = new Date();
-  const seconds = Math.round((now.getTime() - date.getTime()) / 1000);
-  const minutes = Math.round(seconds / 60);
-  const hours = Math.round(minutes / 60);
-  const days = Math.round(hours / 24);
-
-  if (seconds < 60) return "Vừa xong";
-  if (minutes < 60) return `${minutes} phút trước`;
-  if (hours < 24) return `${hours} giờ trước`;
-  if (days === 1) return "Hôm qua";
-  return `${days} ngày trước`;
-};
+// --- ENTERPRISE UTILS (SIÊU VŨ KHÍ) ---
+import { timeAgo, getInitials } from "@/utils/formatters";
+import { cn, generateAvatarColor } from "@/utils/helpers";
 
 // ==========================================
-// COMPONENT: NAVBAR (TÍCH HỢP SOCKET.IO)
+// FIX TRIỆT ĐỂ: SINGLETON SOCKET INSTANCE
+// Khởi tạo Socket ngoài Component để không bị ảnh hưởng bởi vòng đời React StrictMode
 // ==========================================
+let globalSocket: Socket | null = null;
+
 export default function Navbar() {
   const router = useRouter();
   const dispatch = useAppDispatch();
   const { theme, setTheme } = useTheme();
   const { i18n } = useTranslation();
 
-  const currentUser = useAppSelector((state) => state.global.currentUser);
-  const refreshToken = useAppSelector((state) => state.global.refreshToken);
+  const currentUser = useAppSelector((state: any) => state.global?.currentUser);
+  const refreshToken = useAppSelector((state: any) => state.global?.refreshToken);
   const [logoutApi] = useLogoutMutation();
 
-  const { data: pendingApprovals = [] } = useGetPendingApprovalsQuery();
-  const { data: recentLogs = [] } = useGetRecentActivitiesQuery(5); 
+  // Lấy dữ liệu thô từ API (Chưa xác định rõ là Array hay Object phân trang)
+  const { data: rawPendingApprovals } = useGetPendingApprovalsQuery();
+  const { data: rawRecentLogs } = useGetRecentActivitiesQuery(5); 
+
+  // 👉 XỬ LÝ AN TOÀN KIỂU DỮ LIỆU (CHỐNG LỖI .forEach is not a function)
+  const pendingApprovals = useMemo(() => {
+    if (!rawPendingApprovals) return [];
+    return Array.isArray(rawPendingApprovals) ? rawPendingApprovals : (rawPendingApprovals as any).data || [];
+  }, [rawPendingApprovals]);
+
+  const recentLogs = useMemo(() => {
+    if (!rawRecentLogs) return [];
+    return Array.isArray(rawRecentLogs) ? rawRecentLogs : (rawRecentLogs as any).data || [];
+  }, [rawRecentLogs]);
 
   const [isMounted, setIsMounted] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -70,27 +73,45 @@ export default function Navbar() {
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false); 
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
 
-  // Tham chiếu Socket để không bị re-render mất kết nối
-  const socketRef = useRef<Socket | null>(null);
-
-  // ==========================================
-  // REAL-TIME ENGINE TÍCH HỢP (SOCKET.IO)
-  // ==========================================
+  // Kết nối Socket
   useEffect(() => {
     setIsMounted(true);
 
-    // Khởi tạo kết nối đến Backend
-    const backendUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.replace('/api/v1', '') || 'http://localhost:5000';
-    socketRef.current = io(backendUrl);
-
-    // 1. Lắng nghe Kênh Phê Duyệt
-    socketRef.current.on("new_approval_event", (payload: any) => {
-      // Ép Redux Tự động gọi lại API lấy danh sách phê duyệt mới nhất
-      dispatch(api.util.invalidateTags(["Approvals"]));
+    if (!globalSocket) {
+      let socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL;
       
-      // Bật Toast mượt mà ở góc màn hình
+      if (!socketUrl) {
+         const backendUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000/api/v1';
+         try {
+           const urlObj = new URL(backendUrl);
+           socketUrl = urlObj.origin; 
+         } catch (e) {
+           socketUrl = 'http://localhost:5000';
+         }
+      }
+
+      globalSocket = io(socketUrl, {
+        path: "/socket.io/",
+        transports: ["websocket"], 
+        autoConnect: false, 
+        reconnectionAttempts: 5,
+        reconnectionDelay: 2000
+      });
+
+      globalSocket.connect();
+
+      globalSocket.on("connect_error", (err) => {
+        console.warn("Socket.io connect error:", err.message);
+      });
+    }
+
+    const handleNewApproval = (payload: any) => {
+      dispatch(api.util.invalidateTags(["Approvals"]));
       toast.custom((t) => (
-        <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-white dark:bg-slate-900 shadow-2xl rounded-2xl pointer-events-auto flex ring-1 ring-black ring-opacity-5 border border-slate-200 dark:border-white/10`}>
+        <div className={cn(
+          "max-w-md w-full bg-white dark:bg-slate-900 shadow-2xl rounded-2xl pointer-events-auto flex ring-1 ring-black ring-opacity-5 border border-slate-200 dark:border-white/10",
+          t.visible ? 'animate-enter' : 'animate-leave'
+        )}>
           <div className="flex-1 w-0 p-4">
             <div className="flex items-start">
               <div className="flex-shrink-0 pt-0.5"><AlertCircle className="h-10 w-10 text-amber-500 bg-amber-50 dark:bg-amber-500/10 p-2 rounded-full" /></div>
@@ -102,30 +123,36 @@ export default function Navbar() {
           </div>
         </div>
       ));
-    });
+    };
 
-    // 2. Lắng nghe Kênh Hoạt động hệ thống
-    socketRef.current.on("new_system_activity", (payload: any) => {
+    const handleSystemActivity = (payload: any) => {
       dispatch(api.util.invalidateTags(["AuditLogs"]));
-      // Không nên hiện Toast cho mọi Audit Log (vì sẽ bị spam), chỉ cập nhật chuông.
-    });
+    };
+
+    globalSocket.on("new_approval_event", handleNewApproval);
+    globalSocket.on("new_system_activity", handleSystemActivity);
 
     return () => {
-      if (socketRef.current) socketRef.current.disconnect();
+      if (globalSocket) {
+        globalSocket.off("new_approval_event", handleNewApproval);
+        globalSocket.off("new_system_activity", handleSystemActivity);
+      }
     };
   }, [dispatch]);
 
   // ==========================================
-  // LOGIC HIỂN THỊ THÔNG BÁO TỔNG HỢP
+  // LOGIC HIỂN THỊ THÔNG BÁO TỔNG HỢP (Áp dụng Utils timeAgo)
   // ==========================================
   const notifications = useMemo(() => {
     const notifs: any[] = [];
-    pendingApprovals.forEach((req) => {
+    
+    // An toàn tuyệt đối: Dùng mảng đã bóc tách
+    pendingApprovals.forEach((req: any) => {
       notifs.push({
         id: `approval_${req.requestId}`,
         type: 'warning',
         content: (<span>Có yêu cầu phê duyệt chứng từ <span className="text-blue-600 dark:text-blue-400 font-bold">#{req.document?.documentNumber || req.documentId}</span> từ {req.requester?.fullName || 'Nhân viên'}.</span>),
-        time: timeAgo(req.createdAt),
+        time: timeAgo(req.createdAt), // DÙNG UTILS
         rawDate: new Date(req.createdAt).getTime(),
         isRead: readIds.has(`approval_${req.requestId}`),
         href: `/approvals`, 
@@ -140,7 +167,7 @@ export default function Navbar() {
         id: `log_${log.logId}`,
         type: 'info',
         content: (<span>{log.user?.fullName || 'Hệ thống'} đã thực hiện thao tác <span className="font-bold">{log.action}</span> trên {log.tableName || log.module || 'hệ thống'}.</span>),
-        time: timeAgo(log.timestamp || log.createdAt),
+        time: timeAgo(log.timestamp || log.createdAt), // DÙNG UTILS
         rawDate: new Date(log.timestamp || log.createdAt || new Date()).getTime(),
         isRead: readIds.has(`log_${log.logId}`),
         href: `/users`, 
@@ -149,6 +176,7 @@ export default function Navbar() {
         iconBg: 'bg-blue-500/10'
       });
     });
+    
     return notifs.sort((a, b) => b.rawDate - a.rawDate);
   }, [pendingApprovals, recentLogs, readIds]);
 
@@ -199,6 +227,10 @@ export default function Navbar() {
     } catch (error) {
       console.error("Lỗi đăng xuất", error);
     } finally {
+      if (globalSocket) {
+         globalSocket.disconnect();
+         globalSocket = null;
+      }
       dispatch(clearReduxAuth()); 
       router.push("/login");
     }
@@ -298,12 +330,15 @@ export default function Navbar() {
                           <div className="p-8 text-center flex flex-col items-center gap-3"><CheckCircle2 className="w-10 h-10 text-emerald-400 opacity-50" /> Đã xử lý xong mọi việc.</div>
                         ) : (
                           notifications.map(notif => (
-                            <div key={notif.id} onClick={() => handleNotificationClick(notif.id, notif.href)} className={`px-5 py-4 cursor-pointer border-b border-slate-50 dark:border-white/5 flex gap-3.5 relative transition-colors ${notif.isRead ? 'opacity-60 hover:bg-slate-50 dark:hover:bg-white/5' : 'bg-blue-50/30 hover:bg-blue-50 dark:bg-blue-500/5'}`}>
+                            <div key={notif.id} onClick={() => handleNotificationClick(notif.id, notif.href)} className={cn(
+                              "px-5 py-4 cursor-pointer border-b border-slate-50 dark:border-white/5 flex gap-3.5 relative transition-colors",
+                              notif.isRead ? 'opacity-60 hover:bg-slate-50 dark:hover:bg-white/5' : 'bg-blue-50/30 hover:bg-blue-50 dark:bg-blue-500/5'
+                            )}>
                               {!notif.isRead && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 rounded-r-full shadow-[0_0_8px_rgba(59,130,246,0.6)]" />}
-                              <div className={`mt-0.5 shrink-0 w-9 h-9 rounded-full ${notif.iconBg} flex items-center justify-center`}><notif.icon className={`w-4.5 h-4.5 ${notif.iconColor}`} /></div>
+                              <div className={cn("mt-0.5 shrink-0 w-9 h-9 rounded-full flex items-center justify-center", notif.iconBg)}><notif.icon className={cn("w-4.5 h-4.5", notif.iconColor)} /></div>
                               <div className="flex-1">
-                                <p className={`text-[13px] leading-relaxed ${notif.isRead ? 'text-slate-600 font-medium' : 'text-slate-800 dark:text-slate-200 font-semibold'}`}>{notif.content}</p>
-                                <span className={`text-[11px] font-bold mt-1.5 block ${notif.isRead ? 'text-slate-400' : 'text-blue-500'}`}>{notif.time}</span>
+                                <p className={cn("text-[13px] leading-relaxed", notif.isRead ? 'text-slate-600 font-medium' : 'text-slate-800 dark:text-slate-200 font-semibold')}>{notif.content}</p>
+                                <span className={cn("text-[11px] font-bold mt-1.5 block", notif.isRead ? 'text-slate-400' : 'text-blue-500')}>{notif.time}</span>
                               </div>
                             </div>
                           ))
@@ -317,7 +352,13 @@ export default function Navbar() {
 
             <div className="relative ml-1" ref={profileRef}>
               <button onClick={() => setIsProfileOpen(!isProfileOpen)} className="flex items-center gap-2 p-1 pl-1 pr-1 sm:pr-3 rounded-full bg-slate-50 dark:bg-black/20 border border-slate-200/50 hover:border-indigo-300 transition-all duration-200 active:scale-95 group">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-600 to-blue-600 flex items-center justify-center text-white font-black shadow-[0_2px_8px_rgba(99,102,241,0.4)] text-sm group-hover:scale-105 transition-transform">{currentUser?.fullName?.charAt(0).toUpperCase() || "U"}</div>
+                {/* ÁP DỤNG UTILS TẠO MÀU AVATAR & INITIALS */}
+                <div className={cn(
+                  "w-8 h-8 rounded-full flex items-center justify-center font-black shadow-sm text-sm group-hover:scale-105 transition-transform",
+                  generateAvatarColor(currentUser?.fullName)
+                )}>
+                  {getInitials(currentUser?.fullName)}
+                </div>
                 <div className="hidden md:flex flex-col items-start leading-none pr-1">
                   <span className="text-[13px] font-bold text-slate-900 dark:text-white max-w-[120px] truncate">{currentUser?.fullName || "Người dùng"}</span>
                   <span className="text-[10px] font-extrabold text-indigo-600 mt-0.5">{currentUser?.role || "STAFF"}</span>
@@ -331,7 +372,13 @@ export default function Navbar() {
                       <div className="relative overflow-hidden rounded-2xl p-4 bg-gradient-to-br from-blue-600 to-purple-700 shadow-lg border border-white/10">
                         <div className="flex items-center gap-3 relative z-10">
                           <div className="relative shrink-0">
-                            <div className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white font-black text-xl border-2 border-white/30">{currentUser?.fullName?.charAt(0).toUpperCase() || "U"}</div>
+                            {/* ÁP DỤNG UTILS TẠO MÀU AVATAR & INITIALS */}
+                            <div className={cn(
+                              "w-12 h-12 rounded-full flex items-center justify-center font-black text-xl border-2 border-white/30 shadow-inner",
+                              generateAvatarColor(currentUser?.fullName)
+                            )}>
+                              {getInitials(currentUser?.fullName)}
+                            </div>
                             <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-400 border-2 border-indigo-700 rounded-full shadow-sm"></div>
                           </div>
                           <div className="flex-1 min-w-0">

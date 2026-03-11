@@ -9,8 +9,6 @@ import {
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend
 } from "recharts";
-import dayjs from "dayjs";
-import 'dayjs/locale/vi';
 import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
@@ -21,8 +19,19 @@ import Header from "@/app/(components)/Header";
 import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
 import { formatVND } from "@/utils/formatters";
 import { exportToCSV } from "@/utils/exportUtils";
+import { cn } from "@/utils/helpers";
 
-dayjs.locale('vi');
+// Lấy 6 tháng trước bằng JS thuần, không dùng thư viện ngoài
+const getSixMonthsAgo = () => {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 6);
+  d.setDate(1);
+  return d.toISOString().split('T')[0];
+};
+
+const getEndOftoday = () => {
+  return new Date().toISOString().split('T')[0];
+};
 
 // ==========================================
 // 1. SKELETON LOADING
@@ -41,8 +50,8 @@ const CashflowSkeleton = () => (
 // COMPONENT CHÍNH
 // ==========================================
 export default function CashflowReport() {
-  const [startDate, setStartDate] = useState(dayjs().subtract(6, 'month').startOf('month').format('YYYY-MM-DD'));
-  const [endDate, setEndDate] = useState(dayjs().endOf('month').format('YYYY-MM-DD'));
+  const [startDate, setStartDate] = useState(getSixMonthsAgo());
+  const [endDate, setEndDate] = useState(getEndOftoday());
 
   const { data: cashflowData = [], isLoading, isError, refetch, isFetching } = useGetCashflowReportQuery({
     startDate,
@@ -116,7 +125,10 @@ export default function CashflowReport() {
         const isPositive = row.netCash >= 0;
         return (
           <div className="flex flex-col items-end">
-            <span className={`font-black px-2.5 py-1 rounded-lg ${isPositive ? 'bg-blue-50 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400' : 'bg-rose-50 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400'}`}>
+            <span className={cn(
+              "font-black px-2.5 py-1 rounded-lg", 
+              isPositive ? 'bg-blue-50 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400' : 'bg-rose-50 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400'
+            )}>
               {isPositive ? "+" : ""}{formatVND(row.netCash)}
             </span>
           </div>
@@ -135,7 +147,7 @@ export default function CashflowReport() {
         <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Lỗi truy xuất Dữ liệu</h2>
         <p className="text-slate-500 mb-6">Mất kết nối với máy chủ phân tích tài chính.</p>
         <button onClick={() => refetch()} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg active:scale-95 flex items-center gap-2 transition-transform">
-          <RefreshCcw className={`w-5 h-5 ${isFetching ? 'animate-spin' : ''}`} /> Thử lại
+          <RefreshCcw className={cn("w-5 h-5", isFetching && "animate-spin")} /> Thử lại
         </button>
       </div>
     );
@@ -204,14 +216,17 @@ export default function CashflowReport() {
               <h3 className="text-3xl font-black text-slate-900 dark:text-white truncate">{formatVND(summary.totalOut)}</h3>
             </motion.div>
 
-            <motion.div variants={itemVariants} className={`glass p-6 rounded-3xl border-l-4 ${summary.netCash >= 0 ? 'border-l-blue-500' : 'border-l-rose-500 bg-rose-50 dark:bg-rose-900/10'}`}>
+            <motion.div variants={itemVariants} className={cn(
+              "glass p-6 rounded-3xl border-l-4",
+              summary.netCash >= 0 ? "border-l-blue-500" : "border-l-rose-500 bg-rose-50 dark:bg-rose-900/10"
+            )}>
               <div className="flex justify-between items-start mb-4">
                 <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">Lưu Chuyển Thuần</p>
-                <div className={`p-2.5 rounded-xl ${summary.netCash >= 0 ? 'bg-blue-100 dark:bg-blue-500/20' : 'bg-rose-100 dark:bg-rose-500/20'}`}>
-                  <DollarSign className={`w-5 h-5 ${summary.netCash >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-rose-600 dark:text-rose-400'}`} />
+                <div className={cn("p-2.5 rounded-xl", summary.netCash >= 0 ? "bg-blue-100 dark:bg-blue-500/20" : "bg-rose-100 dark:bg-rose-500/20")}>
+                  <DollarSign className={cn("w-5 h-5", summary.netCash >= 0 ? "text-blue-600 dark:text-blue-400" : "text-rose-600 dark:text-rose-400")} />
                 </div>
               </div>
-              <h3 className={`text-3xl font-black truncate ${summary.netCash >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-rose-600 dark:text-rose-400'}`}>
+              <h3 className={cn("text-3xl font-black truncate", summary.netCash >= 0 ? "text-blue-600 dark:text-blue-400" : "text-rose-600 dark:text-rose-400")}>
                 {summary.netCash > 0 ? "+" : ""}{formatVND(summary.netCash)}
               </h3>
             </motion.div>

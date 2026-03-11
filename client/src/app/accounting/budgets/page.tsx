@@ -9,8 +9,6 @@ import {
   Trash2, CheckCircle2, Download
 } from "lucide-react";
 import { toast } from "react-hot-toast";
-import dayjs from "dayjs";
-import 'dayjs/locale/vi';
 
 // --- REDUX & API ---
 import { 
@@ -23,13 +21,12 @@ import {
   Budget
 } from "@/state/api";
 
-// --- COMPONENTS & UTILS ---
+// --- COMPONENTS & UTILS (SIÊU VŨ KHÍ) ---
 import Header from "@/app/(components)/Header";
 import Modal from "@/app/(components)/Modal";
-import { formatVND } from "@/utils/formatters";
+import { formatVND, formatDate } from "@/utils/formatters";
 import { exportToCSV } from "@/utils/exportUtils";
-
-dayjs.locale('vi');
+import { cn } from "@/utils/helpers";
 
 // ==========================================
 // 1. HELPERS & FORMATTERS (DATA VIZ)
@@ -73,7 +70,7 @@ export default function BudgetsPage() {
   // --- FORM STATE ---
   const [formData, setFormData] = useState({ departmentId: "", periodId: "", totalAmount: "", isActive: true });
 
-  // 👉 FETCH DATA THẬT (GỌI CHÉO 3 API)
+  // 👉 FETCH DATA THẬT
   const { data: budgets = [], isLoading: loadingBudgets, isError, refetch } = useGetBudgetsQuery({});
   const { data: departments = [], isLoading: loadingDepts } = useGetDepartmentsQuery({});
   const { data: periods = [], isLoading: loadingPeriods } = useGetFiscalPeriodsQuery({});
@@ -144,7 +141,7 @@ export default function BudgetsPage() {
     }
   };
 
-  // --- LỌC & MAP DỮ LIỆU ĐỂ HIỂN THỊ (DATA VIZ) ---
+  // --- LỌC & MAP DỮ LIỆU ---
   const mappedBudgets = useMemo(() => {
     return budgets.map(b => {
       const deptName = departments.find(d => d.departmentId === b.departmentId)?.name || `Dept ID: ${b.departmentId}`;
@@ -207,7 +204,6 @@ export default function BudgetsPage() {
     );
   }
 
-  // --- FOOTER RENDER CHO MODAL ---
   const modalFooter = (
     <>
       <button type="button" onClick={() => setIsModalOpen(false)} disabled={isSubmitting} className="px-5 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors disabled:opacity-50">
@@ -223,7 +219,6 @@ export default function BudgetsPage() {
   return (
     <div className="w-full flex flex-col gap-6 pb-10">
       
-      {/* 1. HEADER */}
       <Header 
         title={t("Quản lý Ngân sách Chi tiêu")} 
         subtitle={t("Thiết lập hạn mức, kiểm soát dòng tiền và cảnh báo vượt ngân sách theo phòng ban.")}
@@ -250,7 +245,6 @@ export default function BudgetsPage() {
       {isLoading ? <BudgetsSkeleton /> : (
         <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-6 w-full">
           
-          {/* 2. KHỐI KPI TÀI CHÍNH TỔNG */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
             <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border-l-4 border-l-indigo-500 relative overflow-hidden group">
               <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform"><Target className="w-20 h-20"/></div>
@@ -264,19 +258,18 @@ export default function BudgetsPage() {
               <h3 className="text-3xl font-black text-orange-600 dark:text-orange-400 relative z-10">{formatVND(kpis.totalBurned)}</h3>
             </motion.div>
             
-            <motion.div variants={itemVariants} className={`glass p-5 rounded-3xl border-l-4 relative overflow-hidden group ${kpis.overBudgetDepts > 0 ? 'border-l-rose-500 bg-rose-50/30 dark:bg-rose-900/10' : 'border-l-emerald-500'}`}>
+            <motion.div variants={itemVariants} className={cn("glass p-5 rounded-3xl border-l-4 relative overflow-hidden group", kpis.overBudgetDepts > 0 ? "border-l-rose-500 bg-rose-50/30 dark:bg-rose-900/10" : "border-l-emerald-500")}>
               <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform"><AlertTriangle className="w-20 h-20"/></div>
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 relative z-10 flex items-center gap-1.5">
-                <AlertTriangle className={`w-4 h-4 ${kpis.overBudgetDepts > 0 ? 'text-rose-500' : 'text-emerald-500'}`}/> Báo Động Đỏ
+                <AlertTriangle className={cn("w-4 h-4", kpis.overBudgetDepts > 0 ? "text-rose-500" : "text-emerald-500")} /> Báo Động Đỏ
               </p>
-              <h3 className={`text-3xl font-black relative z-10 ${kpis.overBudgetDepts > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+              <h3 className={cn("text-3xl font-black relative z-10", kpis.overBudgetDepts > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400")}>
                 {kpis.overBudgetDepts} <span className="text-sm font-semibold opacity-70">Phòng ban</span>
               </h3>
               <p className="text-[10px] font-medium text-slate-500 mt-1 relative z-10">{kpis.overBudgetDepts > 0 ? 'Có phòng ban chi tiêu vượt định mức!' : 'Tất cả đều trong tầm kiểm soát'}</p>
             </motion.div>
           </div>
 
-          {/* 3. THANH TÌM KIẾM */}
           <div className="relative w-full md:w-96">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input 
@@ -286,7 +279,6 @@ export default function BudgetsPage() {
             />
           </div>
 
-          {/* 4. LƯỚI CARD NGÂN SÁCH (DATA VIZ TIẾN TRÌNH) */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <AnimatePresence>
               {mappedBudgets.map(budget => {
@@ -298,10 +290,9 @@ export default function BudgetsPage() {
                     onClick={() => handleOpenForm(budget)}
                     className="flex flex-col bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-white/10 rounded-3xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer group"
                   >
-                    {/* Header Thẻ */}
                     <div className="flex justify-between items-start mb-4">
                       <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${viz.isAlert ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}>
+                        <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", viz.isAlert ? "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400" : "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300")}>
                           <Building className="w-5 h-5" />
                         </div>
                         <div>
@@ -319,11 +310,10 @@ export default function BudgetsPage() {
                       </div>
                     </div>
 
-                    {/* Số tiền Data Viz */}
                     <div className="flex justify-between items-end mb-2">
                       <div>
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Đã sử dụng</p>
-                        <p className={`text-lg font-black ${viz.text}`}>{formatVND(budget.usedAmount)}</p>
+                        <p className={cn("text-lg font-black", viz.text)}>{formatVND(budget.usedAmount)}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Hạn mức</p>
@@ -331,11 +321,10 @@ export default function BudgetsPage() {
                       </div>
                     </div>
 
-                    {/* Thanh Burn Rate */}
                     <div className="w-full h-2.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden mb-2">
                       <motion.div 
                         initial={{ width: 0 }} animate={{ width: `${Math.min(viz.percent, 100)}%` }} transition={{ duration: 1 }}
-                        className={`h-full rounded-full ${viz.color} ${viz.percent > 100 ? 'animate-pulse' : ''}`}
+                        className={cn("h-full rounded-full", viz.color, viz.percent > 100 && "animate-pulse")}
                       />
                     </div>
                     
@@ -358,7 +347,6 @@ export default function BudgetsPage() {
         </motion.div>
       )}
 
-      {/* 5. MODAL: TẠO/SỬA NGÂN SÁCH BẰNG CORE MODAL */}
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
@@ -374,7 +362,7 @@ export default function BudgetsPage() {
             <label className="text-xs font-bold text-slate-500 uppercase">Phòng ban thụ hưởng *</label>
             <select 
               value={formData.departmentId} onChange={(e) => setFormData({...formData, departmentId: e.target.value})}
-              disabled={!!editingBudget} // Không cho đổi phòng ban khi đang sửa
+              disabled={!!editingBudget} 
               className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white disabled:opacity-50"
             >
               <option value="">-- Chọn Phòng ban --</option>
@@ -386,11 +374,11 @@ export default function BudgetsPage() {
             <label className="text-xs font-bold text-slate-500 uppercase">Kỳ Kế toán *</label>
             <select 
               value={formData.periodId} onChange={(e) => setFormData({...formData, periodId: e.target.value})}
-              disabled={!!editingBudget} // Không cho đổi kỳ khi đang sửa
+              disabled={!!editingBudget} 
               className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white disabled:opacity-50"
             >
               <option value="">-- Chọn Kỳ --</option>
-              {periods.map(p => <option key={p.periodId} value={p.periodId}>{p.periodName} ({dayjs(p.startDate).format('MM/YY')})</option>)}
+              {periods.map(p => <option key={p.periodId} value={p.periodId}>{p.periodName} ({formatDate(p.startDate, 'MM/YY')})</option>)}
             </select>
           </div>
 
@@ -411,7 +399,7 @@ export default function BudgetsPage() {
             <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Trạng thái Hoạt động</label>
             <div 
               onClick={() => setFormData({...formData, isActive: !formData.isActive})}
-              className={`w-12 h-6 flex items-center bg-slate-300 rounded-full p-1 cursor-pointer transition-colors ${formData.isActive ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+              className={cn("w-12 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors", formData.isActive ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600")}
             >
               <motion.div layout className="w-4 h-4 bg-white rounded-full shadow-md" style={{ x: formData.isActive ? 24 : 0 }} />
             </div>

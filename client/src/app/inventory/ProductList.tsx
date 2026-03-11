@@ -25,9 +25,10 @@ import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
 import CreateProductModal from "./CreateProductModal";
 import AdvancedProductOpsModal from "./AdvancedProductOpsModal";
 
-// --- UTILS ---
+// --- UTILS (SIÊU VŨ KHÍ) ---
 import { formatVND } from "@/utils/formatters";
 import { exportToCSV } from "@/utils/exportUtils";
+import { cn } from "@/utils/helpers";
 
 // ==========================================
 // 1. SKELETON LOADING
@@ -82,7 +83,7 @@ export default function ProductList() {
 
   const isLoading = loadingProducts || loadingCats || loadingUoms;
 
-  // Bóc tách Data và Meta (KPIs) được trả về từ Server (Đã FIX lỗi TS 2339 bổ sung page và limit)
+  // Bóc tách Data và Meta (KPIs)
   const products = response?.data || [];
   const meta = response?.meta || { total: 0, page: 1, limit: 10, totalPages: 1, kpis: { totalItems: 0, totalValue: 0, lowStockCount: 0, outOfStockCount: 0 } };
   const kpis = meta.kpis || { totalItems: 0, totalValue: 0, lowStockCount: 0, outOfStockCount: 0 };
@@ -272,7 +273,7 @@ export default function ProductList() {
         return (
           <div className="flex flex-col w-32 sm:w-40">
             <div className="flex justify-between items-end mb-1">
-              <span className={`px-2 py-0.5 rounded text-[10px] font-black border ${bgLight} ${textColor}`}>
+              <span className={cn("px-2 py-0.5 rounded text-[10px] font-black border", bgLight, textColor)}>
                 {stock} <span className="font-normal opacity-80">hộp</span>
               </span>
               <span className="text-[10px] font-bold text-slate-400" title="Điểm tái đặt hàng (Reorder Point)">Min: {reorder}</span>
@@ -280,7 +281,7 @@ export default function ProductList() {
             <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
               <motion.div 
                 initial={{ width: 0 }} animate={{ width: `${percent}%` }} transition={{ duration: 1 }}
-                className={`h-full rounded-full ${statusColor} ${stock <= reorder && stock > 0 ? 'animate-pulse' : ''}`}
+                className={cn("h-full rounded-full", statusColor, stock <= reorder && stock > 0 && 'animate-pulse')}
               />
             </div>
           </div>
@@ -380,18 +381,18 @@ export default function ProductList() {
               <h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 truncate relative z-10">{formatVND(kpis.totalValue)}</h3>
             </motion.div>
 
-            <motion.div variants={itemVariants} className={`bg-white dark:bg-slate-800 p-5 rounded-2xl border shadow-sm relative overflow-hidden transition-colors ${kpis.lowStockCount > 0 ? 'border-amber-300 dark:border-amber-500/50' : 'border-slate-200 dark:border-white/5'}`}>
+            <motion.div variants={itemVariants} className={cn("bg-white dark:bg-slate-800 p-5 rounded-2xl border shadow-sm relative overflow-hidden transition-colors", kpis.lowStockCount > 0 ? "border-amber-300 dark:border-amber-500/50" : "border-slate-200 dark:border-white/5")}>
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Sắp cạn kho (Low Stock)</p>
               <div className="flex items-center gap-3 relative z-10">
-                <h3 className={`text-2xl font-black ${kpis.lowStockCount > 0 ? 'text-amber-500' : 'text-slate-400'}`}>{kpis.lowStockCount}</h3>
+                <h3 className={cn("text-2xl font-black", kpis.lowStockCount > 0 ? "text-amber-500" : "text-slate-400")}>{kpis.lowStockCount}</h3>
                 {kpis.lowStockCount > 0 && <AlertTriangle className="w-5 h-5 text-amber-500 animate-pulse" />}
               </div>
             </motion.div>
 
-            <motion.div variants={itemVariants} className={`bg-white dark:bg-slate-800 p-5 rounded-2xl border shadow-sm relative overflow-hidden transition-colors ${kpis.outOfStockCount > 0 ? 'border-rose-300 dark:border-rose-500/50' : 'border-slate-200 dark:border-white/5'}`}>
+            <motion.div variants={itemVariants} className={cn("bg-white dark:bg-slate-800 p-5 rounded-2xl border shadow-sm relative overflow-hidden transition-colors", kpis.outOfStockCount > 0 ? "border-rose-300 dark:border-rose-500/50" : "border-slate-200 dark:border-white/5")}>
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Cháy Hàng (Out of Stock)</p>
               <div className="flex items-center gap-3 relative z-10">
-                <h3 className={`text-2xl font-black ${kpis.outOfStockCount > 0 ? 'text-rose-500' : 'text-slate-400'}`}>{kpis.outOfStockCount}</h3>
+                <h3 className={cn("text-2xl font-black", kpis.outOfStockCount > 0 ? "text-rose-500" : "text-slate-400")}>{kpis.outOfStockCount}</h3>
                 {kpis.outOfStockCount > 0 && <ShieldAlert className="w-5 h-5 text-rose-500" />}
               </div>
             </motion.div>
@@ -434,7 +435,7 @@ export default function ProductList() {
               serverTotalItems={meta.total}
               itemsPerPage={itemsPerPage}
               onPageChange={(newPage) => setPage(newPage)}
-              onSearchChange={(text) => setSearchQuery(text)} // ĐÃ FIX TÊN BIẾN
+              onSearchChange={(text) => setSearchQuery(text)}
             />
           </motion.div>
 

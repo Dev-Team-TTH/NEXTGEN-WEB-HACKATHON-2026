@@ -393,29 +393,50 @@ export const createCostCenter = async (req: AuthRequest, res: Response): Promise
 // ==========================================
 export const getSystemAuditLogs = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { limit, sort } = req.query;
-    const takeCount = limit && !isNaN(Number(limit)) ? Number(limit) : 100;
-    const sortOrder = sort === 'asc' ? 'asc' : 'desc';
+    const { page = 1, limit = 15, search, action, tableName } = req.query;
+    
+    const pageNum = Number(page);
+    const limitNum = Number(limit);
+    const skip = (pageNum - 1) * limitNum;
 
-    const logs = await prisma.systemAuditLog.findMany({
-      take: takeCount,
-      orderBy: { timestamp: sortOrder },
-      include: {
-        user: { select: { fullName: true, email: true } }
+    const whereCondition: any = {};
+    
+    if (action && action !== "ALL") whereCondition.action = action;
+    if (tableName && tableName !== "ALL") whereCondition.tableName = tableName;
+
+    // Tính năng Search thông minh: Tìm theo ID bản ghi hoặc tên người thao tác
+    if (search) {
+      whereCondition.OR = [
+        { recordId: { contains: String(search), mode: 'insensitive' } },
+        { user: { fullName: { contains: String(search), mode: 'insensitive' } } },
+        { user: { email: { contains: String(search), mode: 'insensitive' } } }
+      ];
+    }
+
+    const [total, logs] = await prisma.$transaction([
+      prisma.systemAuditLog.count({ where: whereCondition }),
+      prisma.systemAuditLog.findMany({
+        where: whereCondition,
+        skip,
+        take: limitNum,
+        orderBy: { timestamp: 'desc' }, // Luôn hiển thị hành động mới nhất lên đầu
+        include: { 
+          user: { select: { fullName: true, email: true } } 
+        }
+      })
+    ]);
+
+    res.json({
+      data: logs,
+      meta: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum)
       }
     });
-
-    const safeLogs = logs.map(log => ({
-      ...log,
-      tableName: log.tableName || "SYSTEM", 
-      action: log.action || "SYSTEM_EVENT",
-      createdAt: log.timestamp, 
-      module: log.tableName      
-    }));
-
-    res.json(safeLogs);
   } catch (error: any) {
-    res.status(500).json({ message: "Lỗi truy xuất Audit Logs", error: error.message });
+    res.status(500).json({ message: "Lỗi truy xuất nhật ký hệ thống", error: error.message });
   }
 };
 

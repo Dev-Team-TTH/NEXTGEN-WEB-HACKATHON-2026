@@ -11,8 +11,9 @@ import {
   useGetWarehousesQuery 
 } from "@/state/api";
 
-// --- IMPORT CORE MODAL ---
+// --- IMPORT CORE MODAL & UTILS ---
 import Modal from "@/app/(components)/Modal";
+import { cn } from "@/utils/helpers";
 
 // ==========================================
 // COMPONENT: MODAL ĐIỀU CHỈNH KHO (KIỂM KÊ)
@@ -24,23 +25,20 @@ interface AdjustStockModalProps {
 
 export default function AdjustStockModal({ isOpen, onClose }: AdjustStockModalProps) {
   // --- API HOOKS ---
-  // FIX LỖI TYPE: API getProducts giờ trả về { data, meta }. Ta cần lấy data ra.
-  // Truyền limit cao để thẻ select hiển thị đủ danh sách vật tư
-  const { data: productsResponse, isLoading: loadingProducts } = useGetProductsQuery({ limit: 1000 });
-  const products = productsResponse?.data || []; // Trích xuất mảng data
+  const { data: productsResponse, isLoading: loadingProducts } = useGetProductsQuery({ limit: 1000 }, { skip: !isOpen });
+  const products = productsResponse?.data || [];
 
-  const { data: warehouses, isLoading: loadingWarehouses } = useGetWarehousesQuery({});
+  const { data: warehouses, isLoading: loadingWarehouses } = useGetWarehousesQuery({}, { skip: !isOpen });
   const [adjustStock, { isLoading: isSubmitting }] = useAdjustStockMutation();
 
   // --- LOCAL STATE (FORM DATA) ---
   const [formData, setFormData] = useState({
     warehouseId: "",
     productId: "",
-    adjustedQuantity: "", // Số lượng thay đổi (+/-)
+    adjustedQuantity: "", 
     reason: "",
   });
 
-  // Reset form khi mở modal
   useEffect(() => {
     if (isOpen) {
       setFormData({ warehouseId: "", productId: "", adjustedQuantity: "", reason: "" });
@@ -56,24 +54,20 @@ export default function AdjustStockModal({ isOpen, onClose }: AdjustStockModalPr
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate cơ bản
     if (!formData.warehouseId || !formData.productId || !formData.adjustedQuantity) {
       toast.error("Vui lòng điền đầy đủ thông tin bắt buộc!");
       return;
     }
 
     try {
-      // Ép kiểu quantity sang số
       const payload = {
         ...formData,
         quantity: Number(formData.adjustedQuantity)
       };
 
-      // Bắn API
       await adjustStock(payload).unwrap();
-      
       toast.success("Đã ghi nhận Phiếu điều chỉnh kho thành công!");
-      onClose(); // Đóng modal sau khi xong
+      onClose(); 
     } catch (error: any) {
       console.error("Lỗi điều chỉnh kho:", error);
       toast.error(error?.data?.message || "Đã xảy ra lỗi khi điều chỉnh kho!");
@@ -120,7 +114,6 @@ export default function AdjustStockModal({ isOpen, onClose }: AdjustStockModalPr
       <div className="p-6 sm:p-8">
         <form id="adjust-stock-form" onSubmit={handleSubmit} className="space-y-6">
           
-          {/* Chọn Kho */}
           <div className="space-y-1.5 group">
             <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 group-focus-within:text-blue-500 transition-colors">
               <MapPin className="w-4 h-4" /> Kho lưu trữ <span className="text-rose-500">*</span>
@@ -139,7 +132,6 @@ export default function AdjustStockModal({ isOpen, onClose }: AdjustStockModalPr
             </select>
           </div>
 
-          {/* Chọn Sản phẩm */}
           <div className="space-y-1.5 group">
             <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 group-focus-within:text-blue-500 transition-colors">
               <Package className="w-4 h-4" /> Vật tư / Sản phẩm <span className="text-rose-500">*</span>
@@ -153,12 +145,11 @@ export default function AdjustStockModal({ isOpen, onClose }: AdjustStockModalPr
             >
               <option value="">-- Chọn sản phẩm --</option>
               {products?.map((p: any) => (
-                <option key={p.productId} value={p.productId}>[{p.productCode}] {p.name}</option>
+                <option key={p.productId || p.id} value={p.productId || p.id}>[{p.productCode}] {p.name}</option>
               ))}
             </select>
           </div>
 
-          {/* Số lượng điều chỉnh */}
           <div className="space-y-1.5 group">
             <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 group-focus-within:text-blue-500 transition-colors">
               Số lượng điều chỉnh (+/-) <span className="text-rose-500">*</span>
@@ -176,7 +167,6 @@ export default function AdjustStockModal({ isOpen, onClose }: AdjustStockModalPr
             </p>
           </div>
 
-          {/* Lý do */}
           <div className="space-y-1.5 group">
             <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 group-focus-within:text-blue-500 transition-colors">
               Lý do / Ghi chú

@@ -7,8 +7,6 @@ import {
   Loader2, CheckCircle2, ShieldAlert, CalendarClock,
   ArrowRight, TrendingUp, History, Camera
 } from "lucide-react";
-import dayjs from "dayjs";
-import 'dayjs/locale/vi';
 import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
@@ -23,7 +21,9 @@ import {
   FiscalPeriod
 } from "@/state/api";
 
-dayjs.locale('vi');
+// --- UTILS ---
+import { formatDate } from "@/utils/formatters";
+import { cn } from "@/utils/helpers";
 
 // ==========================================
 // COMPONENT CHÍNH: TRẠM KIỂM SOÁT KỲ KẾ TOÁN
@@ -49,7 +49,6 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
 
   const isProcessing = isCreatingYear || isClosingYear || isClosingPeriod || isReopeningPeriod;
 
-  // Tự động chọn Năm gần nhất khi mở Modal
   useEffect(() => {
     if (isOpen && years.length > 0 && !selectedYearId) {
       const activeYear = years.find((y: any) => y.status === "ACTIVE" || !y.isClosed);
@@ -62,7 +61,6 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
   
   const progress = useMemo(() => {
     if (!periods.length) return { closed: 0, total: 0, percent: 0 };
-    // Bỏ qua Type strictness của Frontend, map trực tiếp với data Prisma Backend trả về
     const closed = periods.filter((p: any) => p.isClosed || p.status === "CLOSED").length;
     return { 
       closed, 
@@ -73,10 +71,9 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
 
   // --- HANDLERS ---
   const handleCreateNextYear = async () => {
-    const nextYearNum = dayjs().year() + 1; 
+    const nextYearNum = new Date().getFullYear() + 1; 
     if (window.confirm(`Hệ thống sẽ tự động khởi tạo Năm Tài Chính ${nextYearNum} cùng 12 kỳ kế toán tương ứng. Xác nhận?`)) {
       try {
-        // Dùng `as any` để bypass lỗi TS khi backend cần `year` nhưng interface frontend lại cần `yearName`
         await createYear({
           year: nextYearNum,
           startDate: `${nextYearNum}-01-01`,
@@ -90,7 +87,6 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
   };
 
   const handleTogglePeriod = async (rawPeriod: any) => {
-    // Ép kiểu (rawPeriod: any) để xử lý triệt để lỗi TS 2339 & 2551
     const isClosed = rawPeriod.isClosed || rawPeriod.status === "CLOSED";
     const periodName = rawPeriod.periodName || `Kỳ ${rawPeriod.periodNumber}`;
     
@@ -190,10 +186,13 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
                     <div 
                       key={rawYear.yearId} 
                       onClick={() => !isProcessing && setSelectedYearId(rawYear.yearId)}
-                      className={`relative p-4 rounded-2xl border-2 transition-all cursor-pointer group ${isActive ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10' : 'border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-indigo-300 dark:hover:border-indigo-700'}`}
+                      className={cn(
+                        "relative p-4 rounded-2xl border-2 transition-all cursor-pointer group",
+                        isActive ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10" : "border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-indigo-300 dark:hover:border-indigo-700"
+                      )}
                     >
                       <div className="flex items-center justify-between mb-2 relative z-10">
-                        <h4 className={`font-bold text-lg ${isActive ? 'text-indigo-700 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                        <h4 className={cn("font-bold text-lg", isActive ? "text-indigo-700 dark:text-indigo-400" : "text-slate-700 dark:text-slate-300")}>
                           {yearNameDisplay}
                         </h4>
                         {isClosed ? (
@@ -203,9 +202,9 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
                         )}
                       </div>
                       <div className="flex items-center gap-2 text-[10px] font-semibold text-slate-500 relative z-10">
-                        <span>{dayjs(rawYear.startDate).format('MM/YYYY')}</span>
+                        <span>{formatDate(rawYear.startDate, "MM/YYYY")}</span>
                         <ArrowRight className="w-3 h-3" />
-                        <span>{dayjs(rawYear.endDate).format('MM/YYYY')}</span>
+                        <span>{formatDate(rawYear.endDate, "MM/YYYY")}</span>
                       </div>
                       {isActive && <motion.div layoutId="activeYear" className="absolute inset-0 border-2 border-indigo-500 rounded-2xl shadow-[0_0_15px_rgba(99,102,241,0.2)] pointer-events-none" />}
                     </div>
@@ -247,7 +246,10 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
                       <button 
                         onClick={handleCloseYear}
                         disabled={isProcessing || (selectedYear as any)?.isClosed || (selectedYear as any)?.status === "CLOSED" || progress.closed < progress.total}
-                        className={`px-5 py-2.5 font-bold text-sm rounded-xl flex items-center gap-2 transition-all shadow-sm ${(selectedYear as any)?.isClosed || (selectedYear as any)?.status === "CLOSED" ? 'bg-slate-100 text-slate-400 dark:bg-slate-800 cursor-not-allowed' : progress.closed < progress.total ? 'bg-rose-50 text-rose-300 dark:bg-rose-900/10 cursor-not-allowed border border-rose-100 dark:border-rose-900/50' : 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-500/30 active:scale-95'}`}
+                        className={cn(
+                          "px-5 py-2.5 font-bold text-sm rounded-xl flex items-center gap-2 transition-all shadow-sm",
+                          (selectedYear as any)?.isClosed || (selectedYear as any)?.status === "CLOSED" ? "bg-slate-100 text-slate-400 dark:bg-slate-800 cursor-not-allowed" : progress.closed < progress.total ? "bg-rose-50 text-rose-300 dark:bg-rose-900/10 cursor-not-allowed border border-rose-100 dark:border-rose-900/50" : "bg-rose-600 hover:bg-rose-700 text-white shadow-rose-500/30 active:scale-95"
+                        )}
                       >
                         {isClosingYear ? <Loader2 className="w-4 h-4 animate-spin"/> : <Lock className="w-4 h-4"/>}
                         {(selectedYear as any)?.isClosed || (selectedYear as any)?.status === "CLOSED" ? "Năm Đã Khóa Vĩnh Viễn" : "Chốt Sổ Toàn Bộ Năm"}
@@ -264,7 +266,7 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
                       <div className="w-full h-3 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden flex shadow-inner">
                         <motion.div 
                           initial={{ width: 0 }} animate={{ width: `${progress.percent}%` }} transition={{ duration: 1, ease: "easeOut" }}
-                          className={`h-full ${progress.percent === 100 ? 'bg-emerald-500' : 'bg-indigo-500'} stripe-pattern`}
+                          className={cn("h-full stripe-pattern", progress.percent === 100 ? "bg-emerald-500" : "bg-indigo-500")}
                         />
                       </div>
                     </div>
@@ -288,7 +290,10 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
                         return (
                           <motion.div 
                             variants={itemVariants} key={rawPeriod.periodId} 
-                            className={`p-5 rounded-2xl border transition-all flex flex-col justify-between h-[140px] relative overflow-hidden group ${isClosed ? 'bg-slate-50 border-slate-200 dark:bg-[#0d1321] dark:border-slate-800' : 'bg-white border-emerald-200 shadow-sm hover:shadow-md dark:bg-slate-800 dark:border-emerald-500/30'}`}
+                            className={cn(
+                              "p-5 rounded-2xl border transition-all flex flex-col justify-between h-[140px] relative overflow-hidden group",
+                              isClosed ? "bg-slate-50 border-slate-200 dark:bg-[#0d1321] dark:border-slate-800" : "bg-white border-emerald-200 shadow-sm hover:shadow-md dark:bg-slate-800 dark:border-emerald-500/30"
+                            )}
                           >
                             <div className="absolute -right-4 -bottom-4 opacity-[0.03] dark:opacity-5 pointer-events-none">
                               {isClosed ? <Lock className="w-24 h-24 text-slate-500"/> : <Unlock className="w-24 h-24 text-emerald-500"/>}
@@ -296,16 +301,15 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
 
                             <div className="flex items-start justify-between relative z-10">
                               <div>
-                                <h5 className={`font-black text-lg flex items-center gap-1.5 ${isClosed ? 'text-slate-500' : 'text-emerald-700 dark:text-emerald-400'}`}>
+                                <h5 className={cn("font-black text-lg flex items-center gap-1.5", isClosed ? "text-slate-500" : "text-emerald-700 dark:text-emerald-400")}>
                                   {periodName}
-                                  {/* Đã bọc thẻ span để fix lỗi title của thẻ Camera */}
                                   {isClosed && <span title="Đã có Snapshot tồn kho"><Camera className="w-3.5 h-3.5 text-indigo-400" /></span>}
                                 </h5>
                                 <p className="text-[10px] font-mono text-slate-400 mt-0.5">
-                                  {dayjs(rawPeriod.startDate).format('DD/MM')} - {dayjs(rawPeriod.endDate).format('DD/MM/YYYY')}
+                                  {formatDate(rawPeriod.startDate, "DD/MM")} - {formatDate(rawPeriod.endDate, "DD/MM/YYYY")}
                                 </p>
                               </div>
-                              <div className={`p-2 rounded-xl ${isClosed ? 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400' : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-sm'}`}>
+                              <div className={cn("p-2 rounded-xl", isClosed ? "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400" : "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-sm")}>
                                 {isClosed ? <Lock className="w-4 h-4"/> : <Unlock className="w-4 h-4"/>}
                               </div>
                             </div>
@@ -314,7 +318,10 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
                               {!isYearClosed ? (
                                 <button 
                                   onClick={() => handleTogglePeriod(rawPeriod)} disabled={isProcessing}
-                                  className={`w-full py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 ${isClosed ? 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100 dark:text-indigo-400 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20' : 'text-rose-600 bg-rose-50 hover:bg-rose-100 dark:text-rose-400 dark:bg-rose-500/10 dark:hover:bg-rose-500/20'}`}
+                                  className={cn(
+                                    "w-full py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5",
+                                    isClosed ? "text-indigo-600 bg-indigo-50 hover:bg-indigo-100 dark:text-indigo-400 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20" : "text-rose-600 bg-rose-50 hover:bg-rose-100 dark:text-rose-400 dark:bg-rose-500/10 dark:hover:bg-rose-500/20"
+                                  )}
                                 >
                                   {isClosed ? <Unlock className="w-3.5 h-3.5"/> : <Lock className="w-3.5 h-3.5"/>}
                                   {isClosed ? "Mở khóa kỳ này" : "Khóa sổ & Snapshot"}
@@ -340,4 +347,4 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
       )}
     </AnimatePresence>
   );
-} 
+}
