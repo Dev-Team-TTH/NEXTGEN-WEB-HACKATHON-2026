@@ -5,18 +5,21 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import { X } from "lucide-react";
 
+// --- UTILS ---
+import { cn } from "@/utils/helpers";
+
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
-  title?: string; // Đã đổi thành Optional
+  title?: string; 
   subtitle?: string;
   icon?: React.ReactNode;
   children: React.ReactNode;
   footer?: React.ReactNode;
-  maxWidth?: string; // VD: "max-w-md", "max-w-4xl", "max-w-6xl"
+  maxWidth?: string; 
   disableOutsideClick?: boolean;
-  hideHeader?: boolean; // [MỚI] Tắt hoàn toàn Header
-  hideFooter?: boolean; // [MỚI] Tắt hoàn toàn Footer
+  hideHeader?: boolean; 
+  hideFooter?: boolean; 
 }
 
 export default function Modal({
@@ -34,12 +37,10 @@ export default function Modal({
 }: ModalProps) {
   const [mounted, setMounted] = useState(false);
 
-  // Chỉ render Portal trên Client để tránh lỗi Hydration của Next.js
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Khóa cuộn trang (body scroll lock) khi mở Modal
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden";
@@ -51,7 +52,6 @@ export default function Modal({
     };
   }, [isOpen]);
 
-  // Bắt sự kiện nhấn nút ESC để đóng Modal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && isOpen && !disableOutsideClick) {
@@ -75,7 +75,6 @@ export default function Modal({
     exit: { opacity: 0, scale: 0.95, y: -20, transition: { duration: 0.2 } },
   };
 
-  // Sử dụng createPortal để "dịch chuyển" Modal ra thẳng <body>
   return createPortal(
     <AnimatePresence>
       {isOpen && (
@@ -86,21 +85,21 @@ export default function Modal({
           exit="hidden"
           className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60"
         >
-          {/* Nền bấm để đóng */}
           <div
             className="absolute inset-0"
             onClick={!disableOutsideClick ? onClose : undefined}
           />
 
-          {/* Khung Modal Chính */}
           <motion.div
             variants={modalVariants}
             initial="hidden"
             animate="visible"
             exit="exit"
-            className={`relative w-full ${maxWidth} bg-white dark:bg-[#0f172a] rounded-[2rem] shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden z-10 flex flex-col max-h-[92vh]`}
+            className={cn(
+              "relative w-full bg-white dark:bg-[#0f172a] rounded-[2rem] shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden z-10 flex flex-col max-h-[92vh]",
+              maxWidth
+            )}
           >
-            {/* Header Thống nhất */}
             {!hideHeader && (
               <div className="flex items-center justify-between px-6 sm:px-8 py-5 sm:py-6 border-b border-slate-100 dark:border-white/5 bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-md shrink-0">
                 <div className="flex items-center gap-4">
@@ -130,12 +129,10 @@ export default function Modal({
               </div>
             )}
 
-            {/* Nội dung linh hoạt */}
             <div className="overflow-y-auto custom-scrollbar bg-white dark:bg-transparent flex-1 flex flex-col">
               {children}
             </div>
 
-            {/* Footer Thống nhất (Nếu có) */}
             {!hideFooter && footer && (
               <div className="px-6 sm:px-8 py-4 sm:py-5 border-t border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900 flex justify-end gap-3 sm:gap-4 shrink-0">
                 {footer}

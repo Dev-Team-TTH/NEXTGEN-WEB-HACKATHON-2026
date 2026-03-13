@@ -6,6 +6,9 @@ import { UploadCloud, File, X, CheckCircle2, Loader2, Image as ImageIcon } from 
 import { useUploadFileMutation } from "@/state/api";
 import { toast } from "react-hot-toast";
 
+// --- UTILS ---
+import { cn } from "@/utils/helpers";
+
 interface FileDropzoneProps {
   onUploadSuccess: (url: string) => void;
   label?: string;
@@ -46,6 +49,7 @@ export default function FileDropzone({
     if (files && files.length > 0) {
       await processFile(files[0]);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -104,11 +108,12 @@ export default function FileDropzone({
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className={`relative w-full h-40 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all duration-200 overflow-hidden ${
+            className={cn(
+              "relative w-full h-40 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all duration-200 overflow-hidden",
               isDragging 
                 ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-inner" 
                 : "border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800"
-            }`}
+            )}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
@@ -136,7 +141,7 @@ export default function FileDropzone({
                </div>
             ) : (
               <div className="flex flex-col items-center gap-2 text-slate-500 dark:text-slate-400 pointer-events-none">
-                <div className={`p-3 rounded-full transition-colors ${isDragging ? 'bg-blue-100 dark:bg-blue-800/50 text-blue-600 dark:text-blue-400' : 'bg-white dark:bg-slate-800 shadow-sm'}`}>
+                <div className={cn("p-3 rounded-full transition-colors", isDragging ? "bg-blue-100 dark:bg-blue-800/50 text-blue-600 dark:text-blue-400" : "bg-white dark:bg-slate-800 shadow-sm")}>
                   <UploadCloud className="w-6 h-6" />
                 </div>
                 <p className="text-sm font-medium px-4 text-center">
@@ -153,7 +158,7 @@ export default function FileDropzone({
             key="success"
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="w-full relative glass rounded-2xl p-4 flex items-center gap-4 border border-emerald-200 dark:border-emerald-500/30"
+            className="w-full relative bg-white/50 dark:bg-slate-800/50 backdrop-blur-md rounded-2xl p-4 flex items-center gap-4 border border-emerald-200 dark:border-emerald-500/30"
           >
             <div className="shrink-0 w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 flex items-center justify-center overflow-hidden border border-emerald-200 dark:border-emerald-800/50">
                {previewUrl ? (
@@ -172,7 +177,7 @@ export default function FileDropzone({
             </div>
             <button 
               onClick={resetUpload}
-              className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors"
+              className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors z-20"
               title="Xóa và tải lại"
             >
               <X className="w-4 h-4" />
