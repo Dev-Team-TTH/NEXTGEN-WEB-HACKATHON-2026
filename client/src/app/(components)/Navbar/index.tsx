@@ -9,36 +9,27 @@ import { useTranslation } from "react-i18next";
 import { 
   Search, Bell, Sun, Moon, Globe, 
   LogOut, QrCode, CheckCircle2, AlertCircle, Info,
-  Shield, UserCircle, Check
+  Shield, UserCircle, Check, Menu
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
-// SOCKET.IO CLIENT
-import { io, Socket } from "socket.io-client";
-
 // --- REDUX & API ---
 import { useAppDispatch, useAppSelector } from "@/app/redux";
-import { logout as clearReduxAuth } from "@/state";
+// BỔ SUNG: Import action setIsSidebarCollapsed để điều khiển Sidebar
+import { logout as clearReduxAuth, setIsSidebarCollapsed } from "@/state";
 import { 
   useLogoutMutation, 
   useGetPendingApprovalsQuery, 
-  useGetRecentActivitiesQuery,
-  api 
+  useGetRecentActivitiesQuery
 } from "@/state/api";
 
 // --- COMPONENTS ---
 import UniversalScanner from "@/app/(components)/UniversalScanner";
 import GlobalSearch from "@/app/(components)/GlobalSearch";
 
-// --- ENTERPRISE UTILS (SIÊU VŨ KHÍ) ---
+// --- ENTERPRISE UTILS ---
 import { timeAgo, getInitials } from "@/utils/formatters";
 import { cn, generateAvatarColor } from "@/utils/helpers";
-
-// ==========================================
-// FIX TRIỆT ĐỂ: SINGLETON SOCKET INSTANCE
-// Khởi tạo Socket ngoài Component để không bị ảnh hưởng bởi vòng đời React StrictMode
-// ==========================================
-let globalSocket: Socket | null = null;
 
 export default function Navbar() {
   const router = useRouter();
@@ -48,13 +39,15 @@ export default function Navbar() {
 
   const currentUser = useAppSelector((state: any) => state.global?.currentUser);
   const refreshToken = useAppSelector((state: any) => state.global?.refreshToken);
+  const isSidebarCollapsed = useAppSelector((state: any) => state.global?.isSidebarCollapsed);
+  
   const [logoutApi] = useLogoutMutation();
 
-  // Lấy dữ liệu thô từ API (Chưa xác định rõ là Array hay Object phân trang)
+  // 👉 FETCH DATA (Đã được SocketProvider tự động refetch ngầm khi có sự kiện)
   const { data: rawPendingApprovals } = useGetPendingApprovalsQuery();
   const { data: rawRecentLogs } = useGetRecentActivitiesQuery(5); 
 
-  // 👉 XỬ LÝ AN TOÀN KIỂU DỮ LIỆU (CHỐNG LỖI .forEach is not a function)
+  // XỬ LÝ AN TOÀN KIỂU DỮ LIỆU
   const pendingApprovals = useMemo(() => {
     if (!rawPendingApprovals) return [];
     return Array.isArray(rawPendingApprovals) ? rawPendingApprovals : (rawPendingApprovals as any).data || [];
@@ -65,6 +58,7 @@ export default function Navbar() {
     return Array.isArray(rawRecentLogs) ? rawRecentLogs : (rawRecentLogs as any).data || [];
   }, [rawRecentLogs]);
 
+  // STATE UI
   const [isMounted, setIsMounted] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isLangOpen, setIsLangOpen] = useState(false);
@@ -73,86 +67,34 @@ export default function Navbar() {
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false); 
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
 
-  // Kết nối Socket
+  // Khởi tạo Client-side & Phục hồi danh sách đã đọc từ SessionStorage (Chống mất khi F5)
   useEffect(() => {
     setIsMounted(true);
-
-    if (!globalSocket) {
-      let socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL;
-      
-      if (!socketUrl) {
-         const backendUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000/api/v1';
-         try {
-           const urlObj = new URL(backendUrl);
-           socketUrl = urlObj.origin; 
-         } catch (e) {
-           socketUrl = 'http://localhost:5000';
-         }
-      }
-
-      globalSocket = io(socketUrl, {
-        path: "/socket.io/",
-        transports: ["websocket"], 
-        autoConnect: false, 
-        reconnectionAttempts: 5,
-        reconnectionDelay: 2000
-      });
-
-      globalSocket.connect();
-
-      globalSocket.on("connect_error", (err) => {
-        console.warn("Socket.io connect error:", err.message);
-      });
+    const storedReadIds = sessionStorage.getItem("read_notifications");
+    if (storedReadIds) {
+      setReadIds(new Set(JSON.parse(storedReadIds)));
     }
+  }, []);
 
-    const handleNewApproval = (payload: any) => {
-      dispatch(api.util.invalidateTags(["Approvals"]));
-      toast.custom((t) => (
-        <div className={cn(
-          "max-w-md w-full bg-white dark:bg-slate-900 shadow-2xl rounded-2xl pointer-events-auto flex ring-1 ring-black ring-opacity-5 border border-slate-200 dark:border-white/10",
-          t.visible ? 'animate-enter' : 'animate-leave'
-        )}>
-          <div className="flex-1 w-0 p-4">
-            <div className="flex items-start">
-              <div className="flex-shrink-0 pt-0.5"><AlertCircle className="h-10 w-10 text-amber-500 bg-amber-50 dark:bg-amber-500/10 p-2 rounded-full" /></div>
-              <div className="ml-3 flex-1">
-                <p className="text-sm font-black text-slate-900 dark:text-white">Có tờ trình mới cần xử lý!</p>
-                <p className="mt-1 text-[13px] text-slate-500 font-medium">Một chứng từ mới vừa được đẩy lên luồng phê duyệt.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      ));
-    };
-
-    const handleSystemActivity = (payload: any) => {
-      dispatch(api.util.invalidateTags(["AuditLogs"]));
-    };
-
-    globalSocket.on("new_approval_event", handleNewApproval);
-    globalSocket.on("new_system_activity", handleSystemActivity);
-
-    return () => {
-      if (globalSocket) {
-        globalSocket.off("new_approval_event", handleNewApproval);
-        globalSocket.off("new_system_activity", handleSystemActivity);
-      }
-    };
-  }, [dispatch]);
+  // Lắng nghe sự thay đổi của readIds để lưu lại vào session
+  useEffect(() => {
+    if (isMounted) {
+      sessionStorage.setItem("read_notifications", JSON.stringify(Array.from(readIds)));
+    }
+  }, [readIds, isMounted]);
 
   // ==========================================
-  // LOGIC HIỂN THỊ THÔNG BÁO TỔNG HỢP (Áp dụng Utils timeAgo)
+  // LOGIC HIỂN THỊ THÔNG BÁO TỔNG HỢP
   // ==========================================
   const notifications = useMemo(() => {
     const notifs: any[] = [];
     
-    // An toàn tuyệt đối: Dùng mảng đã bóc tách
     pendingApprovals.forEach((req: any) => {
       notifs.push({
         id: `approval_${req.requestId}`,
         type: 'warning',
         content: (<span>Có yêu cầu phê duyệt chứng từ <span className="text-blue-600 dark:text-blue-400 font-bold">#{req.document?.documentNumber || req.documentId}</span> từ {req.requester?.fullName || 'Nhân viên'}.</span>),
-        time: timeAgo(req.createdAt), // DÙNG UTILS
+        time: timeAgo(req.createdAt), 
         rawDate: new Date(req.createdAt).getTime(),
         isRead: readIds.has(`approval_${req.requestId}`),
         href: `/approvals`, 
@@ -167,7 +109,7 @@ export default function Navbar() {
         id: `log_${log.logId}`,
         type: 'info',
         content: (<span>{log.user?.fullName || 'Hệ thống'} đã thực hiện thao tác <span className="font-bold">{log.action}</span> trên {log.tableName || log.module || 'hệ thống'}.</span>),
-        time: timeAgo(log.timestamp || log.createdAt), // DÙNG UTILS
+        time: timeAgo(log.timestamp || log.createdAt), 
         rawDate: new Date(log.timestamp || log.createdAt || new Date()).getTime(),
         isRead: readIds.has(`log_${log.logId}`),
         href: `/users`, 
@@ -179,6 +121,32 @@ export default function Navbar() {
     
     return notifs.sort((a, b) => b.rawDate - a.rawDate);
   }, [pendingApprovals, recentLogs, readIds]);
+
+  // Lắng nghe xem có thông báo MỚI không để bắn Toast
+  useEffect(() => {
+    const latestNotif = notifications[0];
+    // Nếu có thông báo mới nhất và chưa được đọc, đồng thời component đã mount xong
+    if (isMounted && latestNotif && !latestNotif.isRead && latestNotif.rawDate > Date.now() - 5000) {
+      toast.custom((t) => (
+        <div className={cn(
+          "max-w-md w-full bg-white dark:bg-slate-900 shadow-2xl rounded-2xl pointer-events-auto flex ring-1 ring-black ring-opacity-5 border border-slate-200 dark:border-white/10",
+          t.visible ? 'animate-enter' : 'animate-leave'
+        )}>
+          <div className="flex-1 w-0 p-4">
+            <div className="flex items-start">
+              <div className="flex-shrink-0 pt-0.5">
+                <latestNotif.icon className={cn("h-10 w-10 p-2 rounded-full", latestNotif.iconColor, latestNotif.iconBg)} />
+              </div>
+              <div className="ml-3 flex-1">
+                <p className="text-sm font-black text-slate-900 dark:text-white">Có thông báo mới!</p>
+                <p className="mt-1 text-[13px] text-slate-500 font-medium">{latestNotif.content}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ), { id: latestNotif.id }); // Dùng ID để chống duplicate toast
+    }
+  }, [notifications, isMounted]);
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
@@ -193,6 +161,7 @@ export default function Navbar() {
     setReadIds(new Set([...Array.from(readIds), ...allIds]));
   };
 
+  // REF & CLICK OUTSIDE
   const profileRef = useRef<HTMLDivElement>(null);
   const langRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
@@ -208,6 +177,7 @@ export default function Navbar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // GLOBAL SHORTCUT (CTRL + K)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -219,6 +189,7 @@ export default function Navbar() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // XỬ LÝ ĐĂNG XUẤT
   const handleLogout = async () => {
     try {
       if (refreshToken) {
@@ -227,10 +198,6 @@ export default function Navbar() {
     } catch (error) {
       console.error("Lỗi đăng xuất", error);
     } finally {
-      if (globalSocket) {
-         globalSocket.disconnect();
-         globalSocket = null;
-      }
       dispatch(clearReduxAuth()); 
       router.push("/login");
     }
@@ -251,13 +218,24 @@ export default function Navbar() {
                            bg-white/80 dark:bg-[#0B0F19]/80 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.06)] 
                            flex justify-between items-center px-4 overflow-visible transform-gpu">
           
+          {/* HIỆU ỨNG GLASSMORPHISM & NOISE */}
           <div style={{ transform: 'translateZ(0)' }} className="absolute inset-0 bg-[url('/noise.png')] opacity-[0.03] pointer-events-none mix-blend-overlay rounded-none lg:rounded-2xl z-0" />
           <div className="absolute inset-0 bg-gradient-to-b from-white/40 to-transparent dark:from-white/5 dark:to-transparent pointer-events-none rounded-none lg:rounded-2xl z-0" />
 
-          <div className="relative z-10 flex items-center gap-3 flex-1">
+          {/* VÙNG BÊN TRÁI: HAMBURGER MENU & TÌM KIẾM */}
+          <div className="relative z-10 flex items-center gap-2 sm:gap-3 flex-1">
+            
+            {/* NÚT TOGGLE SIDEBAR (Sửa lỗi thiếu năng chí mạng) */}
+            <button
+              onClick={() => dispatch(setIsSidebarCollapsed(!isSidebarCollapsed))}
+              className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 active:scale-95 transition-all lg:hidden"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
             <button 
               onClick={() => setIsGlobalSearchOpen(true)}
-              className="hidden lg:flex w-full max-w-sm items-center justify-between pl-3.5 pr-2 py-2.5 bg-slate-100/50 dark:bg-black/20 border border-slate-200/50 dark:border-white/5 hover:border-blue-300 dark:hover:border-blue-500/50 rounded-xl transition-all group"
+              className="hidden lg:flex w-full max-w-sm items-center justify-between pl-3.5 pr-2 py-2.5 bg-slate-100/50 dark:bg-black/20 border border-slate-200/50 dark:border-white/5 hover:border-blue-300 dark:hover:border-blue-500/50 rounded-xl transition-all group shadow-sm"
             >
               <div className="flex items-center gap-2.5">
                 <Search className="w-4.5 h-4.5 text-slate-400 group-hover:text-blue-500 transition-colors" />
@@ -276,6 +254,7 @@ export default function Navbar() {
             </button>
           </div>
 
+          {/* VÙNG BÊN PHẢI: TOOLS & PROFILE */}
           <div className="relative z-10 flex items-center gap-1.5 sm:gap-2">
             
             <button
@@ -289,6 +268,8 @@ export default function Navbar() {
             <div className="h-6 w-px bg-slate-200 dark:bg-white/10 mx-1 hidden sm:block"></div>
 
             <div className="flex items-center gap-1.5">
+              
+              {/* LANGUAGE SWITCHER */}
               <div className="relative" ref={langRef}>
                 <button onClick={() => setIsLangOpen(!isLangOpen)} className="flex items-center gap-2 px-2 py-1.5 xl:px-3 xl:py-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 transition-all duration-200 active:scale-95 transform-gpu">
                   <Globe className="w-5 h-5" />
@@ -297,18 +278,20 @@ export default function Navbar() {
                 <AnimatePresence>
                   {isLangOpen && (
                     <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} transition={{ type: "spring", stiffness: 400, damping: 30 }} className="absolute right-0 mt-3 w-40 bg-white/95 dark:bg-gray-900/95 backdrop-blur-2xl border border-slate-200/50 dark:border-white/10 rounded-2xl shadow-[0_12px_40px_rgba(0,0,0,0.12)] overflow-hidden z-50">
-                      <button onClick={() => changeLanguage('vi')} className="w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-slate-50 dark:hover:bg-white/5"><span className="text-lg leading-none">🇻🇳</span> Tiếng Việt</button>
-                      <button onClick={() => changeLanguage('en')} className="w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-slate-50 dark:hover:bg-white/5"><span className="text-lg leading-none">🇺🇸</span> English</button>
+                      <button onClick={() => changeLanguage('vi')} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"><span className="text-lg leading-none">🇻🇳</span> Tiếng Việt</button>
+                      <button onClick={() => changeLanguage('en')} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"><span className="text-lg leading-none">🇺🇸</span> English</button>
                     </motion.div>
                   )}
                 </AnimatePresence>
               </div>
 
+              {/* THEME TOGGLE */}
               <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="flex items-center gap-2 px-2 py-1.5 xl:px-3 xl:py-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 transition-all duration-200 active:scale-95 transform-gpu">
                 {theme === "dark" ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5" />}
                 <span className="hidden xl:block text-[13px] font-semibold">Giao diện</span>
               </button>
 
+              {/* NOTIFICATION CENTER */}
               <div className="relative" ref={notifRef}>
                 <button onClick={() => setIsNotifOpen(!isNotifOpen)} className="relative flex items-center gap-2 px-2 py-1.5 xl:px-3 xl:py-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 transition-all duration-200 active:scale-95 transform-gpu group">
                   <Bell className={`w-5 h-5 transition-transform ${unreadCount > 0 ? 'group-hover:rotate-12 text-blue-500 dark:text-blue-400' : ''}`} />
@@ -322,12 +305,12 @@ export default function Navbar() {
                       <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-black/20">
                         <h3 className="font-extrabold text-slate-900 dark:text-white">Thông báo mới</h3>
                         {unreadCount > 0 ? (
-                          <button onClick={markAllAsRead} className="flex items-center gap-1.5 text-[11px] font-bold text-blue-600 bg-blue-50 px-2.5 py-1.5 rounded-lg active:scale-95"><Check className="w-3.5 h-3.5" /> Đánh dấu đã đọc</button>
+                          <button onClick={markAllAsRead} className="flex items-center gap-1.5 text-[11px] font-bold text-blue-600 bg-blue-50 px-2.5 py-1.5 rounded-lg active:scale-95 transition-colors hover:bg-blue-100"><Check className="w-3.5 h-3.5" /> Đánh dấu đã đọc</button>
                         ) : (<span className="text-[11px] font-semibold text-slate-500 px-2 py-1.5 bg-slate-100 dark:bg-white/5 rounded-lg">Trống</span>)}
                       </div>
                       <div className="max-h-[60vh] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-700 flex flex-col">
                         {notifications.length === 0 ? (
-                          <div className="p-8 text-center flex flex-col items-center gap-3"><CheckCircle2 className="w-10 h-10 text-emerald-400 opacity-50" /> Đã xử lý xong mọi việc.</div>
+                          <div className="p-8 text-center flex flex-col items-center gap-3"><CheckCircle2 className="w-10 h-10 text-emerald-400 opacity-50" /> <span className="text-sm font-semibold text-slate-500">Đã xử lý xong mọi việc.</span></div>
                         ) : (
                           notifications.map(notif => (
                             <div key={notif.id} onClick={() => handleNotificationClick(notif.id, notif.href)} className={cn(
@@ -350,9 +333,9 @@ export default function Navbar() {
               </div>
             </div>
 
-            <div className="relative ml-1" ref={profileRef}>
+            {/* USER PROFILE */}
+            <div className="relative ml-1 sm:ml-2" ref={profileRef}>
               <button onClick={() => setIsProfileOpen(!isProfileOpen)} className="flex items-center gap-2 p-1 pl-1 pr-1 sm:pr-3 rounded-full bg-slate-50 dark:bg-black/20 border border-slate-200/50 hover:border-indigo-300 transition-all duration-200 active:scale-95 group">
-                {/* ÁP DỤNG UTILS TẠO MÀU AVATAR & INITIALS */}
                 <div className={cn(
                   "w-8 h-8 rounded-full flex items-center justify-center font-black shadow-sm text-sm group-hover:scale-105 transition-transform",
                   generateAvatarColor(currentUser?.fullName)
@@ -372,7 +355,6 @@ export default function Navbar() {
                       <div className="relative overflow-hidden rounded-2xl p-4 bg-gradient-to-br from-blue-600 to-purple-700 shadow-lg border border-white/10">
                         <div className="flex items-center gap-3 relative z-10">
                           <div className="relative shrink-0">
-                            {/* ÁP DỤNG UTILS TẠO MÀU AVATAR & INITIALS */}
                             <div className={cn(
                               "w-12 h-12 rounded-full flex items-center justify-center font-black text-xl border-2 border-white/30 shadow-inner",
                               generateAvatarColor(currentUser?.fullName)

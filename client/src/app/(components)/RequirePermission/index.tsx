@@ -1,46 +1,101 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useAppSelector } from "@/app/redux";
 
 interface RequirePermissionProps {
-  roles?: string[];         // Mảng các chức vụ được phép (VD: ["ADMIN", "MANAGER"])
-  permissions?: string[];   // Mảng các quyền chi tiết (VD: ["DELETE_DOCUMENT"])
+  roles?: string[];
+  permissions?: string[];
+  requireAll?: boolean;
   children: React.ReactNode; 
-  fallback?: React.ReactNode; // UI thay thế khi không có quyền (VD: Render 1 nút xám bị disable)
+  fallback?: React.ReactNode;
 }
 
-/**
- * COMPONENT ENTERPRISE: Bộ lọc hiển thị dựa trên Phân quyền
- * Bọc component này bên ngoài các nút "Xóa", "Khóa sổ", "Thanh toán"...
- * Nó sẽ tự động kiểm tra Redux Store, nếu User không đủ tầm, nút bấm sẽ tàng hình.
- */
+export const checkUniversalPermission = (user: any, requiredRoles?: string[], requiredPerms?: string[], requireAll: boolean = false) => {
+  if (!user) return false;
+
+  // 1. TRÍCH XUẤT MÃ QUYỀN (DYNAMIC EXTRACTION)
+  // Backend có thể trả về mảng String, hoặc mảng Object { permission: { code: '...' } }
+  let extractedCodes: string[] = [];
+  if (Array.isArray(user.permissions)) {
+    extractedCodes = user.permissions.map((p: any) => {
+       if (typeof p === 'string') return p;
+       if (p?.permission?.code) return p.permission.code;
+       if (p?.code) return p.code;
+       return "";
+    }).filter(Boolean);
+  }
+
+  // 2. TẠO HASH SET ĐỂ KIỂM TRA O(1)
+  const userPermsSet = new Set(extractedCodes.map(c => c.toUpperCase()));
+
+  // 3. KIỂM TRA QUYỀN TỐI CAO
+  if (userPermsSet.has("ALL") || userPermsSet.has("*") || userPermsSet.has("FULL_ACCESS")) {
+    return true;
+  }
+
+  // 4. MỞ CỬA NẾU KHÔNG YÊU CẦU GÌ
+  if ((!requiredRoles || requiredRoles.length === 0) && (!requiredPerms || requiredPerms.length === 0)) {
+    return true;
+  }
+
+  const userRole = (user.role || "").toUpperCase();
+
+  // 5. KIỂM TRA THEO TÊN ROLE
+  let hasRole = false;
+  let checkRole = false;
+  if (requiredRoles && requiredRoles.length > 0) {
+    checkRole = true;
+    hasRole = requiredRoles.some((r: string) => userRole === r.toUpperCase());
+  }
+
+  // 6. KIỂM TRA EXACT MATCH QUYỀN HẠN
+  let hasPerm = false;
+  let checkPerm = false;
+  if (requiredPerms && requiredPerms.length > 0) {
+    checkPerm = true;
+    
+    if (requireAll) {
+      hasPerm = requiredPerms.every((reqP: string) => userPermsSet.has(reqP.toUpperCase()));
+    } else {
+      hasPerm = requiredPerms.some((reqP: string) => userPermsSet.has(reqP.toUpperCase()));
+    }
+  }
+
+  // 7. TRẢ VỀ KẾT QUẢ LOGIC
+  if (checkRole && checkPerm) {
+    return requireAll ? (hasRole && hasPerm) : (hasRole || hasPerm);
+  } else if (checkRole) {
+    return hasRole;
+  } else if (checkPerm) {
+    return hasPerm;
+  }
+
+  return false;
+};
+
 export default function RequirePermission({
   roles,
   permissions,
+  requireAll = false,
   children,
   fallback = null
 }: RequirePermissionProps) {
-  // FIX LỖI TS2339: Ép kiểu (state: any) để bypass lỗi nội suy type của redux-persist
+  const [isMounted, setIsMounted] = useState(false);
   const currentUser = useAppSelector((state: any) => state.global?.currentUser);
 
-  // Nếu chưa load xong User hoặc mất phiên, ẩn luôn
-  if (!currentUser) return <>{fallback}</>;
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
-  // Nếu là SUPER_ADMIN thì mặc định bypass mọi quyền
-  if (currentUser.role === "SUPER_ADMIN") return <>{children}</>;
+  const isAllowed = useMemo(() => {
+    if (!isMounted) return false;
+    return checkUniversalPermission(currentUser, roles, permissions, requireAll);
+  }, [currentUser, roles, permissions, requireAll, isMounted]);
 
-  let hasRole = true;
-  if (roles && roles.length > 0) {
-    hasRole = roles.includes(currentUser.role || "STAFF");
-  }
+  if (!isMounted) return <>{fallback}</>;
 
-  let hasPerm = true;
-  if (permissions && permissions.length > 0) {
-    hasPerm = permissions.some((p: string) => currentUser.permissions?.includes(p));
-  }
-
-  if (hasRole && hasPerm) {
+  if (isAllowed) {
     return <>{children}</>;
   }
 

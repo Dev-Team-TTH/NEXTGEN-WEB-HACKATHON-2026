@@ -537,6 +537,22 @@ export interface LoginHistoryRecord {
   timestamp: string;
 }
 
+export interface Permission {
+  permissionId: string;
+  code: string;
+  name?: string;
+  description?: string;
+  module: string;
+}
+
+export interface Role {
+  roleId: string;
+  roleName: string;
+  description?: string;
+  permissions?: any[]; 
+  _count?: { users: number };
+}
+
 // ==========================================
 // 2. KHỞI TẠO REDUX TOOLKIT QUERY API
 // ==========================================
@@ -735,23 +751,36 @@ export const api = createApi({
     // ------------------------------------------
     getUsers: build.query<User[], any>({ query: (params) => ({ url: "/org-rbac/users", params }), providesTags: ["Users"] }),
     getUserById: build.query<User, string>({ query: (id) => `/org-rbac/users/${id}`, providesTags: ["Users"] }),
-    createUser: build.mutation<User, Partial<User>>({ query: (body) => ({ url: "/auth/users", method: "POST", body }), invalidatesTags: ["Users"] }),
+    
+    // Đã sửa lỗi đường dẫn /auth/users thành /org-rbac/users
+    createUser: build.mutation<User, Partial<User>>({ query: (body) => ({ url: "/org-rbac/users", method: "POST", body }), invalidatesTags: ["Users"] }),
     updateUser: build.mutation<User, { id: string; data: Partial<User> }>({ query: ({ id, data }) => ({ url: `/org-rbac/users/${id}`, method: "PUT", body: data }), invalidatesTags: ["Users", "Auth"] }),
     deleteUser: build.mutation<void, string>({ query: (id) => ({ url: `/org-rbac/users/${id}`, method: "DELETE" }), invalidatesTags: ["Users"] }),
+    
+    // Đã sửa lỗi thiếu prefix /org-rbac
     resetUserPassword: build.mutation<{ message: string; newPassword: string }, { userId: string; adminPin: string }>({
       query: ({ userId, adminPin }) => ({
-        url: `/users/${userId}/reset-password`, // Đảm bảo URL này khớp với bên routes (orgAndRbacRoutes.ts)
+        url: `/org-rbac/users/${userId}/reset-password`, 
         method: "POST",
         body: { adminPin },
       }),
-      invalidatesTags: ["Users"], // Cập nhật lại cache nếu cần
+      invalidatesTags: ["Users"], 
     }),
     
-    getPermissions: build.query<any, void>({ query: () => "/org-rbac/permissions", providesTags: ["Permissions"] }),
-    getRoles: build.query<any[], void>({ query: () => "/org-rbac/roles", providesTags: ["Roles"] }),
-    createRole: build.mutation<any, any>({ query: (body) => ({ url: "/org-rbac/roles", method: "POST", body }), invalidatesTags: ["Roles"] }),
-    updateRole: build.mutation<any, { id: string; data: any }>({ query: ({ id, data }) => ({ url: `/org-rbac/roles/${id}`, method: "PUT", body: data }), invalidatesTags: ["Roles", "Users"] }),
-    deleteRole: build.mutation<void, string>({ query: (id) => ({ url: `/org-rbac/roles/${id}`, method: "DELETE" }), invalidatesTags: ["Roles"] }),
+    // --- NÂNG CẤP LUỒNG PHÂN QUYỀN ĐỘNG (RBAC) ---
+    getPermissions: build.query<Permission[], void>({ query: () => "/org-rbac/permissions", providesTags: ["Permissions"] }),
+    
+    // API ẩn để nạp dữ liệu Quyền (Seed) từ UI nếu cần thiết
+    seedPermissions: build.mutation<any, void>({ 
+      query: () => ({ url: "/org-rbac/permissions/seed", method: "POST" }), 
+      invalidatesTags: ["Permissions"] 
+    }),
+
+    getRoles: build.query<Role[], void>({ query: () => "/org-rbac/roles", providesTags: ["Roles"] }),
+    createRole: build.mutation<Role, any>({ query: (body) => ({ url: "/org-rbac/roles", method: "POST", body }), invalidatesTags: ["Roles"] }),
+    updateRole: build.mutation<Role, { id: string; data: any }>({ query: ({ id, data }) => ({ url: `/org-rbac/roles/${id}`, method: "PUT", body: data }), invalidatesTags: ["Roles", "Users"] }),
+    deleteRole: build.mutation<void, string>({ query: (id) => ({ url: `/org-rbac/roles/${id}`, method: "DELETE" }), invalidatesTags: ["Roles", "Users"] }),
+    
     getOrganizationStructure: build.query<any, void>({ query: () => "/org-rbac/organization", providesTags: ["Companies", "Branches", "Departments"] }),
     
     // Tổng hợp Logs
@@ -761,7 +790,7 @@ export const api = createApi({
     }),
     getAuditLogsByRecord: build.query<SystemAuditLog[], { tableName: string; recordId: string }>({ query: (params) => ({ url: "/org-rbac/audit-logs/detail", params }), providesTags: ["AuditLogs"] }),
     
-    // NÂNG CẤP DASHBOARD: API lấy danh sách Hoạt động gần đây (Limit 10)
+    // API lấy danh sách Hoạt động gần đây
     getRecentActivities: build.query<SystemAuditLog[], number | void>({ 
       query: (limit = 10) => ({ url: "/org-rbac/audit-logs", params: { limit, sort: 'desc' } }), 
       providesTags: ["AuditLogs"] 
@@ -1146,6 +1175,7 @@ export const {
   useUpdateUserMutation,
   useDeleteUserMutation,
   useGetPermissionsQuery,
+  useSeedPermissionsMutation,
   useGetRolesQuery,
   useCreateRoleMutation,
   useUpdateRoleMutation,

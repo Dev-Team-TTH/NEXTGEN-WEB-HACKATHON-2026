@@ -1,13 +1,14 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { 
   Users, ShieldCheck, ShieldAlert, KeyRound, 
   Activity, Plus, Trash2, Edit, AlertOctagon, RefreshCcw, 
   UserCheck, UserX, UserCog, History, Network, Mail, Briefcase, Loader2, Save, X, ChevronRight, CheckCircle2,
-  Phone, CalendarDays, Clock, MapPin, Lock, Fingerprint, EyeOff, Key
+  Phone, CalendarDays, Clock, MapPin, Lock, Fingerprint, EyeOff, Key,
+  AlertTriangle
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -31,11 +32,14 @@ import RolePermissionModal from "./RolePermissionModal";
 import SystemAuditLog from "./SystemAuditLog";
 import OrganizationChart from "./OrganizationChart";
 
+// BỔ SUNG: Import siêu vũ khí RequirePermission để khóa UI
+import RequirePermission from "@/app/(components)/RequirePermission";
+
 import { formatDate, formatDateTime, getInitials } from "@/utils/formatters";
 import { cn, generateAvatarColor } from "@/utils/helpers";
 
 // ==========================================
-// 1. THUẬT TOÁN BÓC TÁCH DỮ LIỆU ĐA NĂNG
+// 1. THUẬT TOÁN BÓC TÁCH DỮ LIỆU ĐA NĂNG (GIA CỐ AN TOÀN)
 // ==========================================
 const extractUserRoleId = (u: any): string => {
   if (!u) return "";
@@ -45,6 +49,8 @@ const extractUserRoleId = (u: any): string => {
   else if (Array.isArray(u.userRoles) && u.userRoles.length > 0) foundId = u.userRoles[0].roleId || u.userRoles[0].role?.id || u.userRoles[0].role?.roleId;
   else if (u.role && typeof u.role === "object") foundId = u.role.id || u.role.roleId;
   else if (Array.isArray(u.roleIds) && u.roleIds.length > 0) foundId = String(u.roleIds[0]);
+  
+  // Ép kiểu chuẩn xác để so sánh
   return foundId ? String(foundId) : "";
 };
 
@@ -74,6 +80,7 @@ const UsersSkeleton = () => (
 // ==========================================
 export default function UsersPage() {
   const { t } = useTranslation();
+  const [isMounted, setIsMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>("USERS");
   
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -97,6 +104,9 @@ export default function UsersPage() {
   const [deleteRole, { isLoading: isDeletingRole }] = useDeleteRoleMutation();
   const [resetPassword, { isLoading: isResettingPassword }] = useResetUserPasswordMutation();
 
+  // Khắc phục lỗi Hydration
+  useEffect(() => { setIsMounted(true); }, []);
+
   const isLoading = loadingUsers || loadingRoles;
   const isSubmittingUser = isCreatingUser || isUpdatingUser;
 
@@ -113,7 +123,7 @@ export default function UsersPage() {
     return { totalUsers: usersList.length, activeCount, twoFactorRate, totalRoles: rolesList.length };
   }, [usersList, rolesList]);
 
-  // Handlers
+  // Handlers User
   const openUserModal = (user?: User) => {
     setShowPasswordAuth(false);
     setAdminPin("");
@@ -163,15 +173,33 @@ export default function UsersPage() {
     }
   };
 
-  const handleDeleteUser = async (id: string, name: string) => {
-    if (window.confirm(`Thu hồi quyền truy cập của "${name}"?`)) {
-      try {
-        await deleteUser(id).unwrap();
-        toast.success(`Đã thu hồi tài khoản ${name}!`);
-      } catch (err: any) {
-        toast.error("Không thể xóa cứng tài khoản đang có dữ liệu!");
-      }
-    }
+  // NÂNG CẤP UX: Custom Toast Confirm thay cho window.confirm xấu xí
+  const handleDeleteUser = (id: string, name: string) => {
+    toast.custom((t) => (
+      <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-white dark:bg-slate-900 shadow-2xl rounded-2xl pointer-events-auto flex flex-col ring-1 ring-black ring-opacity-5 border border-slate-200 dark:border-white/10 p-5`}>
+        <div className="flex items-start gap-4">
+          <div className="w-10 h-10 rounded-full bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center shrink-0">
+            <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Thu hồi Tài khoản?</h3>
+            <p className="mt-1 text-sm text-slate-500">Bạn có chắc chắn muốn xóa vĩnh viễn tài khoản <b>{name}</b>? Hành động này không thể hoàn tác.</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 mt-5 justify-end">
+          <button onClick={() => toast.dismiss(t.id)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-xl transition-colors">Hủy bỏ</button>
+          <button onClick={async () => {
+            toast.dismiss(t.id);
+            try {
+              await deleteUser(id).unwrap();
+              toast.success(`Đã thu hồi tài khoản ${name}!`);
+            } catch (err: any) {
+              toast.error("Không thể xóa cứng tài khoản đang chứa dữ liệu giao dịch!");
+            }
+          }} className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-rose-500/30 transition-all active:scale-95">Xác nhận Xóa</button>
+        </div>
+      </div>
+    ), { duration: 5000, id: `del-user-${id}` });
   };
 
   const openRoleModal = (role?: any) => {
@@ -179,15 +207,32 @@ export default function UsersPage() {
     setIsRoleModalOpen(true);
   };
 
-  const handleDeleteRole = async (id: string, name: string) => {
-    if (window.confirm(`Gỡ bỏ Vai trò "${name}" khỏi hệ thống?`)) {
-      try {
-        await deleteRole(id).unwrap();
-        toast.success(`Đã gỡ bỏ vai trò ${name}!`);
-      } catch (err: any) {
-        toast.error("Không thể gỡ bỏ vai trò đang có tài khoản sử dụng!");
-      }
-    }
+  const handleDeleteRole = (id: string, name: string) => {
+    toast.custom((t) => (
+      <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-white dark:bg-slate-900 shadow-2xl rounded-2xl pointer-events-auto flex flex-col ring-1 ring-black ring-opacity-5 border border-slate-200 dark:border-white/10 p-5`}>
+        <div className="flex items-start gap-4">
+          <div className="w-10 h-10 rounded-full bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center shrink-0">
+            <Trash2 className="w-5 h-5 text-rose-600 dark:text-rose-400" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Gỡ bỏ Vai trò?</h3>
+            <p className="mt-1 text-sm text-slate-500">Bạn muốn xóa vai trò <b>{name}</b> khỏi hệ thống?</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 mt-5 justify-end">
+          <button onClick={() => toast.dismiss(t.id)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-xl transition-colors">Hủy bỏ</button>
+          <button onClick={async () => {
+            toast.dismiss(t.id);
+            try {
+              await deleteRole(id).unwrap();
+              toast.success(`Đã gỡ bỏ vai trò ${name}!`);
+            } catch (err: any) {
+              toast.error("Không thể gỡ bỏ vai trò đang được gán cho người dùng!");
+            }
+          }} className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold rounded-xl shadow-lg transition-all active:scale-95">Đồng ý</button>
+        </div>
+      </div>
+    ), { duration: 5000, id: `del-role-${id}` });
   };
 
   const userColumns: ColumnDef<User>[] = [
@@ -277,8 +322,14 @@ export default function UsersPage() {
       align: "right",
       cell: (row) => (
         <div className="flex items-center justify-end gap-1">
-          <button onClick={() => openUserModal(row)} title="Chỉnh sửa Hồ sơ" className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 rounded-xl transition-colors active:scale-95"><Edit className="w-4 h-4" /></button>
-          <button onClick={() => handleDeleteUser(row.userId, row.fullName)} disabled={isDeletingUser} title="Thu hồi tài khoản" className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/20 rounded-xl transition-colors active:scale-95 disabled:opacity-50"><Trash2 className="w-4 h-4" /></button>
+          {/* NÂNG CẤP BẢO MẬT: Bọc RequirePermission */}
+          <RequirePermission permissions={["MANAGE_USERS"]}>
+            <button onClick={() => openUserModal(row)} title="Chỉnh sửa Hồ sơ" className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 rounded-xl transition-colors active:scale-95"><Edit className="w-4 h-4" /></button>
+          </RequirePermission>
+          
+          <RequirePermission permissions={["MANAGE_USERS"]}>
+            <button onClick={() => handleDeleteUser(row.userId, row.fullName)} disabled={isDeletingUser} title="Thu hồi tài khoản" className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/20 rounded-xl transition-colors active:scale-95 disabled:opacity-50"><Trash2 className="w-4 h-4" /></button>
+          </RequirePermission>
         </div>
       )
     }
@@ -286,6 +337,8 @@ export default function UsersPage() {
 
   const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
   const itemVariants: Variants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } };
+
+  if (!isMounted) return null;
 
   if (isError) return (
     <div className="flex flex-col items-center justify-center h-[70vh] w-full text-center">
@@ -303,9 +356,19 @@ export default function UsersPage() {
         rightNode={
           <AnimatePresence mode="wait">
             {activeTab === "USERS" ? (
-              <motion.button key="btn-users" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} onClick={() => openUserModal()} className="px-5 py-2.5 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-500/30 transition-all active:scale-95"><Plus className="w-5 h-5" /> <span className="hidden sm:inline">Cấp phát Tài khoản</span></motion.button>
+              <motion.div key="btn-users" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+                {/* NÂNG CẤP BẢO MẬT */}
+                <RequirePermission permissions={["MANAGE_USERS"]}>
+                  <button onClick={() => openUserModal()} className="px-5 py-2.5 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-500/30 transition-all active:scale-95"><Plus className="w-5 h-5" /> <span className="hidden sm:inline">Cấp phát Tài khoản</span></button>
+                </RequirePermission>
+              </motion.div>
             ) : activeTab === "ROLES" ? (
-              <motion.button key="btn-roles" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} onClick={() => openRoleModal()} className="px-5 py-2.5 flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-purple-500/30 transition-all active:scale-95"><Plus className="w-5 h-5" /> <span className="hidden sm:inline">Định nghĩa Vai trò</span></motion.button>
+              <motion.div key="btn-roles" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+                {/* NÂNG CẤP BẢO MẬT */}
+                <RequirePermission permissions={["MANAGE_USERS"]}>
+                  <button onClick={() => openRoleModal()} className="px-5 py-2.5 flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-purple-500/30 transition-all active:scale-95"><Plus className="w-5 h-5" /> <span className="hidden sm:inline">Định nghĩa Vai trò</span></button>
+                </RequirePermission>
+              </motion.div>
             ) : null}
           </AnimatePresence>
         }
@@ -417,12 +480,16 @@ export default function UsersPage() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2 pt-4 border-t border-slate-100 dark:border-white/5">
-                            <button onClick={() => openRoleModal(r)} className="flex-1 flex justify-center items-center gap-2 py-2.5 bg-slate-100 hover:bg-purple-50 dark:bg-slate-800 dark:hover:bg-purple-900/30 text-slate-700 hover:text-purple-700 dark:text-slate-300 dark:hover:text-purple-400 text-sm font-bold rounded-xl transition-colors">
-                              <Edit className="w-4 h-4"/> Cấu hình Policy
-                            </button>
-                            <button onClick={() => handleDeleteRole(roleId, roleNameStr)} disabled={isDeletingRole || usersWithRole > 0} title={usersWithRole > 0 ? "Không thể xóa Role đang có người dùng" : "Xóa Role"} className="p-2.5 bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-900/30 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                              <Trash2 className="w-4 h-4"/>
-                            </button>
+                            <RequirePermission permissions={["MANAGE_USERS"]}>
+                              <button onClick={() => openRoleModal(r)} className="flex-1 flex justify-center items-center gap-2 py-2.5 bg-slate-100 hover:bg-purple-50 dark:bg-slate-800 dark:hover:bg-purple-900/30 text-slate-700 hover:text-purple-700 dark:text-slate-300 dark:hover:text-purple-400 text-sm font-bold rounded-xl transition-colors">
+                                <Edit className="w-4 h-4"/> Cấu hình Policy
+                              </button>
+                            </RequirePermission>
+                            <RequirePermission permissions={["MANAGE_USERS"]}>
+                              <button onClick={() => handleDeleteRole(roleId, roleNameStr)} disabled={isDeletingRole || usersWithRole > 0} title={usersWithRole > 0 ? "Không thể xóa Role đang có người dùng" : "Xóa Role"} className="p-2.5 bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-900/30 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                <Trash2 className="w-4 h-4"/>
+                              </button>
+                            </RequirePermission>
                           </div>
                         </motion.div>
                       );

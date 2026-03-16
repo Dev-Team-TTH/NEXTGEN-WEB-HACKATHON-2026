@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { 
   getUsers, getUserById, createUser, updateUser, deleteUser, resetUserPassword,
-  getPermissions,
+  getPermissions, seedSystemPermissions, // <-- Đã import hàm Seed
   getRoles, createRole, updateRole, deleteRole,
   getOrganizationStructure, createCostCenter, getSystemAuditLogs, getAuditLogsByRecord
 } from "../controllers/orgAndRbacController";
@@ -9,7 +9,13 @@ import { authenticateToken, requirePermission } from "../middleware/authMiddlewa
 
 const router = Router();
 
-// BẮT BUỘC BẢO MẬT: Phân quyền và cấu trúc là dữ liệu tuyệt mật
+// ==================================================================
+// 🚀 ROUTE ĐẶC BIỆT: BƠM DỮ LIỆU SEED (Đổi thành POST để chuẩn REST)
+// Đặt trước authenticateToken để không bị chặn lỗi 401 khi setup ban đầu
+// ==================================================================
+router.post("/permissions/seed", seedSystemPermissions);
+
+// BẮT BUỘC BẢO MẬT BẰNG TOKEN TỪ ĐÂY TRỞ XUỐNG
 router.use(authenticateToken);
 
 // ------------------------------------------------------------------
@@ -17,14 +23,9 @@ router.use(authenticateToken);
 // ------------------------------------------------------------------
 router.get("/users", getUsers);
 router.get("/users/:id", getUserById);
-
-// Đã bổ sung Route tạo mới người dùng
 router.post("/users", createUser); 
-
 router.put("/users/:id", updateUser);
 router.delete("/users/:id", deleteUser);
-
-// Route bảo mật đặc biệt: Reset Mật khẩu (Yêu cầu quyền MANAGE_USERS)
 router.post("/users/:id/reset-password", requirePermission("MANAGE_USERS"), resetUserPassword);
 
 // ------------------------------------------------------------------

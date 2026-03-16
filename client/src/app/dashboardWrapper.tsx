@@ -16,9 +16,11 @@ import AIChatbot from "@/app/(components)/AiChatbot";
 import StoreProvider, { useAppSelector, useAppDispatch } from "@/app/redux";
 import SplashScreen from "@/app/(components)/SplashScreen";
 import { setIsDarkMode } from "@/state";
+import SocketProvider from "@/app/(components)/SocketProvider";
 
 // --- UTILS ---
 import { cn } from "@/utils/helpers";
+import PageTransition from "./(components)/PageTransition";
 
 // ==========================================
 // COMPONENT 1: LÕI ĐIỀU HƯỚNG VÀ GIAO DIỆN
@@ -126,7 +128,11 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
                   exit="exit"
                   className="flex-1 flex flex-col w-full h-full origin-top"
                 >
-                  {children}
+                  <SocketProvider>
+                    <PageTransition>
+                      {children}
+                    </PageTransition>
+                  </SocketProvider>
                 </motion.div>
               </AnimatePresence>
             </div>

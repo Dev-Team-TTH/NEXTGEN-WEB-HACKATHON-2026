@@ -34,7 +34,7 @@ import { cn } from "@/utils/helpers";
 dayjs.locale('vi');
 
 // ==========================================
-// STRICT TYPES (Thay thế Any & Type Casting lỏng lẻo)
+// STRICT TYPES
 // ==========================================
 interface CashflowItem {
   period: string;
@@ -83,23 +83,34 @@ interface DashboardMetricsStrict {
 }
 
 // ==========================================
-// 1. SKELETON LOADING (HIỆU ỨNG TẢI TRANG)
+// 1. HIGH-END SKELETON (SHIMMER + NOISE)
 // ==========================================
+const ShimmerSkeleton = ({ className }: { className?: string }) => (
+  <div className={cn("relative overflow-hidden bg-slate-200/50 dark:bg-slate-800/50 backdrop-blur-md rounded-2xl", className)}>
+    {/* Texture Nhám (Noise) để tạo chất liệu Glassmorphism */}
+    <div className="absolute inset-0 bg-[url('/noise.png')] opacity-20 mix-blend-overlay pointer-events-none"></div>
+    {/* Vệt sáng lướt qua (Shimmer Effect) chạy bằng Framer Motion cho 60fps */}
+    <motion.div
+      className="absolute top-0 bottom-0 w-full bg-gradient-to-r from-transparent via-white/40 dark:via-white/10 to-transparent skew-x-[-20deg]"
+      initial={{ left: "-100%" }}
+      animate={{ left: "200%" }}
+      transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
+    />
+  </div>
+);
+
 const DashboardSkeleton = () => (
-  <div className="flex flex-col gap-6 w-full animate-pulse">
-    <div className="h-12 w-1/3 bg-slate-200 dark:bg-slate-800 rounded-xl"></div>
-    
+  <div className="flex flex-col gap-6 w-full">
+    <ShimmerSkeleton className="h-12 w-1/3 rounded-xl" />
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-      {[1, 2, 3, 4].map(i => <div key={i} className="h-32 rounded-2xl bg-slate-200 dark:bg-slate-800"></div>)}
+      {[1, 2, 3, 4].map(i => <ShimmerSkeleton key={i} className="h-36 rounded-2xl" />)}
     </div>
-    
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div className="h-[400px] rounded-2xl bg-slate-200 dark:bg-slate-800"></div>
-      <div className="h-[400px] rounded-2xl bg-slate-200 dark:bg-slate-800"></div>
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <ShimmerSkeleton className="h-[400px] rounded-3xl" />
+      <ShimmerSkeleton className="h-[400px] rounded-3xl" />
     </div>
-    
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {[1, 2, 3].map(i => <div key={i} className="h-[300px] rounded-2xl bg-slate-200 dark:bg-slate-800"></div>)}
+      {[1, 2, 3].map(i => <ShimmerSkeleton key={i} className="h-[300px] rounded-3xl" />)}
     </div>
   </div>
 );
@@ -115,7 +126,6 @@ export default function DashboardPage() {
   const { data, isLoading, isError, refetch, isFetching } = useGetDashboardMetricsQuery();
   const { data: rawPendingApprovals } = useGetPendingApprovalsQuery();
 
-  // 👉 ÉP KIỂU STRICT (Không dùng any)
   const safeData = data as DashboardMetricsStrict | undefined;
   
   const pendingApprovals = useMemo(() => {
@@ -123,46 +133,56 @@ export default function DashboardPage() {
     return Array.isArray(rawPendingApprovals) ? rawPendingApprovals : (rawPendingApprovals as any).data || [];
   }, [rawPendingApprovals]);
 
-  // 👉 BÓC TÁCH DỮ LIỆU THẬT AN TOÀN
   const summary = safeData?.summary || { totalInventoryValue: 0, currentCashBalance: 0, totalAccountsReceivable: 0, totalAccountsPayable: 0 };
   const popularProducts = safeData?.popularProducts || [];
   const recentActivities = safeData?.recentActivities || [];
 
-  // 👉 LẤY DỮ LIỆU BIỂU ĐỒ THẬT TỪ API
   const cashflowData = safeData?.cashflow || [];
   const revenueExpenseData = safeData?.revenueExpense || [];
   const pendingTaskCount = safeData?.tasks?.pendingApprovals || pendingApprovals.length;
 
-  // --- HANDLER EXPORT DỮ LIỆU ---
   const handleExportReport = () => {
     if (cashflowData.length === 0 && revenueExpenseData.length === 0) {
       toast.error("Không có dữ liệu biểu đồ để xuất!");
       return;
     }
-    
     const exportData = cashflowData.map(c => ({
       "Kỳ kế toán": c.period,
       "Dòng tiền Vào (VND)": c.cashIn,
       "Dòng tiền Ra (VND)": c.cashOut,
       "Lưu chuyển thuần": c.cashIn - c.cashOut
     }));
-    
     exportToCSV(exportData, `Bao_Cao_Tong_Quan_Dashboard_${dayjs().format('DDMMYYYY')}`);
     toast.success("Xuất báo cáo tổng quan thành công!");
   };
 
-  // --- ANIMATION CONFIG ---
-  // Tối ưu performance: Giảm stiffness & damping, chuyển thành tween nếu cần
+  // --- ANIMATION CONFIG (APPLE SPRING PHYSICS) ---
   const containerVariants: Variants = { 
     hidden: { opacity: 0 }, 
-    show: { opacity: 1, transition: { staggerChildren: 0.1 } } 
+    show: { 
+      opacity: 1, 
+      transition: { 
+        staggerChildren: 0.1,
+        delayChildren: 0.05
+      } 
+    } 
   };
+  
   const itemVariants: Variants = { 
-    hidden: { opacity: 0, y: 15 }, 
-    show: { opacity: 1, y: 0, transition: { duration: 0.3 } } 
+    hidden: { opacity: 0, y: 30, scale: 0.95 }, 
+    show: { 
+      opacity: 1, 
+      y: 0, 
+      scale: 1,
+      transition: { 
+        type: "spring", 
+        stiffness: 350, 
+        damping: 25, 
+        mass: 0.8 
+      } 
+    } 
   };
 
-  // --- XỬ LÝ LỖI MẠNG / API ---
   if (isError) {
     return (
       <div className="flex flex-col items-center justify-center h-[80vh] w-full text-center">
@@ -183,10 +203,13 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="w-full flex flex-col gap-6 pb-12">
+    <div className="w-full flex flex-col gap-6 pb-12 overflow-x-hidden">
       
       {/* HEADER DASHBOARD */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-2">
+      <motion.div 
+        initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 300, damping: 30 }}
+        className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-2"
+      >
         <div>
           <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">
             Xin chào, {currentUser?.fullName?.split(" ").pop() || "Quản trị viên"}! 👋
@@ -212,74 +235,74 @@ export default function DashboardPage() {
             <span className="text-sm font-bold text-indigo-700 dark:text-indigo-400">Hệ thống Real-time Đang chạy</span>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-6 w-full">
         
         {/* ==========================================
-            KHỐI 1: 4 THẺ CHỈ SỐ KPI (KPI CARDS) - Tối ưu performance
+            KHỐI 1: 4 THẺ CHỈ SỐ KPI (KPI CARDS)
             ========================================== */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
           
-          <motion.div variants={itemVariants} className="relative overflow-hidden rounded-2xl p-6 bg-emerald-600 text-white shadow-md group">
-            <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform duration-300">
+          <motion.div variants={itemVariants} className="relative overflow-hidden rounded-2xl p-6 bg-emerald-600 text-white shadow-[0_8px_30px_rgba(16,185,129,0.3)] group hover:-translate-y-1 transition-transform duration-300 cursor-default">
+            <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform duration-500 ease-out">
               <Wallet className="w-32 h-32" />
             </div>
             <div className="relative z-10">
-              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center mb-4">
+              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center mb-4 backdrop-blur-sm">
                 <DollarSign className="w-6 h-6 text-white" />
               </div>
               <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-100 mb-1">Tiền mặt & Tiền gửi</p>
               <h3 className="text-3xl font-black truncate">{formatVND(summary.currentCashBalance)}</h3>
-              <div className="mt-4 inline-flex items-center gap-1.5 px-2.5 py-1 bg-white/20 rounded-lg text-xs font-semibold">
+              <div className="mt-4 inline-flex items-center gap-1.5 px-2.5 py-1 bg-white/20 rounded-lg text-xs font-semibold backdrop-blur-sm">
                 <TrendingUp className="w-3.5 h-3.5" /> Thực tế hiện tại
               </div>
             </div>
           </motion.div>
 
-          <motion.div variants={itemVariants} className="relative overflow-hidden rounded-2xl p-6 bg-white dark:bg-slate-900 shadow-sm border border-slate-200 dark:border-slate-800 group hover:border-amber-300 transition-colors">
-            <div className="absolute right-0 top-0 p-6 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform duration-300">
+          <motion.div variants={itemVariants} className="relative overflow-hidden rounded-2xl p-6 bg-white dark:bg-slate-900 shadow-sm border border-slate-200 dark:border-slate-800 group hover:border-amber-300 hover:shadow-lg transition-all duration-300 cursor-default">
+            <div className="absolute right-0 top-0 p-6 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform duration-500 ease-out">
               <TrendingUp className="w-24 h-24 text-amber-500" />
             </div>
             <div className="relative z-10">
-              <div className="w-12 h-12 bg-amber-50 dark:bg-amber-500/10 rounded-xl flex items-center justify-center mb-4 border border-amber-100 dark:border-amber-500/20">
+              <div className="w-12 h-12 bg-amber-50 dark:bg-amber-500/10 rounded-xl flex items-center justify-center mb-4 border border-amber-100 dark:border-amber-500/20 group-hover:bg-amber-100 transition-colors">
                 <CreditCard className="w-6 h-6 text-amber-600 dark:text-amber-400" />
               </div>
               <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">Tổng nợ Phải Thu (KH)</p>
               <h3 className="text-3xl font-black text-slate-800 dark:text-white truncate">{formatVND(summary.totalAccountsReceivable)}</h3>
-              <div className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-amber-600 dark:text-amber-400">
+              <div className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded">
                 Đang chờ khách hàng thanh toán
               </div>
             </div>
           </motion.div>
 
-          <motion.div variants={itemVariants} className="relative overflow-hidden rounded-2xl p-6 bg-white dark:bg-slate-900 shadow-sm border border-slate-200 dark:border-slate-800 group hover:border-rose-300 transition-colors">
-            <div className="absolute right-0 top-0 p-6 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform duration-300">
+          <motion.div variants={itemVariants} className="relative overflow-hidden rounded-2xl p-6 bg-white dark:bg-slate-900 shadow-sm border border-slate-200 dark:border-slate-800 group hover:border-rose-300 hover:shadow-lg transition-all duration-300 cursor-default">
+            <div className="absolute right-0 top-0 p-6 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform duration-500 ease-out">
               <TrendingDown className="w-24 h-24 text-rose-500" />
             </div>
             <div className="relative z-10">
-              <div className="w-12 h-12 bg-rose-50 dark:bg-rose-500/10 rounded-xl flex items-center justify-center mb-4 border border-rose-100 dark:border-rose-500/20">
+              <div className="w-12 h-12 bg-rose-50 dark:bg-rose-500/10 rounded-xl flex items-center justify-center mb-4 border border-rose-100 dark:border-rose-500/20 group-hover:bg-rose-100 transition-colors">
                 <Activity className="w-6 h-6 text-rose-600 dark:text-rose-400" />
               </div>
               <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">Tổng nợ Phải Trả (NCC)</p>
               <h3 className="text-3xl font-black text-slate-800 dark:text-white truncate">{formatVND(summary.totalAccountsPayable)}</h3>
-              <div className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-rose-600 dark:text-rose-400">
+              <div className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 px-2 py-1 rounded">
                 Công nợ cần thanh toán
               </div>
             </div>
           </motion.div>
 
-          <motion.div variants={itemVariants} className="relative overflow-hidden rounded-2xl p-6 bg-white dark:bg-slate-900 shadow-sm border border-slate-200 dark:border-slate-800 group hover:border-indigo-300 transition-colors">
-            <div className="absolute right-0 top-0 p-6 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform duration-300">
+          <motion.div variants={itemVariants} className="relative overflow-hidden rounded-2xl p-6 bg-white dark:bg-slate-900 shadow-sm border border-slate-200 dark:border-slate-800 group hover:border-indigo-300 hover:shadow-lg transition-all duration-300 cursor-default">
+            <div className="absolute right-0 top-0 p-6 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform duration-500 ease-out">
               <Package className="w-24 h-24 text-indigo-500" />
             </div>
             <div className="relative z-10">
-              <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-500/10 rounded-xl flex items-center justify-center mb-4 border border-indigo-100 dark:border-indigo-500/20">
+              <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-500/10 rounded-xl flex items-center justify-center mb-4 border border-indigo-100 dark:border-indigo-500/20 group-hover:bg-indigo-100 transition-colors">
                 <Package className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
               </div>
               <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">Tổng Giá trị Tồn Kho</p>
               <h3 className="text-3xl font-black text-slate-800 dark:text-white truncate">{formatVND(summary.totalInventoryValue)}</h3>
-              <div className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400">
+              <div className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 px-2 py-1 rounded">
                 Dữ liệu kho thực tế
               </div>
             </div>
@@ -288,7 +311,7 @@ export default function DashboardPage() {
         </div>
 
         {/* ==========================================
-            KHỐI 2: ĐỒ THỊ BIỂU DIỄN DỮ LIỆU (CHARTS) - Tối ưu Render SVG
+            KHỐI 2: ĐỒ THỊ BIỂU DIỄN DỮ LIỆU (CHARTS)
             ========================================== */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           
@@ -324,9 +347,8 @@ export default function DashboardPage() {
                       contentStyle={{ borderRadius: '12px', border: '1px solid #cbd5e1', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', color: theme === 'dark' ? '#fff' : '#0f172a', fontWeight: 'bold' }}
                       formatter={(val: any) => formatVND(Number(val) || 0)}
                     />
-                    {/* Bỏ gradient phức tạp, dùng fillOpacity để tăng FPS */}
-                    <Area type="monotone" dataKey="cashIn" name="Thu vào" stroke="#10b981" strokeWidth={3} fill="#10b981" fillOpacity={0.15} activeDot={{ r: 6, strokeWidth: 0, fill: '#10b981' }} />
-                    <Area type="monotone" dataKey="cashOut" name="Chi ra" stroke="#f43f5e" strokeWidth={3} fill="#f43f5e" fillOpacity={0.15} activeDot={{ r: 6, strokeWidth: 0, fill: '#f43f5e' }} />
+                    <Area type="monotone" dataKey="cashIn" name="Thu vào" stroke="#10b981" strokeWidth={3} fill="#10b981" fillOpacity={0.15} activeDot={{ r: 6, strokeWidth: 0, fill: '#10b981' }} animationDuration={1500} animationEasing="ease-out" />
+                    <Area type="monotone" dataKey="cashOut" name="Chi ra" stroke="#f43f5e" strokeWidth={3} fill="#f43f5e" fillOpacity={0.15} activeDot={{ r: 6, strokeWidth: 0, fill: '#f43f5e' }} animationDuration={1500} animationEasing="ease-out" />
                   </AreaChart>
                 </ResponsiveContainer>
               )}
@@ -362,8 +384,8 @@ export default function DashboardPage() {
                       formatter={(val: any) => formatVND(Number(val) || 0)}
                     />
                     <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', fontWeight: 'bold', paddingTop: '20px' }} />
-                    <Bar dataKey="DoanhThu" name="Doanh Thu Bán Hàng" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="ChiPhi" name="Chi Phí Hoạt Động" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="DoanhThu" name="Doanh Thu Bán Hàng" fill="#3b82f6" radius={[6, 6, 0, 0]} animationDuration={1500} animationEasing="ease-out" />
+                    <Bar dataKey="ChiPhi" name="Chi Phí Hoạt Động" fill="#f59e0b" radius={[6, 6, 0, 0]} animationDuration={1500} animationEasing="ease-out" />
                   </BarChart>
                 </ResponsiveContainer>
               )}
@@ -373,11 +395,11 @@ export default function DashboardPage() {
         </div>
 
         {/* ==========================================
-            KHỐI 3: DANH SÁCH CHI TIẾT (LISTS) - Không Blur
+            KHỐI 3: DANH SÁCH CHI TIẾT (LISTS)
             ========================================== */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          {/* List 1: Chứng từ chờ duyệt (REAL DATA) */}
+          {/* List 1: Chứng từ chờ duyệt */}
           <motion.div variants={itemVariants} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col h-[400px]">
             <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-slate-50 dark:bg-slate-800/50 rounded-t-3xl">
               <h3 className="font-black text-slate-800 dark:text-white flex items-center gap-2">
@@ -394,7 +416,12 @@ export default function DashboardPage() {
               ) : (
                 <div className="flex flex-col gap-2">
                   {pendingApprovals.map((req: any) => (
-                    <div key={req.requestId} className="p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-2xl cursor-pointer transition-colors group flex items-start gap-3">
+                    <motion.div 
+                      key={req.requestId} 
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      className="p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-2xl cursor-pointer transition-colors group flex items-start gap-3"
+                    >
                       <div className="w-10 h-10 rounded-full bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center shrink-0">
                         <FileText className="w-5 h-5 text-amber-500" />
                       </div>
@@ -406,15 +433,15 @@ export default function DashboardPage() {
                           Người tạo: {req.requester?.fullName || 'Hệ thống'}
                         </p>
                       </div>
-                      <ArrowRight className="w-4 h-4 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity mt-2" />
-                    </div>
+                      <ArrowRight className="w-4 h-4 text-slate-300 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all mt-2" />
+                    </motion.div>
                   ))}
                 </div>
               )}
             </div>
           </motion.div>
 
-          {/* List 2: Sản phẩm bán chạy (REAL DATA) */}
+          {/* List 2: Sản phẩm bán chạy */}
           <motion.div variants={itemVariants} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col h-[400px]">
             <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-slate-50 dark:bg-slate-800/50 rounded-t-3xl">
               <h3 className="font-black text-slate-800 dark:text-white flex items-center gap-2">
@@ -430,7 +457,11 @@ export default function DashboardPage() {
               ) : (
                 <div className="flex flex-col gap-4">
                   {popularProducts.map((prod: ProductMetrics, idx: number) => (
-                    <div key={idx} className="flex items-center gap-3">
+                    <motion.div 
+                      key={idx} 
+                      whileHover={{ x: 5 }}
+                      className="flex items-center gap-3 cursor-default"
+                    >
                       <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700 overflow-hidden">
                         {prod.imageUrl ? <img src={prod.imageUrl} alt="Prod" className="w-full h-full object-cover"/> : <Package className="w-5 h-5 text-slate-400"/>}
                       </div>
@@ -440,17 +471,22 @@ export default function DashboardPage() {
                           <span className="text-[10px] font-black text-emerald-600">{formatVND(prod.revenue)}</span>
                         </div>
                         <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                          <div className="h-full bg-gradient-to-r from-orange-400 to-amber-500 rounded-full" style={{ width: `${Math.max(10, (prod.revenue / (popularProducts[0]?.revenue || 1)) * 100)}%` }}></div>
+                          <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: `${Math.max(10, (prod.revenue / (popularProducts[0]?.revenue || 1)) * 100)}%` }}
+                            transition={{ duration: 1.5, ease: "easeOut" }}
+                            className="h-full bg-gradient-to-r from-orange-400 to-amber-500 rounded-full" 
+                          />
                         </div>
                       </div>
-                    </div>
+                    </motion.div>
                   ))}
                 </div>
               )}
             </div>
           </motion.div>
 
-          {/* List 3: Nhật ký hoạt động (REAL DATA) */}
+          {/* List 3: Nhật ký hoạt động */}
           <motion.div variants={itemVariants} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col h-[400px]">
             <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-slate-50 dark:bg-slate-800/50 rounded-t-3xl">
               <h3 className="font-black text-slate-800 dark:text-white flex items-center gap-2">
@@ -465,13 +501,19 @@ export default function DashboardPage() {
               ) : (
                 <div className="relative border-l-2 border-slate-100 dark:border-slate-700 ml-3 pl-5 py-2 space-y-6">
                   {recentActivities.map((log: ActivityLog, idx: number) => (
-                    <div key={idx} className="relative">
-                      <div className="absolute -left-[29px] top-0 w-4 h-4 rounded-full border-4 border-white dark:border-slate-900 bg-blue-500 shadow-sm"></div>
+                    <motion.div 
+                      key={idx} 
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: idx * 0.1 }}
+                      className="relative hover:bg-slate-50 dark:hover:bg-slate-800/30 p-2 -ml-2 rounded-xl transition-colors"
+                    >
+                      <div className="absolute -left-[37px] top-3 w-4 h-4 rounded-full border-4 border-white dark:border-slate-900 bg-blue-500 shadow-sm"></div>
                       <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight">
                         <span className="text-blue-600 dark:text-blue-400">{log.user?.fullName || 'Hệ thống'}</span> đã {log.action === "CREATE" ? "tạo mới" : log.action === "UPDATE" ? "cập nhật" : "xóa"} dữ liệu trong phân hệ {log.tableName}.
                       </p>
                       <p className="text-[10px] font-medium text-slate-400 mt-1">{dayjs(log.timestamp).format('HH:mm - DD/MM/YYYY')}</p>
-                    </div>
+                    </motion.div>
                   ))}
                 </div>
               )}

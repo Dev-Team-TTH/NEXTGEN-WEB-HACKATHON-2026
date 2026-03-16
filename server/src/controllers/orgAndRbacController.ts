@@ -3,16 +3,14 @@ import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
 import bcrypt from "bcrypt";
 
-// Mở rộng Request để hỗ trợ Type cho JWT Payload
 interface AuthRequest extends Request {
   user?: { userId: string; [key: string]: any };
 }
 
-// Hàm Helper trích xuất userId an toàn
 const getUserId = (req: AuthRequest) => req.user?.userId || req.body.actionerId || req.body.userId;
 
 // ==========================================
-// 1. QUẢN LÝ NHÂN VIÊN / TÀI KHOẢN (USERS CRUD)
+// 1. USERS CRUD
 // ==========================================
 export const getUsers = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -31,7 +29,6 @@ export const getUsers = async (req: Request, res: Response): Promise<void> => {
       orderBy: { createdAt: 'desc' }
     });
 
-    // Ẩn hash mật khẩu và secret 2FA trước khi trả về cho Frontend
     const safeUsers = users.map(user => {
       const { passwordHash, twoFactorSecret, ...safeData } = user;
       return safeData;
@@ -76,7 +73,6 @@ export const createUser = async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
-    // Hash mật khẩu an toàn
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(password || "Password@123", saltRounds);
 
@@ -90,11 +86,9 @@ export const createUser = async (req: AuthRequest, res: Response): Promise<void>
           address,
           departmentId,
           status: status || "ACTIVE"
-          // ĐÃ XÓA is2FAEnabled ĐỂ FIX LỖI TS2353. DB sẽ tự động dùng @default(false)
         }
       });
 
-      // Liên kết Role
       if (roleIds && Array.isArray(roleIds) && roleIds.length > 0) {
         await tx.userRole.createMany({
           data: roleIds.map((rId: string) => ({ userId: user.userId, roleId: rId }))
@@ -165,9 +159,6 @@ export const deleteUser = async (req: AuthRequest, res: Response): Promise<void>
   }
 };
 
-// ==========================================
-// THỰC THI BẢO MẬT: RESET MẬT KHẨU
-// ==========================================
 export const resetUserPassword = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -175,16 +166,7 @@ export const resetUserPassword = async (req: AuthRequest, res: Response): Promis
     const actionerId = getUserId(req);
 
     if (adminPin !== "123456" && adminPin !== "Admin@2026") {
-      // FIX LỖI TS2345: Chuyển SECURITY_ALERT thành chuẩn UPDATE
-      await logAudit(
-        "Users", 
-        id, 
-        "UPDATE", 
-        { event: "SECURITY_ALERT", reason: "Nhập sai mã PIN Admin khi cố Reset Password" }, 
-        { actionerId, ip: req.ip }, 
-        actionerId, 
-        req.ip
-      );
+      await logAudit("Users", id, "UPDATE", { event: "SECURITY_ALERT", reason: "Nhập sai mã PIN Admin khi cố Reset Password" }, { actionerId, ip: req.ip }, actionerId, req.ip);
       res.status(403).json({ message: "Mã PIN Quản trị không hợp lệ! Hệ thống đã ghi nhận cảnh báo." });
       return;
     }
@@ -198,46 +180,97 @@ export const resetUserPassword = async (req: AuthRequest, res: Response): Promis
       data: { passwordHash: hashedPassword }
     });
 
-    // FIX LỖI TS2345: Chuyển RESET_PASSWORD thành chuẩn UPDATE
-    await logAudit(
-      "Users", 
-      id, 
-      "UPDATE", 
-      null, 
-      { event: "PASSWORD_RESET", changedBy: actionerId }, 
-      actionerId, 
-      req.ip
-    );
+    await logAudit("Users", id, "UPDATE", null, { event: "PASSWORD_RESET", changedBy: actionerId }, actionerId, req.ip);
 
-    res.status(200).json({ 
-      message: "Đã đặt lại mật khẩu thành công", 
-      newPassword: newPassword 
-    });
+    res.status(200).json({ message: "Đã đặt lại mật khẩu thành công", newPassword: newPassword });
   } catch (error: any) {
     res.status(500).json({ message: "Lỗi hệ thống khi Reset Password", error: error.message });
   }
 };
 
 // ==========================================
-// 2. QUẢN LÝ QUYỀN TRUY CẬP (PERMISSIONS)
+// 2. PERMISSIONS (NỀN TẢNG CHO DYNAMIC RBAC)
 // ==========================================
 export const getPermissions = async (req: Request, res: Response): Promise<void> => {
   try {
+    // Trả về toàn bộ danh sách Quyền đã cấu hình trong DB để Frontend tự vẽ
     const permissions = await prisma.permission.findMany({
-      orderBy: [
-        { module: 'asc' },
-        { code: 'asc' }
-      ]
+      orderBy: [ { module: 'asc' }, { code: 'asc' } ]
     });
-    
     res.json(permissions);
   } catch (error: any) {
     res.status(500).json({ message: "Lỗi lấy danh sách quyền", error: error.message });
   }
 };
 
+export const seedSystemPermissions = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const standardPermissions = [
+      { code: "ALL", name: "Super Admin (Quản trị Tối cao)", description: "Quyền năng vô hạn, can thiệp mọi cấu hình", module: "SYSTEM" },
+      { code: "MANAGE_SETTINGS", name: "Quản lý Cài đặt", description: "Thay đổi cấu hình máy chủ, logo, múi giờ", module: "SYSTEM" },
+      { code: "VIEW_SETTINGS", name: "Xem Cài đặt", description: "Xem các cấu hình chung", module: "SYSTEM" },
+      { code: "MANAGE_USERS", name: "Quản lý Nhân sự", description: "Thêm, xóa, khóa, reset mật khẩu nhân viên", module: "USERS" },
+      { code: "VIEW_USERS", name: "Xem Danh sách Nhân sự", description: "Xem sơ đồ tổ chức, danh sách nhân viên", module: "USERS" },
+      { code: "MANAGE_ROLES", name: "Quản lý Phân quyền", description: "Tạo Vai trò (Role) và gán quyền hạn", module: "USERS" },
+      { code: "MANAGE_MASTER_DATA", name: "Quản lý Dữ liệu gốc", description: "Thêm/sửa danh mục, đối tác, thuế, tiền tệ", module: "MASTER_DATA" },
+      { code: "VIEW_MASTER_DATA", name: "Xem Dữ liệu gốc", description: "Tra cứu danh mục hệ thống", module: "MASTER_DATA" },
+      { code: "MANAGE_INVENTORY", name: "Điều chỉnh Kho bãi", description: "Nhập/xuất thủ công, chuyển kho, kiểm kê", module: "INVENTORY" },
+      { code: "VIEW_INVENTORY", name: "Tra cứu Tồn kho", description: "Xem thẻ kho, lịch sử và số lượng hàng hóa", module: "INVENTORY" },
+      { code: "MANAGE_TRANSACTION", name: "Tạo Chứng từ Mua/Bán", description: "Lập Đơn hàng (PO/SO), Nhập kho (GRPO)", module: "TRANSACTIONS" },
+      { code: "VIEW_TRANSACTION", name: "Xem Lịch sử Giao dịch", description: "Tra cứu chứng từ mua bán, hóa đơn", module: "TRANSACTIONS" },
+      { code: "MANAGE_ACCOUNTING", name: "Ghi sổ Kế toán", description: "Tạo bút toán thủ công, đảo sổ, khóa kỳ", module: "ACCOUNTING" },
+      { code: "VIEW_ACCOUNTING", name: "Xem Sổ Kế toán", description: "Xem sổ cái, bảng cân đối, lưu chuyển tiền tệ", module: "ACCOUNTING" },
+      { code: "MANAGE_EXPENSES", name: "Lập Phiếu Chi", description: "Tạo và ghi nhận chứng từ chi phí", module: "EXPENSES" },
+      { code: "VIEW_EXPENSES", name: "Tra cứu Phiếu Chi", description: "Xem danh sách và lịch sử chi phí", module: "EXPENSES" },
+      { code: "MANAGE_ASSET", name: "Quản trị Tài sản", description: "Cấp phát, thanh lý, tính khấu hao TSCĐ", module: "ASSETS" },
+      { code: "VIEW_ASSET", name: "Xem Tài sản", description: "Xem danh sách và lịch sử tài sản", module: "ASSETS" },
+      { code: "MANAGE_APPROVALS", name: "Cấu hình Quy trình", description: "Thiết lập các bước duyệt (Workflow)", module: "APPROVALS" },
+      { code: "APPROVE_DOCUMENTS", name: "Thực hiện Phê duyệt", description: "Có quyền Bấm nút Duyệt hoặc Từ chối tờ trình", module: "APPROVALS" },
+      { code: "VIEW_APPROVALS", name: "Xem Bảng Phê duyệt", description: "Xem tiến trình và trạng thái các tờ trình", module: "APPROVALS" },
+      { code: "VIEW_DASHBOARD", name: "Trực quan hóa Dữ liệu", description: "Xem biểu đồ tổng quan, báo cáo BI", module: "DASHBOARD" }
+    ];
+
+    let addedCount = 0;
+    let updatedCount = 0;
+
+    // SỬ DỤNG TRANSACTION KÈM TIMEOUT MỞ RỘNG
+    await prisma.$transaction(async (tx) => {
+      for (const perm of standardPermissions) {
+        // Tối ưu tốc độ: Dùng findUnique thay vì findFirst
+        const existing = await tx.permission.findUnique({ where: { code: perm.code } });
+        
+        if (existing) {
+          await tx.permission.update({
+            where: { permissionId: existing.permissionId },
+            data: { name: perm.name, description: perm.description, module: perm.module }
+          });
+          updatedCount++;
+        } else {
+          await tx.permission.create({
+            data: perm
+          });
+          addedCount++;
+        }
+      }
+    }, 
+    {
+      maxWait: 5000, // Thời gian đợi DB rảnh
+      timeout: 15000 // 💡 QUAN TRỌNG NHẤT: Tăng thời gian chạy Transaction lên 15 giây
+    });
+
+    res.json({ 
+      message: "Đã làm mới và chuẩn hóa Ma trận Quyền!", 
+      added_new: addedCount,
+      updated_existing: updatedCount,
+      total_permissions: standardPermissions.length 
+    });
+  } catch (error: any) {
+    console.error("🔥 LỖI CRASH API SEED:", error);
+    res.status(500).json({ message: "Lỗi đồng bộ Quyền", error: error.message });
+  }
+};
 // ==========================================
-// 3. QUẢN LÝ VAI TRÒ (ROLES CRUD)
+// 3. ROLES CRUD (KIẾN TRÚC MỚI - CHUẨN UUID)
 // ==========================================
 export const getRoles = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -261,10 +294,7 @@ export const getRoles = async (req: Request, res: Response): Promise<void> => {
 
     const enrichedRoles = roles.map(role => {
       const count = userRoles.filter(ur => ur.roleId === role.roleId).length;
-      return {
-        ...role,
-        _count: { users: count } 
-      };
+      return { ...role, _count: { users: count } };
     });
 
     res.json(enrichedRoles);
@@ -274,12 +304,16 @@ export const getRoles = async (req: Request, res: Response): Promise<void> => {
 };
 
 export const createRole = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { roleName, description, permissionIds } = req.body;
+  const { roleName, description, permissionIds } = req.body; 
+  // 💡 ĐÃ SỬA LẠI: backend CẦN MẢNG permissionIds LÀ UUID CHUẨN (VD: ["uuid-1", "uuid-2"])
   const actionerId = getUserId(req);
 
   try {
     const newRole = await prisma.$transaction(async (tx) => {
+      // 1. Tạo Role
       const role = await tx.role.create({ data: { roleName, description } });
+      
+      // 2. Gán quyền (Liên kết UUID) cực kỳ đơn giản
       if (permissionIds && Array.isArray(permissionIds) && permissionIds.length > 0) {
         await tx.rolePermission.createMany({
           data: permissionIds.map((pId: string) => ({ roleId: role.roleId, permissionId: pId }))
@@ -287,6 +321,7 @@ export const createRole = async (req: AuthRequest, res: Response): Promise<void>
       }
       return role;
     });
+    
     await logAudit("Role", newRole.roleId, "CREATE", null, newRole, actionerId, req.ip);
     res.status(201).json(newRole);
   } catch (error: any) {
@@ -304,19 +339,23 @@ export const updateRole = async (req: AuthRequest, res: Response): Promise<void>
       const oldRole = await tx.role.findUnique({ where: { roleId: id } });
       if (!oldRole || oldRole.isDeleted) throw new Error("Vai trò không tồn tại!");
 
+      // 1. Cập nhật thông tin Role
       const role = await tx.role.update({
         where: { roleId: id },
         data: { roleName, description }
       });
 
+      // 2. Xóa toàn bộ quyền cũ & Cập nhật quyền mới (Bằng UUID)
       if (permissionIds && Array.isArray(permissionIds)) {
         await tx.rolePermission.deleteMany({ where: { roleId: id } });
+        
         if (permissionIds.length > 0) {
           await tx.rolePermission.createMany({
             data: permissionIds.map((pId: string) => ({ roleId: id, permissionId: pId }))
           });
         }
       }
+      
       return role;
     });
 
@@ -337,7 +376,7 @@ export const deleteRole = async (req: AuthRequest, res: Response): Promise<void>
       if (usersWithRole) throw new Error("Không thể xóa Vai trò này vì đang được gán cho nhân viên!");
 
       const stepWithRole = await tx.approvalStep.findFirst({ where: { roleId: id } });
-      if (stepWithRole) throw new Error("Không thể xóa Vai trò này vì đang được sử dụng trong Quy trình phê duyệt (Workflow)!");
+      if (stepWithRole) throw new Error("Không thể xóa Vai trò vì đang được sử dụng trong Quy trình phê duyệt!");
 
       await tx.role.update({
         where: { roleId: id },
@@ -353,7 +392,7 @@ export const deleteRole = async (req: AuthRequest, res: Response): Promise<void>
 };
 
 // ==========================================
-// 4. QUẢN LÝ CẤU TRÚC DOANH NGHIỆP TỔNG HỢP
+// 4. ORGANIZATION & AUDIT
 // ==========================================
 export const getOrganizationStructure = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -388,9 +427,6 @@ export const createCostCenter = async (req: AuthRequest, res: Response): Promise
   }
 };
 
-// ==========================================
-// 5. NHẬT KÝ KIỂM TOÁN HỆ THỐNG (SYSTEM AUDIT LOGS)
-// ==========================================
 export const getSystemAuditLogs = async (req: Request, res: Response): Promise<void> => {
   try {
     const { page = 1, limit = 15, search, action, tableName } = req.query;
@@ -400,11 +436,9 @@ export const getSystemAuditLogs = async (req: Request, res: Response): Promise<v
     const skip = (pageNum - 1) * limitNum;
 
     const whereCondition: any = {};
-    
     if (action && action !== "ALL") whereCondition.action = action;
     if (tableName && tableName !== "ALL") whereCondition.tableName = tableName;
 
-    // Tính năng Search thông minh: Tìm theo ID bản ghi hoặc tên người thao tác
     if (search) {
       whereCondition.OR = [
         { recordId: { contains: String(search), mode: 'insensitive' } },
@@ -416,52 +450,32 @@ export const getSystemAuditLogs = async (req: Request, res: Response): Promise<v
     const [total, logs] = await prisma.$transaction([
       prisma.systemAuditLog.count({ where: whereCondition }),
       prisma.systemAuditLog.findMany({
-        where: whereCondition,
-        skip,
-        take: limitNum,
-        orderBy: { timestamp: 'desc' }, // Luôn hiển thị hành động mới nhất lên đầu
-        include: { 
-          user: { select: { fullName: true, email: true } } 
-        }
+        where: whereCondition, skip, take: limitNum,
+        orderBy: { timestamp: 'desc' }, 
+        include: { user: { select: { fullName: true, email: true } } }
       })
     ]);
 
-    res.json({
-      data: logs,
-      meta: {
-        total,
-        page: pageNum,
-        limit: limitNum,
-        totalPages: Math.ceil(total / limitNum)
-      }
-    });
+    res.json({ data: logs, meta: { total, page: pageNum, limit: limitNum, totalPages: Math.ceil(total / limitNum) } });
   } catch (error: any) {
-    res.status(500).json({ message: "Lỗi truy xuất nhật ký hệ thống", error: error.message });
+    res.status(500).json({ message: "Lỗi truy xuất nhật ký", error: error.message });
   }
 };
 
 export const getAuditLogsByRecord = async (req: Request, res: Response): Promise<void> => {
   try {
     const { tableName, recordId } = req.query;
-    
     const logs = await prisma.systemAuditLog.findMany({
       where: { tableName: String(tableName), recordId: String(recordId) },
       orderBy: { timestamp: 'desc' },
-      include: {
-        user: { select: { fullName: true } }
-      }
+      include: { user: { select: { fullName: true } } }
     });
-
     const safeLogs = logs.map(log => ({
-      ...log,
-      tableName: log.tableName || "SYSTEM",
-      action: log.action || "SYSTEM_EVENT",
-      createdAt: log.timestamp,
-      module: log.tableName
+      ...log, tableName: log.tableName || "SYSTEM", action: log.action || "SYSTEM_EVENT",
+      createdAt: log.timestamp, module: log.tableName
     }));
-
     res.json(safeLogs);
   } catch (error: any) {
-    res.status(500).json({ message: "Lỗi truy xuất chi tiết Audit Log", error: error.message });
+    res.status(500).json({ message: "Lỗi truy xuất chi tiết Audit", error: error.message });
   }
 };
