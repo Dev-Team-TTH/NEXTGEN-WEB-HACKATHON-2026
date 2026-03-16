@@ -69,6 +69,10 @@ export default function InventoryPage() {
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
 
+  // 🚀 STATE BỘ LỌC NÂNG CAO CHO TAB TỒN KHO
+  const [filterWarehouse, setFilterWarehouse] = useState("ALL");
+  const [filterStatus, setFilterStatus] = useState("ALL");
+
   // 👉 FETCH DATA TỪ BACKEND
   const { data: responseData, isLoading, isError, refetch, isFetching } = useGetInventoryBalancesQuery({
     page: 1, limit: 50
@@ -78,21 +82,51 @@ export default function InventoryPage() {
 
   const balances: InventoryBalance[] = responseData?.data || [];
 
-  // --- TÍNH TOÁN KPI TỔNG QUAN ---
+  // --- TRÍCH XUẤT DANH SÁCH KHO ĐỂ HIỂN THỊ DROPDOWN LỌC ---
+  const uniqueWarehouses = useMemo(() => {
+    const whs = new Set<string>();
+    balances.forEach(b => {
+      if (b.warehouse?.name) whs.add(b.warehouse.name);
+    });
+    return Array.from(whs);
+  }, [balances]);
+
+  // 🚀 THUẬT TOÁN LỌC VÀ CHUẨN BỊ DỮ LIỆU THÔNG MINH
+  const filteredBalances = useMemo(() => {
+    let arr = balances.map(b => ({
+      ...b,
+      // Tạo trường ảo gộp tên + mã SKU để DataTable search mượt mà
+      productSearchName: `${b.product?.name || ""} ${b.product?.productCode || ""} ${b.variant?.sku || ""}`.trim()
+    }));
+
+    if (filterWarehouse !== "ALL") {
+      arr = arr.filter(b => b.warehouse?.name === filterWarehouse);
+    }
+    
+    if (filterStatus !== "ALL") {
+      if (filterStatus === "IN_STOCK") arr = arr.filter(b => b.quantity > 0);
+      if (filterStatus === "OUT_OF_STOCK") arr = arr.filter(b => b.quantity <= 0);
+      if (filterStatus === "LOCKED") arr = arr.filter(b => b.lockedQty > 0);
+    }
+    
+    return arr;
+  }, [balances, filterWarehouse, filterStatus]);
+
+  // --- TÍNH TOÁN KPI TỔNG QUAN (Chỉ dựa trên hàng đã lọc) ---
   const summary = useMemo(() => {
-    return balances.reduce((acc, curr) => ({
+    return filteredBalances.reduce((acc, curr) => ({
       totalValue: acc.totalValue + (curr.totalValue || 0),
       totalAvailable: acc.totalAvailable + (curr.quantity || 0),
       totalLocked: acc.totalLocked + (curr.lockedQty || 0),
     }), { totalValue: 0, totalAvailable: 0, totalLocked: 0 });
-  }, [balances]);
+  }, [filteredBalances]);
 
   // --- HANDLER EXPORT TỒN KHO ---
   const handleExportBalances = () => {
-    if (balances.length === 0) {
+    if (filteredBalances.length === 0) {
       toast.error("Không có dữ liệu tồn kho để xuất!"); return;
     }
-    const exportData = balances.map(b => ({
+    const exportData = filteredBalances.map(b => ({
       "Mã SP": b.product?.productCode || "N/A",
       "Tên Sản phẩm": b.product?.name || "N/A",
       "Kho lưu trữ": b.warehouse?.name || "N/A",
@@ -108,18 +142,18 @@ export default function InventoryPage() {
   };
 
   // --- ĐỊNH NGHĨA CỘT CHO TAB TỒN KHO THỰC TẾ ---
-  const columns: ColumnDef<InventoryBalance>[] = [
+  const columns: ColumnDef<any>[] = [
     {
       header: "Vật tư / Sản phẩm",
-      accessorKey: "product",
+      accessorKey: "productSearchName", // 💡 Dùng trường ảo để search được cả tên lẫn mã
       sortable: true,
-      cell: (row) => (
+      cell: (row: any) => (
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 border border-blue-200 dark:border-blue-500/30">
             <Package className="w-5 h-5 text-blue-600 dark:text-blue-400" />
           </div>
           <div className="flex flex-col">
-            <span className="font-bold text-slate-900 dark:text-white truncate max-w-[200px]">
+            <span className="font-bold text-slate-900 dark:text-white truncate max-w-[200px]" title={row.product?.name}>
               {row.product?.name || "Sản phẩm không xác định"}
             </span>
             <span className="text-xs text-slate-500 font-mono">
@@ -132,7 +166,7 @@ export default function InventoryPage() {
     {
       header: "Vị trí Kho",
       accessorKey: "warehouse",
-      cell: (row) => (
+      cell: (row: any) => (
         <div className="flex flex-col">
           <span className="font-semibold text-slate-700 dark:text-slate-300">
             {row.warehouse?.name || "Kho tổng"}
@@ -148,10 +182,10 @@ export default function InventoryPage() {
       accessorKey: "quantity",
       sortable: true,
       align: "right",
-      cell: (row) => (
+      cell: (row: any) => (
         <div className="flex flex-col items-end">
-          <span className="font-bold text-emerald-600 dark:text-emerald-400">
-            {formatQty(row.quantity)} <span className="text-xs font-normal text-slate-500">{row.product?.uom?.name}</span>
+          <span className={`font-bold ${row.quantity <= 0 ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400'}`}>
+            {formatQty(row.quantity)} <span className="text-xs font-normal opacity-70">{row.product?.uom?.name}</span>
           </span>
           {row.lockedQty > 0 && (
             <span className="text-[10px] font-medium text-rose-500 bg-rose-50 dark:bg-rose-500/10 px-1.5 rounded flex items-center gap-1 mt-0.5">
@@ -166,7 +200,7 @@ export default function InventoryPage() {
       accessorKey: "avgCost",
       sortable: true,
       align: "right",
-      cell: (row) => (
+      cell: (row: any) => (
         <span className="font-medium text-slate-700 dark:text-slate-300">
           {formatVND(row.avgCost)}
         </span>
@@ -177,13 +211,51 @@ export default function InventoryPage() {
       accessorKey: "totalValue",
       sortable: true,
       align: "right",
-      cell: (row) => (
+      cell: (row: any) => (
         <span className="font-bold text-blue-600 dark:text-blue-400">
           {formatVND(row.totalValue)}
         </span>
       )
     }
   ];
+
+  // 🚀 TẠO BỘ LỌC ĐỂ BƠM VÀO DATA TABLE
+  // 💡 Đã Sửa lỗi TS1382 bằng cách escape dấu > thành &gt; an toàn cho JSX
+  const inventoryFiltersNode = (
+    <div className="flex flex-wrap items-center gap-4 w-full">
+      <div className="w-full sm:w-64">
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Lọc theo Kho lưu trữ</label>
+        <div className="relative group">
+          <Map className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+          <select 
+            value={filterWarehouse} onChange={(e) => setFilterWarehouse(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm appearance-none cursor-pointer"
+          >
+            <option value="ALL">Tất cả Kho bãi</option>
+            {uniqueWarehouses.map(w => (
+              <option key={w} value={w}>{w}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      
+      <div className="w-full sm:w-64">
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Trạng thái Tồn kho</label>
+        <div className="relative group">
+          <Box className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+          <select 
+            value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm appearance-none cursor-pointer"
+          >
+            <option value="ALL">Tất cả Trạng thái</option>
+            <option value="IN_STOCK">🟢 Còn hàng khả dụng (&gt;0)</option>
+            <option value="LOCKED">🔒 Hàng đang bị khóa chờ xuất</option>
+            <option value="OUT_OF_STOCK">🔴 Hết hàng trong kho (=0)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  );
 
   // --- CẤU HÌNH MOTION ---
   const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
@@ -361,11 +433,13 @@ export default function InventoryPage() {
                 <motion.div key="balances" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
                   <div className="glass-panel rounded-3xl overflow-hidden shadow-sm border border-slate-100 dark:border-white/5">
                     <DataTable 
-                      data={balances} 
+                      data={filteredBalances} 
                       columns={columns} 
-                      searchKey="product" 
-                      searchPlaceholder="Tìm kiếm tên sản phẩm, mã SKU..."
+                      searchKey="productSearchName" 
+                      searchPlaceholder="Tìm mã SKU, tên vật tư..."
                       itemsPerPage={10}
+                      // 🚀 BƠM BỘ LỌC VÀO ĐÂY
+                      advancedFilterNode={inventoryFiltersNode}
                     />
                   </div>
                 </motion.div>

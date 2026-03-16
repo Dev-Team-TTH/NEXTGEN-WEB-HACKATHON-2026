@@ -73,7 +73,8 @@ export default function AssetsPage() {
 
   // --- STATE TABS & BỘ LỌC ---
   const [activeTab, setActiveTab] = useState<TabType>("ALL");
-  const [searchQuery, setSearchQuery] = useState("");
+  
+  // 🚀 STATE BỘ LỌC NÂNG CAO (ADVANCED FILTERS)
   const [filterCategory, setFilterCategory] = useState("");
   const [filterDepartment, setFilterDepartment] = useState("");
 
@@ -94,20 +95,21 @@ export default function AssetsPage() {
 
   const isLoading = loadingAssets || loadingCats || loadingDepts;
 
-  // --- XỬ LÝ LỌC TRÊN CLIENT ---
+  // --- 🚀 XỬ LÝ LỌC TRÊN CLIENT THÔNG MINH ---
   const assets = useMemo(() => {
-    return rawAssets.filter(asset => {
+    return rawAssets.map((asset: any) => ({
+      ...asset,
+      // Tạo trường ảo để Search DataTable mượt mà (Tên + Mã Code)
+      assetSearchText: `${asset.name || ""} ${asset.assetCode || ""}`.toLowerCase()
+    })).filter((asset: any) => {
       const matchTab = activeTab === "ALL" || asset.status === activeTab;
-      const matchSearch = asset.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          asset.assetCode.toLowerCase().includes(searchQuery.toLowerCase());
-      
-      const matchCat = filterCategory === "" || (asset as any).categoryId === filterCategory;
-      const assetDeptId = (asset as any).departmentId || (asset as any).department?.departmentId;
+      const matchCat = filterCategory === "" || asset.categoryId === filterCategory;
+      const assetDeptId = asset.departmentId || asset.department?.departmentId;
       const matchDept = filterDepartment === "" || assetDeptId === filterDepartment;
       
-      return matchTab && matchSearch && matchCat && matchDept;
+      return matchTab && matchCat && matchDept;
     });
-  }, [rawAssets, activeTab, searchQuery, filterCategory, filterDepartment]);
+  }, [rawAssets, activeTab, filterCategory, filterDepartment]);
 
   // --- TÍNH TOÁN KPI ---
   const kpis = useMemo(() => {
@@ -142,7 +144,6 @@ export default function AssetsPage() {
     if (!description?.trim()) return;
     
     try {
-      // Dùng formatDate để sinh chuỗi ngày tháng chuẩn xác
       await logMaintenance({ id, data: { maintenanceDate: formatDate(new Date(), "YYYY-MM-DD"), description, cost: 0 } }).unwrap();
       toast.success(`Đã đưa ${name} vào diện bảo trì thành công!`);
     } catch (err: any) {
@@ -166,11 +167,11 @@ export default function AssetsPage() {
       toast.error("Không có dữ liệu tài sản để xuất!");
       return;
     }
-    const exportData = assets.map(a => ({
+    const exportData = assets.map((a: any) => ({
       "Mã tài sản": a.assetCode,
       "Tên tài sản": a.name,
-      "Phân loại": (a as any).category?.name || "Chưa phân loại",
-      "Phòng ban": (a as any).department?.name || "Kho chung",
+      "Phân loại": a.category?.name || "Chưa phân loại",
+      "Phòng ban": a.department?.name || "Kho chung",
       "Nguyên giá (VND)": a.purchasePrice,
       "Giá trị còn lại (VND)": a.currentValue,
       "Trạng thái": getStatusUI(a.status).label,
@@ -181,10 +182,10 @@ export default function AssetsPage() {
   };
 
   // --- CỘT BẢNG (DATATABLE COLUMNS) ---
-  const columns: ColumnDef<Asset>[] = [
+  const columns: ColumnDef<any>[] = [
     {
       header: "Mã / Tên Tài sản",
-      accessorKey: "name",
+      accessorKey: "assetSearchText", // 💡 Liên kết với trường ảo để Data Table tự Search Text
       sortable: true,
       cell: (row) => (
         <div className="flex items-center gap-3">
@@ -213,10 +214,10 @@ export default function AssetsPage() {
       cell: (row) => (
         <div className="flex flex-col">
           <span className="font-semibold text-slate-700 dark:text-slate-300 text-xs flex items-center gap-1">
-            <PackageOpen className="w-3.5 h-3.5 text-indigo-400" /> {(row as any).category?.name || "Chưa phân loại"}
+            <PackageOpen className="w-3.5 h-3.5 text-indigo-400" /> {row.category?.name || "Chưa phân loại"}
           </span>
           <span className="text-[10px] text-slate-500 flex items-center gap-1 mt-1">
-            <Building className="w-3 h-3" /> {(row as any).department?.name || "Kho chung"}
+            <Building className="w-3 h-3" /> {row.department?.name || "Kho chung"}
           </span>
         </div>
       )
@@ -293,6 +294,39 @@ export default function AssetsPage() {
       }
     }
   ];
+
+  // 🚀 BỘ LỌC NÂNG CAO (UI ĐỂ BƠM VÀO DATATABLE)
+  const assetFiltersNode = (
+    <div className="flex flex-wrap items-center gap-4 w-full">
+      <div className="w-full sm:w-64">
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Lọc theo Nhóm Tài sản</label>
+        <div className="relative group">
+          <PackageOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+          <select 
+            value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm appearance-none cursor-pointer"
+          >
+            <option value="">-- Tất cả Nhóm Tài sản --</option>
+            {categories.map((c: any) => <option key={c.categoryId} value={c.categoryId}>{c.name}</option>)}
+          </select>
+        </div>
+      </div>
+      
+      <div className="w-full sm:w-64">
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Lọc theo Phòng ban</label>
+        <div className="relative group">
+          <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+          <select 
+            value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm appearance-none cursor-pointer"
+          >
+            <option value="">-- Tất cả Phòng ban --</option>
+            {departments.map((d: any) => <option key={d.departmentId} value={d.departmentId}>{d.name}</option>)}
+          </select>
+        </div>
+      </div>
+    </div>
+  );
 
   // --- ANIMATION ---
   const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
@@ -437,34 +471,6 @@ export default function AssetsPage() {
               ))}
             </div>
 
-            {/* Các bộ lọc Dropdown */}
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="relative w-full sm:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input 
-                  type="text" placeholder="Tìm tên, mã barcode..." 
-                  value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-shadow"
-                />
-              </div>
-              <div className="flex gap-2 w-full sm:w-auto">
-                <select 
-                  value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}
-                  className="flex-1 sm:w-auto px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 outline-none"
-                >
-                  <option value="">Tất cả Nhóm</option>
-                  {categories.map((c: any) => <option key={c.categoryId} value={c.categoryId}>{c.name}</option>)}
-                </select>
-                <select 
-                  value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)}
-                  className="flex-1 sm:w-auto px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 outline-none"
-                >
-                  <option value="">Phòng ban</option>
-                  {departments.map((d: any) => <option key={d.departmentId} value={d.departmentId}>{d.name}</option>)}
-                </select>
-              </div>
-            </div>
-
           </motion.div>
 
           {/* 4. BẢNG DỮ LIỆU */}
@@ -481,9 +487,11 @@ export default function AssetsPage() {
               <DataTable 
                 data={assets} 
                 columns={columns} 
-                searchKey="name" 
-                searchPlaceholder="Lọc nhanh trong bảng..." 
+                searchKey="assetSearchText" 
+                searchPlaceholder="Lọc nhanh tên hoặc mã thiết bị..." 
                 itemsPerPage={10} 
+                // 🚀 BƠM BỘ LỌC VÀO TRONG BẢNG DATA TABLE
+                advancedFilterNode={assetFiltersNode}
               />
             )}
           </motion.div>

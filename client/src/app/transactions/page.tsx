@@ -82,6 +82,10 @@ export default function TransactionsPage() {
   // --- STATE TABS & LỌC ---
   const [activeTab, setActiveTab] = useState<DocTab>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
+  
+  // 🚀 STATE BỘ LỌC NÂNG CAO (ADVANCED FILTERS)
+  const [filterDocStatus, setFilterDocStatus] = useState("ALL");
+  const [filterPaymentStatus, setFilterPaymentStatus] = useState("ALL");
 
   // --- STATE MODALS & PRINT ---
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -94,22 +98,42 @@ export default function TransactionsPage() {
   const [deleteDocument, { isLoading: isDeleting }] = useDeleteDocumentMutation();
   const [approveDocument, { isLoading: isApproving }] = useApproveDocumentDirectlyMutation();
 
-  // --- XỬ LÝ LỌC TRÊN CLIENT ---
+  // --- 🚀 XỬ LÝ LỌC THÔNG MINH TRÊN CLIENT (BAO GỒM BỘ LỌC NÂNG CAO) ---
   const documents = useMemo(() => {
     return rawDocuments.filter((doc: any) => {
+      // 1. Lọc theo Tab (Loại chứng từ)
       const matchTab = activeTab === "ALL" || doc.type === activeTab;
-      const searchStr = searchQuery.toLowerCase();
       
+      // 2. Lọc theo Search (Số chứng từ & Đối tác)
+      const searchStr = searchQuery.toLowerCase();
       const partnerName = (doc.supplier?.name || doc.customer?.name || doc.partner?.name || "").toLowerCase();
       const matchSearch = 
         (doc.documentNumber && doc.documentNumber.toLowerCase().includes(searchStr)) ||
         partnerName.includes(searchStr);
       
-      return matchTab && matchSearch;
-    });
-  }, [rawDocuments, activeTab, searchQuery]);
+      // 3. Lọc theo Trạng thái chứng từ
+      const matchDocStatus = filterDocStatus === "ALL" || doc.status === filterDocStatus;
 
-  // --- TÍNH TOÁN KPI ĐỈNH CAO ---
+      // 4. Lọc theo Trạng thái thanh toán
+      let matchPayment = true;
+      if (filterPaymentStatus !== "ALL") {
+        const total = doc.totalAmount || 0;
+        const paid = doc.paidAmount || 0;
+        
+        if (filterPaymentStatus === "PAID") {
+          matchPayment = paid >= total && total > 0;
+        } else if (filterPaymentStatus === "PARTIAL") {
+          matchPayment = paid > 0 && paid < total;
+        } else if (filterPaymentStatus === "UNPAID") {
+          matchPayment = paid === 0 && total > 0;
+        }
+      }
+      
+      return matchTab && matchSearch && matchDocStatus && matchPayment;
+    });
+  }, [rawDocuments, activeTab, searchQuery, filterDocStatus, filterPaymentStatus]);
+
+  // --- TÍNH TOÁN KPI ĐỈNH CAO (LUÔN TÍNH TRÊN DATA GỐC ĐỂ KHÔNG BỊ SAI LỆCH KHI LỌC) ---
   const kpis = useMemo(() => {
     let totalPurchases = 0, totalSales = 0;
     let totalDebt = 0, totalReceivables = 0; 
@@ -297,12 +321,12 @@ export default function TransactionsPage() {
         return (
           <div className="flex items-center justify-end gap-1.5">
             
-            {/* Nút In ấn (PDF) - Ai cũng có quyền xem và in */}
+            {/* Nút In ấn (PDF) */}
             <button onClick={() => handlePrint(row)} title="In Chứng từ / Lưu PDF" className="p-2 text-slate-600 hover:text-indigo-600 bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-indigo-500/20 rounded-xl transition-colors shadow-sm">
               <Printer className="w-4 h-4" />
             </button>
 
-            {/* LÁ CHẮN BẢO MẬT: Nút Duyệt Nhanh (Chỉ MANAGER trở lên mới thấy) */}
+            {/* LÁ CHẮN BẢO MẬT: Nút Duyệt Nhanh */}
             {isPending && (
               <RequirePermission roles={["ADMIN", "MANAGER"]}>
                 <button onClick={() => handleApprove(docId, row.documentNumber)} disabled={isApproving} title="Duyệt Chứng từ" className="p-2 text-emerald-600 hover:text-white bg-emerald-50 hover:bg-emerald-600 dark:bg-emerald-500/10 dark:hover:bg-emerald-600 rounded-xl transition-colors shadow-sm">
@@ -311,14 +335,14 @@ export default function TransactionsPage() {
               </RequirePermission>
             )}
 
-            {/* Nút Landed Cost (Nếu là Phiếu nhập kho) */}
+            {/* Nút Landed Cost */}
             {isGRPO && !isPending && (
               <button onClick={() => setSelectedDocForLandedCost(docId)} title="Phân bổ Landed Cost" className="p-2 text-orange-500 bg-orange-50 hover:bg-orange-100 dark:bg-orange-500/10 dark:hover:bg-orange-500/30 rounded-xl transition-colors shadow-sm">
                 <Anchor className="w-4 h-4" />
               </button>
             )}
             
-            {/* Nút Thanh toán (Cần quyền Kế toán - ACCOUNTANT hoặc ADMIN) */}
+            {/* Nút Thanh toán */}
             {canPay && (
               <RequirePermission roles={["ADMIN", "ACCOUNTANT", "MANAGER"]}>
                 <button onClick={() => setSelectedDocForPayment(docId)} title="Gạch nợ / Thanh toán" className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-500/10 dark:hover:bg-blue-500/30 rounded-xl transition-colors shadow-sm">
@@ -327,7 +351,7 @@ export default function TransactionsPage() {
               </RequirePermission>
             )}
 
-            {/* LÁ CHẮN BẢO MẬT: Nút Xóa (Chỉ ADMIN mới có quyền xóa cứng chứng từ nháp) */}
+            {/* LÁ CHẮN BẢO MẬT: Nút Xóa */}
             {isPending && (
               <RequirePermission roles={["ADMIN"]}>
                 <button onClick={() => handleDelete(docId, row.documentNumber)} disabled={isDeleting} title="Xóa chứng từ" className="p-2 text-rose-400 hover:text-white bg-rose-50 hover:bg-rose-500 dark:bg-rose-500/10 dark:hover:bg-rose-600 rounded-xl transition-colors shadow-sm">
@@ -340,6 +364,45 @@ export default function TransactionsPage() {
       }
     }
   ];
+
+  // 🚀 BỘ LỌC NÂNG CAO (UI ĐỂ BƠM VÀO DATATABLE)
+  const transactionFiltersNode = (
+    <div className="flex flex-wrap items-center gap-4 w-full">
+      <div className="w-full sm:w-64">
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Lọc theo Trạng thái Chứng từ</label>
+        <div className="relative group">
+          <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+          <select 
+            value={filterDocStatus} onChange={(e) => setFilterDocStatus(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm appearance-none cursor-pointer"
+          >
+            <option value="ALL">Tất cả trạng thái</option>
+            <option value="DRAFT">Nháp (Draft)</option>
+            <option value="PENDING">Chờ duyệt (Pending)</option>
+            <option value="APPROVED">Đã duyệt (Approved)</option>
+            <option value="COMPLETED">Hoàn tất (Completed)</option>
+            <option value="CANCELLED">Đã hủy (Cancelled)</option>
+          </select>
+        </div>
+      </div>
+      
+      <div className="w-full sm:w-64">
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Lọc theo Thanh toán Công nợ</label>
+        <div className="relative group">
+          <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+          <select 
+            value={filterPaymentStatus} onChange={(e) => setFilterPaymentStatus(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm appearance-none cursor-pointer"
+          >
+            <option value="ALL">Tất cả tiến độ</option>
+            <option value="PAID">Đã thanh toán đủ 100%</option>
+            <option value="PARTIAL">Thanh toán 1 phần</option>
+            <option value="UNPAID">Chưa thanh toán (Nợ)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  );
 
   // --- ANIMATION ---
   const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
@@ -468,7 +531,7 @@ export default function TransactionsPage() {
                 ))}
               </div>
 
-              {/* Thanh Tìm kiếm */}
+              {/* Thanh Tìm kiếm ngoài (vẫn giữ để filter local chung) */}
               <div className="relative w-full sm:w-80">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input 
@@ -479,7 +542,7 @@ export default function TransactionsPage() {
               </div>
             </motion.div>
 
-            {/* 4. BẢNG DỮ LIỆU ĐỘNG (DATATABLE) */}
+            {/* 4. BẢNG DỮ LIỆU ĐỘNG (DATATABLE) - ĐƯỢC BƠM ADVANCED FILTERS */}
             <motion.div variants={itemVariants} className="glass-panel rounded-3xl overflow-hidden shadow-md border border-slate-200 dark:border-white/10">
               {documents.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-24 text-slate-400">
@@ -496,6 +559,8 @@ export default function TransactionsPage() {
                   searchKey="documentNumber" 
                   searchPlaceholder="Lọc nhanh mã phiếu trong bảng..." 
                   itemsPerPage={10} 
+                  // 🚀 TRUYỀN UI BỘ LỌC VÀO TRONG DATA TABLE
+                  advancedFilterNode={transactionFiltersNode}
                 />
               )}
             </motion.div>

@@ -6,7 +6,8 @@ import { useTranslation } from "react-i18next";
 import { 
   CheckCircle2, XCircle, Clock, FileText, 
   Search, AlertOctagon, RefreshCcw, DollarSign,
-  ShieldCheck, User, Eye, RotateCcw, Download
+  ShieldCheck, User, Eye, RotateCcw, Download,
+  SlidersHorizontal, ChevronDown, Filter
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -69,6 +70,10 @@ export default function ApprovalsPage() {
   const [activeBoard, setActiveBoard] = useState<BoardType>("PENDING_APPROVALS");
   const [searchQuery, setSearchQuery] = useState("");
   
+  // 🚀 STATE BỘ LỌC NÂNG CAO 
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterDocType, setFilterDocType] = useState("ALL");
+  
   // State quản lý Modals
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [actionConfig, setActionConfig] = useState<ActionConfig | null>(null);
@@ -79,16 +84,23 @@ export default function ApprovalsPage() {
   
   const isLoading = activeBoard === "PENDING_APPROVALS" ? loadingPending : loadingMyReqs;
 
-  // --- XỬ LÝ DỮ LIỆU KANBAN BOARD ---
+  // --- 🚀 XỬ LÝ LỌC KANBAN BOARD (Bao gồm Advanced Filters) ---
   const boardData = activeBoard === "PENDING_APPROVALS" ? pendingApprovals : myRequests;
   
   const filteredData = useMemo(() => {
-    return boardData.filter(req => 
-      req.workflow?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      req.requester?.fullName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      req.document?.documentNumber?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [boardData, searchQuery]);
+    return boardData.filter(req => {
+      // 1. Lọc theo Text (Tên, Người gửi, Mã số)
+      const matchSearch = 
+        req.workflow?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        req.requester?.fullName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        req.document?.documentNumber?.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      // 2. Lọc theo Loại chứng từ
+      const matchDocType = filterDocType === "ALL" || req.document?.type === filterDocType;
+
+      return matchSearch && matchDocType;
+    });
+  }, [boardData, searchQuery, filterDocType]);
 
   const columns = useMemo(() => ({
     PENDING: filteredData.filter(req => req.status === "PENDING"),
@@ -279,22 +291,72 @@ export default function ApprovalsPage() {
         }
       />
 
-      {/* 2. THANH TÌM KIẾM & THỐNG KÊ */}
-      <div className="flex flex-wrap gap-4 items-center justify-between">
-        <div className="relative w-full md:w-96">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="Tìm kiếm mã tờ trình, người gửi..." 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm text-slate-900 dark:text-white"
-          />
+      {/* 2. THANH TÌM KIẾM, LỌC NÂNG CAO & THỐNG KÊ */}
+      <div className="flex flex-col gap-3 w-full">
+        <div className="flex flex-wrap gap-4 items-center justify-between">
+          
+          <div className="flex flex-wrap items-center gap-3 flex-1">
+            <div className="relative w-full md:w-96">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+              <input 
+                type="text" 
+                placeholder="Tìm kiếm mã tờ trình, người gửi..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm text-slate-900 dark:text-white"
+              />
+            </div>
+            
+            {/* 🚀 NÚT TOGGLE BỘ LỌC NÂNG CAO */}
+            <button 
+              onClick={() => setShowFilters(!showFilters)}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2.5 text-sm font-bold rounded-xl transition-all active:scale-95 shadow-sm whitespace-nowrap border",
+                showFilters 
+                  ? "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-500/20 dark:text-indigo-400 dark:border-indigo-500/30" 
+                  : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
+              )}
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              Bộ lọc nâng cao
+              <ChevronDown className={cn("w-4 h-4 transition-transform duration-300", showFilters && "rotate-180")} />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-4 text-sm font-bold">
+            <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-500 bg-amber-50 dark:bg-amber-500/10 px-3 py-1.5 rounded-lg"><Clock className="w-4 h-4"/> {summary.pending} Chờ</span>
+            <span className="hidden sm:flex items-center gap-1.5 text-emerald-600 dark:text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 px-3 py-1.5 rounded-lg"><CheckCircle2 className="w-4 h-4"/> {summary.approved} Đã duyệt</span>
+          </div>
         </div>
-        <div className="flex items-center gap-4 text-sm font-bold">
-          <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-500 bg-amber-50 dark:bg-amber-500/10 px-3 py-1.5 rounded-lg"><Clock className="w-4 h-4"/> {summary.pending} Chờ</span>
-          <span className="hidden sm:flex items-center gap-1.5 text-emerald-600 dark:text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 px-3 py-1.5 rounded-lg"><CheckCircle2 className="w-4 h-4"/> {summary.approved} Đã duyệt</span>
-        </div>
+
+        {/* 🚀 KHU VỰC BỘ LỌC (ANIMATED) */}
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="p-4 bg-slate-50/50 dark:bg-slate-800/30 border border-slate-200 dark:border-white/5 rounded-2xl flex flex-wrap gap-4">
+                <div className="w-full sm:w-64">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Loại Chứng từ</label>
+                  <div className="relative group">
+                    <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+                    <select 
+                      value={filterDocType} onChange={(e) => setFilterDocType(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm appearance-none cursor-pointer"
+                    >
+                      <option value="ALL">Tất cả loại tờ trình</option>
+                      <option value="PO">Đơn Mua Hàng (PO)</option>
+                      <option value="SO">Đơn Bán Hàng (SO)</option>
+                      <option value="EXPENSE">Phiếu Chi (Expense)</option>
+                      <option value="INVENTORY">Phiếu Kho (Inventory)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* 3. KANBAN BOARD */}

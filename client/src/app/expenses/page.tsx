@@ -5,7 +5,7 @@ import { motion, AnimatePresence, Variants } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { 
   Receipt, Plus, Trash2, Edit, AlertOctagon, RefreshCcw, 
-  CheckCircle2, Clock, Download, TrendingDown, FileText, Wallet
+  CheckCircle2, Clock, Download, TrendingDown, FileText, Wallet, Filter
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -30,10 +30,10 @@ import { cn } from "@/utils/helpers";
 // ==========================================
 // 1. HELPER: TÍNH TỔNG TIỀN TỪ CÁC DÒNG (LINES)
 // ==========================================
-const calculateTotalExpense = (expense: Expense) => {
+const calculateTotalExpense = (expense: any) => {
   if (!expense.lines || expense.lines.length === 0) return 0;
   // Tổng chi phí thường là tổng số dư Nợ (Debit) của các dòng
-  return expense.lines.reduce((sum, line) => sum + (line.debit || 0), 0);
+  return expense.lines.reduce((sum: number, line: any) => sum + (line.debit || 0), 0);
 };
 
 // ==========================================
@@ -59,23 +59,36 @@ export default function ExpensesPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
+  // 🚀 STATE BỘ LỌC NÂNG CAO
+  const [filterPostingStatus, setFilterPostingStatus] = useState("ALL");
+
   // --- API HOOKS ---
   const { data: rawExpenses, isLoading, isError, refetch, isFetching } = useGetExpensesQuery({});
   const [deleteExpense, { isLoading: isDeleting }] = useDeleteExpenseMutation();
   const [postExpense, { isLoading: isPosting }] = usePostExpenseMutation();
 
-  // Bóc tách dữ liệu an toàn
-  const expensesList: Expense[] = useMemo(() => {
-    return Array.isArray(rawExpenses) ? rawExpenses : ((rawExpenses as any)?.data || []);
-  }, [rawExpenses]);
+  // 🚀 BÓC TÁCH VÀ LỌC DỮ LIỆU ĐỘNG (Lọc theo trạng thái + Bơm trường ảo Search)
+  const expensesList: any[] = useMemo(() => {
+    let arr = Array.isArray(rawExpenses) ? rawExpenses : ((rawExpenses as any)?.data || []);
+    
+    return arr.map((exp: any) => ({
+      ...exp,
+      // Trường ảo gộp REF + Diễn giải để DataTable search mượt mà
+      searchField: `${exp.reference || ""} ${exp.description || ""}`.toLowerCase()
+    })).filter((exp: any) => {
+      // Logic lọc theo trạng thái (Draft / Posted)
+      return filterPostingStatus === "ALL" || exp.postingStatus === filterPostingStatus;
+    });
+  }, [rawExpenses, filterPostingStatus]);
 
-  // --- TÍNH TOÁN KPI ---
+  // --- TÍNH TOÁN KPI ĐỘNG THEO DỮ LIỆU ĐÃ LỌC ---
+  // 💡 FIX LỖI TS7006: Khai báo rõ (exp: any)
   const summary = useMemo(() => {
     let totalAmount = 0;
     let pendingCount = 0;
     let postedCount = 0;
 
-    expensesList.forEach(exp => {
+    expensesList.forEach((exp: any) => {
       const amount = calculateTotalExpense(exp);
       totalAmount += amount;
       if (exp.postingStatus === "DRAFT") pendingCount++;
@@ -113,11 +126,12 @@ export default function ExpensesPage() {
     }
   };
 
+  // 💡 FIX LỖI TS7006: Khai báo rõ (exp: any)
   const handleExportData = () => {
     if (expensesList.length === 0) {
       toast.error("Không có dữ liệu để xuất!"); return;
     }
-    const exportData = expensesList.map(exp => ({
+    const exportData = expensesList.map((exp: any) => ({
       "Mã chứng từ": exp.reference,
       "Ngày ghi nhận": formatDate(exp.entryDate),
       "Diễn giải": exp.description,
@@ -130,19 +144,23 @@ export default function ExpensesPage() {
   };
 
   // --- CỘT DATATABLE ---
-  const columns: ColumnDef<Expense>[] = [
+  const columns: ColumnDef<any>[] = [
     {
       header: "Chứng từ / Diễn giải",
-      accessorKey: "reference",
+      accessorKey: "searchField", // Trỏ vào trường ảo để Search đa năng
       sortable: true,
-      cell: (row) => (
+      cell: (row: any) => (
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-500/10 flex items-center justify-center border border-rose-100 dark:border-rose-500/20 shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-500/10 flex items-center justify-center border border-rose-100 dark:border-rose-500/20 shrink-0 group-hover:scale-105 transition-transform">
             <Receipt className="w-5 h-5 text-rose-500" />
           </div>
-          <div className="flex flex-col">
-            <span className="font-bold text-slate-900 dark:text-white line-clamp-1">{row.description || "Không có diễn giải"}</span>
-            <span className="text-[11px] font-mono text-slate-500 mt-0.5">REF: {row.reference}</span>
+          <div className="flex flex-col max-w-[250px]">
+            <span className="font-bold text-slate-900 dark:text-white line-clamp-1 truncate" title={row.description}>
+              {row.description || "Không có diễn giải"}
+            </span>
+            <span className="text-[11px] font-mono text-slate-500 mt-0.5 px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 rounded w-fit border border-slate-200 dark:border-slate-700">
+              {row.reference}
+            </span>
           </div>
         </div>
       )
@@ -151,8 +169,9 @@ export default function ExpensesPage() {
       header: "Ngày ghi nhận",
       accessorKey: "entryDate",
       sortable: true,
-      cell: (row) => (
-        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+      cell: (row: any) => (
+        <span className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+          <Clock className="w-3.5 h-3.5 text-slate-400" />
           {formatDate(row.entryDate)}
         </span>
       )
@@ -161,10 +180,10 @@ export default function ExpensesPage() {
       header: "Tổng chi phí",
       accessorKey: "amount",
       align: "right",
-      cell: (row) => {
+      cell: (row: any) => {
         const total = calculateTotalExpense(row);
         return (
-          <span className="font-black text-rose-600 dark:text-rose-400 tracking-tight">
+          <span className="font-black text-rose-600 dark:text-rose-400 tracking-tight text-base">
             {formatVND(total)}
           </span>
         );
@@ -174,17 +193,16 @@ export default function ExpensesPage() {
       header: "Trạng thái Kế toán",
       accessorKey: "postingStatus",
       align: "center",
-      cell: (row) => {
+      cell: (row: any) => {
         const isPosted = row.postingStatus === "POSTED";
         return (
           <div className="flex justify-center">
-             {/* SỬ DỤNG HÀM CN LÀM SẠCH CSS */}
              <span className={cn(
-               "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border shadow-sm",
+               "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border shadow-sm",
                isPosted ? "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30" 
                         : "bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30"
              )}>
-              {isPosted ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
+              {isPosted ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5 animate-pulse" />}
               {isPosted ? "Đã Ghi Sổ" : "Bản Nháp"}
             </span>
           </div>
@@ -195,31 +213,51 @@ export default function ExpensesPage() {
       header: "Tác vụ",
       accessorKey: "journalId",
       align: "right",
-      cell: (row) => {
+      cell: (row: any) => {
         const isPosted = row.postingStatus === "POSTED";
         return (
           <div className="flex items-center justify-end gap-1">
             {!isPosted && (
               <>
-                <button onClick={() => handlePost(row.journalId, row.reference)} disabled={isPosting} title="Ghi sổ (Hạch toán)" className="p-2 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 rounded-xl transition-colors active:scale-95 disabled:opacity-50">
+                <button onClick={() => handlePost(row.journalId, row.reference)} disabled={isPosting} title="Ghi sổ (Hạch toán)" className="p-2 text-emerald-600 hover:text-white bg-emerald-50 hover:bg-emerald-500 dark:bg-emerald-500/10 dark:hover:bg-emerald-600 rounded-xl transition-colors shadow-sm active:scale-95 disabled:opacity-50">
                   <FileText className="w-4 h-4" />
                 </button>
-                <button onClick={() => openModal(row)} title="Sửa chứng từ" className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 rounded-xl transition-colors active:scale-95">
+                <button onClick={() => openModal(row)} title="Sửa chứng từ" className="p-2 text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/30 rounded-xl transition-colors shadow-sm active:scale-95">
                   <Edit className="w-4 h-4" />
                 </button>
-                <button onClick={() => handleDelete(row.journalId, row.reference)} disabled={isDeleting} title="Xóa" className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/20 rounded-xl transition-colors active:scale-95 disabled:opacity-50">
+                <button onClick={() => handleDelete(row.journalId, row.reference)} disabled={isDeleting} title="Xóa nháp" className="p-2 text-rose-500 hover:text-white bg-rose-50 hover:bg-rose-500 dark:bg-rose-500/10 dark:hover:bg-rose-600 rounded-xl transition-colors shadow-sm active:scale-95 disabled:opacity-50">
                   <Trash2 className="w-4 h-4" />
                 </button>
               </>
             )}
             {isPosted && (
-              <span className="text-[10px] italic text-slate-400 px-2">Đã khóa</span>
+              <span className="text-[10px] italic text-slate-400 px-2 font-medium bg-slate-100 dark:bg-slate-800 rounded-lg py-1 border border-slate-200 dark:border-slate-700">🔒 Kế toán đã khóa</span>
             )}
           </div>
         );
       }
     }
   ];
+
+  // 🚀 BỘ LỌC NÂNG CAO (UI ĐỂ BƠM VÀO DATATABLE)
+  const expenseFiltersNode = (
+    <div className="flex flex-wrap items-center gap-4 w-full">
+      <div className="w-full sm:w-64">
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Lọc theo Tình trạng Kế toán</label>
+        <div className="relative group">
+          <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-rose-500 transition-colors" />
+          <select 
+            value={filterPostingStatus} onChange={(e) => setFilterPostingStatus(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-rose-500 outline-none transition-all shadow-sm appearance-none cursor-pointer"
+          >
+            <option value="ALL">Tất cả chứng từ</option>
+            <option value="DRAFT">Chờ Kế toán duyệt (Nháp)</option>
+            <option value="POSTED">Đã hạch toán (Ghi sổ)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  );
 
   // --- CẤU HÌNH MOTION ---
   const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
@@ -245,13 +283,13 @@ export default function ExpensesPage() {
           <div className="flex items-center gap-3">
             <button 
               onClick={handleExportData}
-              className="px-4 py-2.5 flex items-center gap-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-xl border border-slate-200 dark:border-slate-700 transition-all active:scale-95"
+              className="px-4 py-2.5 flex items-center gap-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-xl border border-slate-200 dark:border-slate-700 transition-all active:scale-95 shadow-sm"
             >
               <Download className="w-4 h-4" /> <span className="hidden sm:inline">Xuất File</span>
             </button>
             <button 
               onClick={() => openModal()} 
-              className="px-5 py-2.5 flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-rose-500/30 transition-all active:scale-95"
+              className="px-5 py-2.5 flex items-center gap-2 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-rose-500/30 transition-all active:scale-95"
             >
               <Plus className="w-5 h-5" /> <span className="hidden sm:inline">Ghi nhận Chi phí</span>
             </button>
@@ -270,13 +308,18 @@ export default function ExpensesPage() {
               <h3 className="text-3xl lg:text-4xl font-black text-rose-600 dark:text-rose-400 relative z-10 tracking-tight truncate">
                 {formatVND(summary.totalAmount)}
               </h3>
-              <p className="text-[11px] font-medium text-slate-500 mt-2 relative z-10 flex items-center gap-1">Từ {summary.totalCount} chứng từ hợp lệ</p>
+              <p className="text-[11px] font-medium text-slate-500 mt-2 relative z-10 flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded w-fit">
+                Từ {summary.totalCount} chứng từ {filterPostingStatus !== "ALL" && "(Đã lọc)"}
+              </p>
             </motion.div>
             
             <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:shadow-amber-500/10 hover:border-amber-400/50 transition-all duration-300">
               <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform duration-500"><Clock className="w-24 h-24 text-amber-500"/></div>
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 relative z-10 flex items-center gap-1"><Clock className="w-3.5 h-3.5"/> Chờ Ghi Sổ (Draft)</p>
-              <h3 className="text-4xl font-black text-amber-500 relative z-10 tracking-tight">{summary.pendingCount}</h3>
+              <div className="flex items-center gap-3 relative z-10">
+                <h3 className="text-4xl font-black text-amber-500 tracking-tight">{summary.pendingCount}</h3>
+                {summary.pendingCount > 0 && <span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span></span>}
+              </div>
               <p className="text-[11px] font-medium text-slate-500 mt-2 relative z-10 flex items-center gap-1">Cần kế toán duyệt và hạch toán</p>
             </motion.div>
             
@@ -294,9 +337,12 @@ export default function ExpensesPage() {
               <DataTable 
                 data={expensesList} 
                 columns={columns} 
-                searchKey="reference" 
-                searchPlaceholder="Tìm mã chứng từ, diễn giải chi phí..." 
+                searchKey="searchField" // 💡 Quét dữ liệu bằng trường ảo gộp (Reference + Nội dung)
+                searchPlaceholder="Tìm mã phiếu hoặc diễn giải..." 
                 itemsPerPage={10} 
+                
+                // 🚀 BƠM UI BỘ LỌC VÀO TRONG BẢNG
+                advancedFilterNode={expenseFiltersNode}
               />
             </div>
           </motion.div>

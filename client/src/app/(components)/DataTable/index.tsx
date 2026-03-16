@@ -24,7 +24,10 @@ interface DataTableProps<T> {
   searchKey?: keyof T; 
   onRowClick?: (row: T) => void;
   
-  // NÂNG CẤP: Tính năng Server-side Pagination & Filtering
+  // 🚀 KIẾN TRÚC MỚI: Truyền Node Bộ lọc từ bên ngoài vào
+  advancedFilterNode?: React.ReactNode;
+  
+  // Tính năng Server-side Pagination & Filtering
   isServerSide?: boolean;
   serverPage?: number;
   serverTotalPages?: number;
@@ -46,7 +49,7 @@ export default function DataTable<T>({
   searchKey,
   onRowClick,
   itemsPerPage = 10,
-  // Props cho Server-side
+  advancedFilterNode, // Nhận node bộ lọc
   isServerSide = false,
   serverPage = 1,
   serverTotalPages = 1,
@@ -59,27 +62,27 @@ export default function DataTable<T>({
   const [localSearchTerm, setLocalSearchTerm] = useState("");
   const [sortConfig, setSortConfig] = useState<{ key: keyof T | string; direction: "asc" | "desc" } | null>(null);
   const [clientPage, setClientPage] = useState(1);
+  
+  // STATE MỚI: Quản lý ẩn hiện khung lọc nâng cao
+  const [showFilters, setShowFilters] = useState(false);
 
   // --- KỸ THUẬT DEBOUNCE TÌM KIẾM ---
-  // Chống Spam API khi người dùng gõ phím quá nhanh
   useEffect(() => {
     const handler = setTimeout(() => {
       if (isServerSide && onSearchChange) {
         onSearchChange(localSearchTerm);
-        if (onPageChange) onPageChange(1); // Reset về trang 1 khi search
+        if (onPageChange) onPageChange(1); 
       }
-    }, 500); // Đợi 500ms sau khi ngừng gõ mới báo cho Server
-
+    }, 500); 
     return () => clearTimeout(handler);
   }, [localSearchTerm, isServerSide, onSearchChange, onPageChange]);
 
-  // --- LOGIC CLIENT-SIDE (Chạy nếu isServerSide = false) ---
+  // --- LOGIC CLIENT-SIDE ---
   const processedData = useMemo(() => {
-    if (isServerSide) return data; // Nếu là Server-side, trả data nguyên bản do Backend gửi
+    if (isServerSide) return data; 
 
     let result = [...data];
 
-    // Lọc (Search Client)
     if (localSearchTerm && searchKey) {
       result = result.filter((item) => {
         const val = item[searchKey as keyof T];
@@ -87,7 +90,6 @@ export default function DataTable<T>({
       });
     }
 
-    // Sắp xếp (Sort Client)
     if (sortConfig) {
       result.sort((a, b) => {
         const aValue = a[sortConfig.key as keyof T];
@@ -100,7 +102,6 @@ export default function DataTable<T>({
     return result;
   }, [data, localSearchTerm, searchKey, sortConfig, isServerSide]);
 
-  // Khớp biến phân trang giữa Server và Client
   const displayData = isServerSide 
     ? data 
     : processedData.slice((clientPage - 1) * itemsPerPage, clientPage * itemsPerPage);
@@ -129,24 +130,17 @@ export default function DataTable<T>({
     }
   };
 
-  // --- ANIMATION CONFIG (FRAMER MOTION) ---
-  const containerVariants: Variants = {
-    hidden: { opacity: 0 },
-    show: { opacity: 1, transition: { staggerChildren: 0.05 } }, 
-  };
-
-  const rowVariants: Variants = {
-    hidden: { opacity: 0, y: 10 },
-    show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 300, damping: 24 } },
-  };
+  // --- ANIMATION CONFIG ---
+  const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.05 } } };
+  const rowVariants: Variants = { hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 300, damping: 24 } } };
 
   return (
     <div className="w-full bg-white dark:bg-gray-900/50 rounded-2xl shadow-sm border border-gray-100 dark:border-white/5 overflow-hidden flex flex-col">
       
-      {/* HEADER BẢNG: THANH CÔNG CỤ TÌM KIẾM */}
-      <div className="p-4 sm:p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-transparent">
+      {/* HEADER BẢNG: THANH CÔNG CỤ TÌM KIẾM & NÚT FILTER */}
+      <div className="p-4 sm:p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-transparent relative z-20">
         {searchKey && (
-          <div className="relative w-full sm:w-80 group">
+          <div className="relative w-full sm:max-w-md group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
             <input
               type="text"
@@ -156,31 +150,57 @@ export default function DataTable<T>({
                 setLocalSearchTerm(e.target.value);
                 if (!isServerSide) setClientPage(1); 
               }}
-              className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all text-gray-900 dark:text-gray-100 placeholder-gray-400"
+              className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all text-gray-900 dark:text-gray-100 placeholder-gray-400 shadow-sm"
             />
           </div>
         )}
-        <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors active:scale-95">
-          <SlidersHorizontal className="w-4 h-4" />
-          Bộ lọc nâng cao
-        </button>
+        
+        {/* NÚT BẬT TẮT BỘ LỌC ĐỘNG TỪ BÊN NGOÀI */}
+        {advancedFilterNode && (
+          <button 
+            onClick={() => setShowFilters(!showFilters)}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-bold rounded-xl transition-all active:scale-95 shadow-sm whitespace-nowrap
+              ${showFilters 
+                ? "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-500/20 dark:text-blue-400 dark:border-blue-500/30" 
+                : "text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
+              }`}
+          >
+            <SlidersHorizontal className="w-4 h-4" />
+            Bộ lọc mở rộng
+            <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${showFilters ? "rotate-180" : ""}`} />
+          </button>
+        )}
       </div>
 
+      {/* KHUNG XỔ XUỐNG CHỨA BỘ LỌC BÊN NGOÀI BƠM VÀO */}
+      <AnimatePresence>
+        {advancedFilterNode && showFilters && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="border-b border-gray-100 dark:border-white/5 bg-gray-50/30 dark:bg-gray-800/30 overflow-hidden"
+          >
+            <div className="p-4 sm:px-5 sm:py-4">
+              {advancedFilterNode}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* VÙNG CHỨA BẢNG */}
-      <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700 relative min-h-[200px]">
-        
-        {/* NỀN MỜ KHI ĐANG LOADING TRÊN SERVER */}
+      <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700 relative min-h-[200px] z-10">
         {isServerSide && isLoading && (
-           <div className="absolute inset-0 bg-white/50 dark:bg-black/20 backdrop-blur-[1px] z-10 flex items-center justify-center">
-             <div className="px-4 py-2 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 text-sm font-semibold flex items-center gap-2">
-               <span className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></span> Đang tải...
+           <div className="absolute inset-0 bg-white/50 dark:bg-gray-900/50 backdrop-blur-[2px] z-10 flex items-center justify-center">
+             <div className="px-5 py-2.5 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 text-sm font-bold text-gray-700 dark:text-gray-200 flex items-center gap-3">
+               <span className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></span> Đang tải dữ liệu...
              </div>
            </div>
         )}
 
         <table className="w-full text-left border-collapse min-w-[600px]">
           <thead>
-            <tr className="bg-gray-50/80 dark:bg-gray-800/50 text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wider font-semibold">
+            <tr className="bg-gray-50/80 dark:bg-gray-800/50 text-gray-500 dark:text-gray-400 text-[11px] uppercase tracking-wider font-bold">
               {columns.map((col, index) => (
                 <th
                   key={index}
@@ -192,7 +212,7 @@ export default function DataTable<T>({
                     {col.header}
                     {col.sortable && sortConfig?.key === col.accessorKey && (
                       <span className="text-blue-500">
-                        {sortConfig.direction === "asc" ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        {sortConfig.direction === "asc" ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                       </span>
                     )}
                   </div>
@@ -201,7 +221,6 @@ export default function DataTable<T>({
             </tr>
           </thead>
 
-          {/* SKELETON LOADING (Chỉ hiện lúc tải trang đầu tiên) */}
           <AnimatePresence mode="wait">
             {!isServerSide && isLoading ? (
               <motion.tbody key="skeleton" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -216,10 +235,10 @@ export default function DataTable<T>({
             ) : displayData.length === 0 ? (
               <motion.tbody key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <tr>
-                  <td colSpan={columns.length} className="p-10 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={columns.length} className="p-16 text-center text-gray-500 dark:text-gray-400">
                     <div className="flex flex-col items-center justify-center gap-3">
-                      <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-full"><Inbox className="w-8 h-8 text-gray-400" /></div>
-                      <p className="text-sm font-medium">Không tìm thấy dữ liệu</p>
+                      <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-full border border-gray-100 dark:border-gray-700"><Inbox className="w-8 h-8 text-gray-400" /></div>
+                      <p className="text-sm font-semibold">Không tìm thấy dữ liệu phù hợp</p>
                     </div>
                   </td>
                 </tr>
@@ -231,7 +250,7 @@ export default function DataTable<T>({
                     key={rowIndex}
                     variants={rowVariants}
                     onClick={() => onRowClick && onRowClick(row)}
-                    className={`border-b border-gray-50 dark:border-white/5 group transition-colors ${onRowClick ? "cursor-pointer hover:blue-50/50 dark:hover:bg-blue-900/10" : ""}`}
+                    className={`border-b border-gray-50 dark:border-white/5 group transition-colors ${onRowClick ? "cursor-pointer hover:bg-blue-50/50 dark:hover:bg-blue-900/10" : ""}`}
                   >
                     {columns.map((col, colIndex) => (
                       <td key={colIndex} className={`p-4 text-sm text-gray-700 dark:text-gray-300 first:pl-6 last:pr-6 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
@@ -250,25 +269,25 @@ export default function DataTable<T>({
       {totalPages > 0 && (
         <div className="p-4 border-t border-gray-100 dark:border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500 dark:text-gray-400 bg-gray-50/30 dark:bg-transparent">
           <span>
-            Hiển thị <span className="font-semibold text-gray-900 dark:text-white">{(currentPage - 1) * itemsPerPage + 1}</span> - <span className="font-semibold text-gray-900 dark:text-white">{Math.min(currentPage * itemsPerPage, totalItems)}</span> trong tổng số <span className="font-semibold text-gray-900 dark:text-white">{totalItems}</span>
+            Hiển thị <span className="font-bold text-gray-900 dark:text-white">{(currentPage - 1) * itemsPerPage + 1}</span> - <span className="font-bold text-gray-900 dark:text-white">{Math.min(currentPage * itemsPerPage, totalItems)}</span> trong tổng số <span className="font-bold text-gray-900 dark:text-white">{totalItems}</span>
           </span>
           <div className="flex gap-1">
             <button
               onClick={() => handlePageChange(Math.max(currentPage - 1, 1))}
               disabled={currentPage === 1 || (isServerSide && isLoading)}
-              className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-1.5 font-semibold rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              Trước
+              Trang trước
             </button>
-            <span className="px-3 py-1.5 font-semibold text-gray-700 dark:text-gray-300">
-              Trang {currentPage} / {totalPages}
+            <span className="px-4 py-1.5 font-bold text-gray-700 dark:text-gray-300">
+              {currentPage} / {totalPages}
             </span>
             <button
               onClick={() => handlePageChange(Math.min(currentPage + 1, totalPages))}
               disabled={currentPage === totalPages || (isServerSide && isLoading)}
-              className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-1.5 font-semibold rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              Sau
+              Trang sau
             </button>
           </div>
         </div>

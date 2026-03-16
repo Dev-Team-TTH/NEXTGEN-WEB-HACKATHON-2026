@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { 
   Settings, GitMerge, ShieldAlert, Plus, Edit3, Trash2, 
   ArrowRight, Loader2, RefreshCcw, Save, GripVertical, 
-  Building2, Globe2, Briefcase, CheckCircle2 
+  Building2, Globe2, Briefcase, CheckCircle2, Lock, ShieldCheck, Key,
+  EyeOff, Eye, Timer, ShieldBan, UserCog
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -21,7 +22,7 @@ import {
 
 // --- COMPONENTS ---
 import Header from "@/app/(components)/Header";
-import Modal from "@/app/(components)/Modal"; // IMPORT CORE MODAL
+import Modal from "@/app/(components)/Modal";
 
 // ==========================================
 // 1. INTERFACES CHO WORKFLOW BUILDER
@@ -50,6 +51,18 @@ const SettingsSkeleton = () => (
 );
 
 // ==========================================
+// THUẬT TOÁN KIỂM TRA MÃ PIN YẾU (WEAK PIN)
+// ==========================================
+const isWeakPin = (pin: string) => {
+  if (!pin) return false;
+  // Ký tự lặp lại (VD: 111111, aaaaaa)
+  if (/^(.)\1+$/.test(pin)) return true;
+  // Chuỗi tiến hoặc lùi (VD: 123456, 987654)
+  if ("01234567890".includes(pin) || "09876543210".includes(pin)) return true;
+  return false;
+};
+
+// ==========================================
 // COMPONENT CHÍNH: CÀI ĐẶT HỆ THỐNG
 // ==========================================
 export default function SettingsPage() {
@@ -71,6 +84,26 @@ export default function SettingsPage() {
     timezone: "Asia/Ho_Chi_Minh",
   });
 
+  // 🚀 STATE ĐỔI MÃ PIN ADMIN CAO CẤP
+  const [pinForm, setPinForm] = useState({ accountPassword: "", currentPin: "", newPin: "", confirmPin: "" });
+  const [isChangingPin, setIsChangingPin] = useState(false);
+  const [showPins, setShowPins] = useState(false);
+  
+  // 🚀 CƠ CHẾ ANTI BRUTE-FORCE
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutTime, setLockoutTime] = useState(0);
+
+  // Đếm ngược Lockout Timer
+  useEffect(() => {
+    let interval: any;
+    if (lockoutTime > 0) {
+      interval = setInterval(() => setLockoutTime(prev => prev - 1), 1000);
+    } else if (lockoutTime === 0 && failedAttempts >= 3) {
+      setFailedAttempts(0); // Reset số lần thử khi hết giờ phạt
+    }
+    return () => clearInterval(interval);
+  }, [lockoutTime, failedAttempts]);
+
   // 👉 FETCH DATA API
   const { data: workflows = [], isLoading: loadingWorkflows, isError, refetch } = useGetWorkflowsQuery(undefined, { skip: activeTab !== "WORKFLOWS" });
   const { data: roles = [], isLoading: loadingRoles } = useGetRolesQuery(); 
@@ -80,6 +113,67 @@ export default function SettingsPage() {
   const [deleteWorkflow, { isLoading: isDeleting }] = useDeleteWorkflowMutation();
 
   const isSubmitting = isCreating || isUpdating;
+
+  // --- HANDLERS: ĐỔI MÃ PIN QUẢN TRỊ (4 LỚP BẢO VỆ) ---
+  const handleUpdateAdminPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (lockoutTime > 0) return;
+    
+    // 1. Xác thực điền đủ form
+    if (!pinForm.accountPassword || !pinForm.currentPin || !pinForm.newPin || !pinForm.confirmPin) {
+      toast.error("Vui lòng điền đầy đủ các lớp bảo mật!");
+      return;
+    }
+    // 2. Độ dài an toàn
+    if (pinForm.newPin.length < 6) {
+      toast.error("Mã PIN mới phải có độ dài tối thiểu 6 ký tự!");
+      return;
+    }
+    // 3. Chặn PIN yếu
+    if (isWeakPin(pinForm.newPin)) {
+      toast.error("Mã PIN quá dễ đoán (VD: 123456, 111111). Vui lòng chọn mã khó hơn!");
+      return;
+    }
+    // 4. Khớp xác nhận
+    if (pinForm.newPin !== pinForm.confirmPin) {
+      toast.error("Mã PIN xác nhận không khớp với Mã PIN mới!");
+      return;
+    }
+    // 5. Trùng PIN cũ
+    if (pinForm.currentPin === pinForm.newPin) {
+      toast.error("Mã PIN mới phải khác Mã PIN hiện tại!");
+      return;
+    }
+
+    setIsChangingPin(true);
+    try {
+      // 💡 TODO Backend: Gọi API update Admin PIN thực tế tại đây
+      // Payload: { password: pinForm.accountPassword, oldPin: pinForm.currentPin, newPin: pinForm.newPin }
+      await new Promise((resolve, reject) => {
+        // Giả lập lỗi ngẫu nhiên để test tính năng Lockout (Xóa phần này khi ghép API thật)
+        setTimeout(() => {
+          if (pinForm.currentPin !== "123456") reject(new Error("Mã PIN hiện hành không đúng!"));
+          else resolve(true);
+        }, 1500);
+      });
+      
+      toast.success("Khóa bảo mật: Thay đổi Mã PIN Quản trị thành công!");
+      setPinForm({ accountPassword: "", currentPin: "", newPin: "", confirmPin: "" }); 
+      setFailedAttempts(0);
+    } catch (err: any) {
+      const newAttempts = failedAttempts + 1;
+      setFailedAttempts(newAttempts);
+      
+      if (newAttempts >= 3) {
+        setLockoutTime(30); // Phạt khóa form 30 giây
+        toast.error("Vượt quá số lần thử! Khóa thao tác 30 giây.");
+      } else {
+        toast.error(err?.message || err?.data?.message || "Mã PIN hoặc Mật khẩu không chính xác!");
+      }
+    } finally {
+      setIsChangingPin(false);
+    }
+  };
 
   // --- HANDLERS: BUILDER LUỒNG PHÊ DUYỆT ---
   const handleOpenBuilder = (workflow?: any) => {
@@ -156,12 +250,11 @@ export default function SettingsPage() {
     }
   };
 
-  // Helper
   const getRoleName = (roleId: string) => {
-    return roles.find(r => r.id === roleId || r.roleId === roleId)?.name || "Đang tải...";
+    const role = roles.find(r => r.roleId === roleId || (r as any).id === roleId);
+    return role ? (role.roleName || (role as any).name) : "Đang tải...";
   };
 
-  // --- FOOTER CHO CORE MODAL ---
   const builderFooter = (
     <div className="flex w-full items-center justify-between">
       <p className="text-[11px] font-bold text-slate-400 hidden sm:block">
@@ -182,14 +275,12 @@ export default function SettingsPage() {
     </div>
   );
 
-  // --- ANIMATION CONFIG ---
   const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
   const itemVariants: Variants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } };
 
   return (
     <div className="w-full max-w-[1600px] mx-auto pb-24 flex flex-col gap-6 sm:gap-8 mt-2">
       
-      {/* HEADER CAO CẤP */}
       <Header 
         title={t("Trung tâm Cấu hình")} 
         subtitle={t("Quản trị luồng nghiệp vụ, tham số vận hành và thông tin lõi của doanh nghiệp.")}
@@ -202,7 +293,6 @@ export default function SettingsPage() {
 
       <div className="flex flex-col lg:flex-row gap-6 sm:gap-8 items-start">
         
-        {/* 1. SIDEBAR MENU CÀI ĐẶT (STICKY GLASS) */}
         <div className="w-full lg:w-72 shrink-0 bg-white/70 dark:bg-[#0B0F19]/70 backdrop-blur-2xl p-4 rounded-3xl border border-slate-200/50 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.04)] sticky top-24 transform-gpu z-10">
           <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest px-4 py-3">Danh mục Quản trị</p>
           
@@ -228,12 +318,11 @@ export default function SettingsPage() {
                 <motion.div layoutId="settingsNav" className="absolute inset-0 bg-emerald-50 dark:bg-emerald-500/10 rounded-2xl border border-emerald-100 dark:border-emerald-500/20 shadow-sm z-0" />
               )}
               <Settings className={`w-5 h-5 relative z-10 transition-transform ${activeTab === "GENERAL" ? "scale-110 rotate-90" : "group-hover:rotate-90 group-hover:scale-110"}`} /> 
-              <span className="relative z-10">Cấu hình Doanh nghiệp</span>
+              <span className="relative z-10">Cấu hình Chung & Bảo mật</span>
             </button>
           </div>
         </div>
 
-        {/* 2. KHU VỰC NỘI DUNG CHÍNH (MAIN CONTENT) */}
         <div className="flex-1 w-full min-w-0">
           
           {/* TAB 1: WORKFLOWS */}
@@ -262,7 +351,7 @@ export default function SettingsPage() {
                   </button>
                 </div>
 
-                {/* Danh sách Workflows (Bento Grid Visualization) */}
+                {/* Danh sách Workflows */}
                 <div className="grid grid-cols-1 gap-6">
                   <AnimatePresence>
                     {workflows.map(wf => (
@@ -271,7 +360,6 @@ export default function SettingsPage() {
                         key={wf.workflowId || wf.id} variants={itemVariants}
                         className="flex flex-col bg-white dark:bg-slate-900/50 border border-slate-200/80 dark:border-white/10 rounded-3xl shadow-sm hover:shadow-lg transition-all duration-300 group overflow-hidden"
                       >
-                        {/* Header của thẻ WF */}
                         <div className="flex justify-between items-start p-6 bg-slate-50/50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/5">
                           <div className="flex gap-4 items-start">
                             <div className="w-12 h-12 rounded-2xl bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center shrink-0 shadow-inner">
@@ -288,52 +376,32 @@ export default function SettingsPage() {
                           </div>
                         </div>
 
-                        {/* Chuỗi Nodes Data Viz (Nấc thang quyền lực) */}
                         <div className="p-6 overflow-x-auto scrollbar-none">
                           <div className="flex items-center gap-3 w-max">
-                            
-                            {/* Điểm bắt đầu */}
                             <div className="flex flex-col items-center gap-2">
-                              <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-white/5 border-2 border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center shadow-sm">
-                                <span className="w-2.5 h-2.5 bg-slate-400 rounded-full" />
-                              </div>
+                              <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-white/5 border-2 border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center shadow-sm"><span className="w-2.5 h-2.5 bg-slate-400 rounded-full" /></div>
                               <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Trình lên</span>
                             </div>
                             
-                            {/* Render Steps */}
                             {wf.steps?.map((step: any, idx: number) => (
                               <React.Fragment key={idx}>
-                                <div className="w-12 h-0.5 bg-slate-200 dark:bg-slate-700 mb-6 shrink-0 relative">
-                                  <ArrowRight className="absolute -top-2 -right-2 w-4 h-4 text-slate-400" />
-                                </div>
+                                <div className="w-12 h-0.5 bg-slate-200 dark:bg-slate-700 mb-6 shrink-0 relative"><ArrowRight className="absolute -top-2 -right-2 w-4 h-4 text-slate-400" /></div>
                                 <div className="flex flex-col items-center gap-2 group/node cursor-default">
-                                  <div className="w-12 h-12 rounded-2xl bg-indigo-500 shadow-[0_4px_15px_rgba(99,102,241,0.4)] flex items-center justify-center text-white font-black text-lg border border-indigo-400 group-hover/node:scale-110 transition-transform">
-                                    {step.stepOrder}
-                                  </div>
-                                  <div className="px-3 py-1.5 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200 dark:border-white/10">
-                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">{getRoleName(step.roleId)}</span>
-                                  </div>
+                                  <div className="w-12 h-12 rounded-2xl bg-indigo-500 shadow-[0_4px_15px_rgba(99,102,241,0.4)] flex items-center justify-center text-white font-black text-lg border border-indigo-400 group-hover/node:scale-110 transition-transform">{step.stepOrder}</div>
+                                  <div className="px-3 py-1.5 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200 dark:border-white/10"><span className="text-xs font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">{getRoleName(step.roleId)}</span></div>
                                 </div>
                               </React.Fragment>
                             ))}
                             
-                            {/* Điểm Kết thúc */}
-                            <div className="w-12 h-0.5 bg-slate-200 dark:bg-slate-700 mb-6 shrink-0 relative">
-                              <ArrowRight className="absolute -top-2 -right-2 w-4 h-4 text-emerald-400" />
-                            </div>
+                            <div className="w-12 h-0.5 bg-slate-200 dark:bg-slate-700 mb-6 shrink-0 relative"><ArrowRight className="absolute -top-2 -right-2 w-4 h-4 text-emerald-400" /></div>
                             <div className="flex flex-col items-center gap-2">
-                              <div className="w-12 h-12 rounded-full bg-emerald-50 dark:bg-emerald-500/10 border-2 border-emerald-400 flex items-center justify-center shadow-[0_0_15px_rgba(52,211,153,0.3)]">
-                                <CheckCircle2 className="w-6 h-6 text-emerald-500" />
-                              </div>
+                              <div className="w-12 h-12 rounded-full bg-emerald-50 dark:bg-emerald-500/10 border-2 border-emerald-400 flex items-center justify-center shadow-[0_0_15px_rgba(52,211,153,0.3)]"><CheckCircle2 className="w-6 h-6 text-emerald-500" /></div>
                               <span className="text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Hiệu lực</span>
                             </div>
-
                           </div>
                         </div>
                       </motion.div>
                     ))}
-
-                    {/* Empty State */}
                     {workflows.length === 0 && (
                       <div className="p-16 flex flex-col items-center justify-center text-center border-2 border-dashed border-slate-200 dark:border-white/10 rounded-3xl bg-slate-50/50 dark:bg-white/[0.02]">
                         <GitMerge className="w-16 h-16 text-slate-300 dark:text-slate-600 mb-4" />
@@ -348,7 +416,7 @@ export default function SettingsPage() {
             )
           )}
 
-          {/* TAB 2: GENERAL (CẤU HÌNH CÔNG TY) - BENTO GRID FORM */}
+          {/* TAB 2: GENERAL (CẤU HÌNH CÔNG TY & BẢO MẬT ADMIN PIN) */}
           {activeTab === "GENERAL" && (
             <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-6 sm:gap-8">
               
@@ -357,7 +425,6 @@ export default function SettingsPage() {
                   <div className="p-2.5 bg-emerald-100 dark:bg-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400"><Building2 className="w-5 h-5" /></div>
                   Định danh Doanh nghiệp
                 </h3>
-                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="flex flex-col gap-2 md:col-span-2">
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tên Tổ chức / Công ty</label>
@@ -377,14 +444,124 @@ export default function SettingsPage() {
                 </div>
               </div>
 
+              {/* 🚀 KHỐI 2: ĐỔI MÃ PIN ADMIN ĐA LỚP */}
+              <div className="bg-white/70 dark:bg-[#0B0F19]/70 backdrop-blur-2xl border border-rose-200/50 dark:border-rose-500/20 rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.04)] p-6 sm:p-8 relative overflow-hidden">
+                <div className="absolute -right-10 -top-10 w-40 h-40 bg-rose-500/5 rounded-full blur-3xl pointer-events-none"></div>
+
+                <div className="flex flex-col sm:flex-row items-start justify-between gap-4 mb-6 relative z-10">
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-3">
+                      <div className="p-2.5 bg-rose-100 dark:bg-rose-500/20 rounded-xl text-rose-600 dark:text-rose-400"><ShieldCheck className="w-5 h-5" /></div>
+                      Bảo mật & Quản trị Hệ thống
+                    </h3>
+                    <p className="text-sm font-medium text-slate-500 mt-2 max-w-xl">
+                      Đổi <b>Mã PIN Quản trị (Admin PIN)</b>. Yêu cầu xác thực tài khoản và chống tấn công Brute-force.
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="relative">
+                  {/* LỚP PHỦ LOCKOUT KHI NHẬP SAI NHIỀU LẦN */}
+                  <AnimatePresence>
+                    {lockoutTime > 0 && (
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-20 bg-rose-50/90 dark:bg-rose-950/90 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center border border-rose-200 dark:border-rose-500/30">
+                        <ShieldBan className="w-12 h-12 text-rose-500 mb-3 animate-pulse" />
+                        <h4 className="text-lg font-black text-rose-700 dark:text-rose-400">Tạm khóa chức năng</h4>
+                        <p className="text-sm font-bold text-rose-600 dark:text-rose-300 mt-1 flex items-center gap-2">
+                          <Timer className="w-4 h-4" /> Vui lòng thử lại sau: {lockoutTime} giây
+                        </p>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <form onSubmit={handleUpdateAdminPin} className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-rose-50/30 dark:bg-rose-900/10 p-6 rounded-2xl border border-rose-100 dark:border-rose-500/10 relative z-10">
+                    
+                    {/* LỚP BẢO VỆ 1: MẬT KHẨU TÀI KHOẢN (DUAL-AUTH) */}
+                    <div className="flex flex-col gap-2 md:col-span-2 pb-4 border-b border-rose-200/50 dark:border-rose-500/20">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <UserCog className="w-3.5 h-3.5 text-slate-400"/> Mật khẩu Tài khoản của bạn <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <input 
+                          type={showPins ? "text" : "password"} required 
+                          value={pinForm.accountPassword} 
+                          onChange={(e) => setPinForm({...pinForm, accountPassword: e.target.value})} 
+                          placeholder="Xác thực danh tính trước khi đổi PIN..." 
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl pl-5 pr-12 py-3 text-sm font-black text-slate-900 dark:text-white outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-500/20 transition-all shadow-sm" 
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2 md:col-span-2">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5 text-slate-400"/> Mã PIN Hiện tại <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <input 
+                          type={showPins ? "text" : "password"} required 
+                          value={pinForm.currentPin} 
+                          onChange={(e) => setPinForm({...pinForm, currentPin: e.target.value})} 
+                          placeholder="Nhập mã PIN đang sử dụng..." 
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl pl-5 pr-12 py-3 text-sm font-black tracking-widest text-slate-900 dark:text-white outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-500/20 transition-all shadow-sm" 
+                        />
+                        <button type="button" onClick={() => setShowPins(!showPins)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-600 transition-colors">
+                          {showPins ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <Key className="w-3.5 h-3.5 text-slate-400"/> Mã PIN Mới <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <input 
+                          type={showPins ? "text" : "password"} required minLength={6}
+                          value={pinForm.newPin} 
+                          onChange={(e) => setPinForm({...pinForm, newPin: e.target.value})} 
+                          placeholder="Ít nhất 6 ký tự..." 
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl pl-5 pr-12 py-3 text-sm font-black tracking-widest text-slate-900 dark:text-white outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20 transition-all shadow-sm" 
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-slate-400"/> Xác nhận Mã PIN mới <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <input 
+                          type={showPins ? "text" : "password"} required minLength={6}
+                          value={pinForm.confirmPin} 
+                          onChange={(e) => setPinForm({...pinForm, confirmPin: e.target.value})} 
+                          placeholder="Nhập lại mã PIN mới..." 
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-5 py-3 text-sm font-black tracking-widest text-slate-900 dark:text-white outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20 transition-all shadow-sm" 
+                        />
+                      </div>
+                    </div>
+
+                    <div className="md:col-span-2 pt-4 flex items-center justify-between border-t border-rose-200/50 dark:border-rose-500/20">
+                      <p className="text-[11px] font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+                        <ShieldAlert className="w-4 h-4" /> Sau 3 lần nhập sai, hệ thống sẽ khóa thao tác để bảo vệ.
+                      </p>
+                      <button 
+                        type="submit" 
+                        disabled={isChangingPin || !pinForm.accountPassword || !pinForm.currentPin || !pinForm.newPin || !pinForm.confirmPin}
+                        className="flex items-center gap-2 px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-sm font-black rounded-xl shadow-lg shadow-rose-500/30 transition-all active:scale-95 disabled:opacity-50"
+                      >
+                        {isChangingPin ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                        Cập nhật Mã PIN
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+
             </motion.div>
           )}
         </div>
       </div>
 
-      {/* ==========================================
-          3. SỬ DỤNG CORE MODAL ĐỂ TẠO WORKFLOW BUILDER
-          ========================================== */}
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
@@ -396,77 +573,42 @@ export default function SettingsPage() {
         footer={builderFooter}
       >
         <form id="workflow-form" onSubmit={handleSubmit} className="p-6 md:p-8 flex flex-col gap-8">
-          {/* Info Block */}
           <div className="grid grid-cols-1 gap-5">
             <div className="space-y-2">
               <label className="text-[11px] font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><ShieldAlert className="w-3.5 h-3.5" /> Mã Quy trình (Tên) *</label>
-              <input 
-                type="text" required value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})}
-                placeholder="VD: Duyệt mua sắm Vật tư > 50 Triệu"
-                className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-2xl text-base focus:ring-2 focus:ring-indigo-500 outline-none font-black text-slate-900 dark:text-white shadow-inner"
-              />
+              <input type="text" required value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} placeholder="VD: Duyệt mua sắm Vật tư > 50 Triệu" className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-2xl text-base focus:ring-2 focus:ring-indigo-500 outline-none font-black text-slate-900 dark:text-white shadow-inner"/>
             </div>
             <div className="space-y-2">
               <label className="text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">Mô tả cơ sở áp dụng</label>
-              <input 
-                type="text" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})}
-                placeholder="Quy định áp dụng cho phòng ban kỹ thuật khi mua thiết bị..."
-                className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none text-slate-700 dark:text-slate-300"
-              />
+              <input type="text" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} placeholder="Quy định áp dụng cho phòng ban..." className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none text-slate-700 dark:text-slate-300"/>
             </div>
           </div>
 
-          {/* Node Builder Area */}
           <div>
             <div className="flex items-center justify-between mb-6">
-              <div>
-                <h4 className="text-base font-black text-slate-800 dark:text-white">Bản đồ Chuỗi Phê duyệt</h4>
-                <p className="text-xs font-semibold text-slate-500 mt-1">Dữ liệu sẽ chạy từ Node 1 cho đến Node cuối cùng.</p>
-              </div>
-              <button 
-                type="button" onClick={handleAddStep}
-                className="text-xs font-black text-indigo-700 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-500/20 hover:bg-indigo-200 px-4 py-2.5 rounded-xl flex items-center gap-1.5 transition-colors shadow-sm"
-              >
-                <Plus className="w-4 h-4" /> Thêm Node
-              </button>
+              <div><h4 className="text-base font-black text-slate-800 dark:text-white">Bản đồ Chuỗi Phê duyệt</h4><p className="text-xs font-semibold text-slate-500 mt-1">Dữ liệu sẽ chạy từ Node 1 cho đến Node cuối cùng.</p></div>
+              <button type="button" onClick={handleAddStep} className="text-xs font-black text-indigo-700 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-500/20 hover:bg-indigo-200 px-4 py-2.5 rounded-xl flex items-center gap-1.5 transition-colors shadow-sm"><Plus className="w-4 h-4" /> Thêm Node</button>
             </div>
 
             <div className="flex flex-col gap-4 relative before:absolute before:top-6 before:bottom-6 before:left-6 before:w-1 before:bg-indigo-100 dark:before:bg-indigo-900/50 before:-z-10">
               <AnimatePresence initial={false}>
                 {formData.steps.map((step, index) => (
-                  <motion.div 
-                    key={index}
-                    initial={{ opacity: 0, height: 0, y: -20 }} animate={{ opacity: 1, height: 'auto', y: 0 }} exit={{ opacity: 0, height: 0, scale: 0.9 }}
-                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                    className="relative flex items-center gap-4 z-10"
-                  >
-                    {/* Node Number */}
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 border-2 border-white dark:border-slate-800 flex items-center justify-center text-white font-black text-lg shadow-lg shrink-0">
-                      {index + 1}
-                    </div>
-                    
-                    {/* Khối chọn Role */}
+                  <motion.div key={index} initial={{ opacity: 0, height: 0, y: -20 }} animate={{ opacity: 1, height: 'auto', y: 0 }} exit={{ opacity: 0, height: 0, scale: 0.9 }} transition={{ type: "spring", stiffness: 400, damping: 30 }} className="relative flex items-center gap-4 z-10">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 border-2 border-white dark:border-slate-800 flex items-center justify-center text-white font-black text-lg shadow-lg shrink-0">{index + 1}</div>
                     <div className="flex-1 flex items-center gap-3 p-2.5 pr-4 bg-white dark:bg-slate-800/80 border-2 border-slate-100 dark:border-white/5 hover:border-indigo-300 dark:hover:border-indigo-500/50 rounded-2xl shadow-sm transition-colors group">
                       <div className="p-2 bg-slate-50 dark:bg-white/5 rounded-xl cursor-grab active:cursor-grabbing"><GripVertical className="w-4 h-4 text-slate-400" /></div>
-                      
                       <div className="flex-1 flex flex-col">
                         <span className="text-[10px] font-extrabold text-slate-400 uppercase">Giao quyền cho Chức vụ</span>
-                        <select
-                          required value={step.roleId} onChange={(e) => handleStepRoleChange(index, e.target.value)}
-                          className={`w-full bg-transparent text-sm font-bold outline-none cursor-pointer mt-0.5 ${!step.roleId ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}
-                        >
+                        <select required value={step.roleId} onChange={(e) => handleStepRoleChange(index, e.target.value)} className={`w-full bg-transparent text-sm font-bold outline-none cursor-pointer mt-0.5 ${!step.roleId ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>
                           <option value="" disabled className="text-slate-400">-- Vui lòng chọn một Chức vụ --</option>
-                          {roles.map(r => <option key={r.id || r.roleId} value={r.id || r.roleId} className="text-slate-900 dark:text-white bg-white dark:bg-slate-800">{r.name}</option>)}
+                          {roles.map(r => {
+                            const rId = r.roleId || (r as any).id;
+                            const rName = r.roleName || (r as any).name;
+                            return <option key={rId} value={rId} className="text-slate-900 dark:text-white bg-white dark:bg-slate-800">{rName}</option>;
+                          })}
                         </select>
                       </div>
-
-                      <button 
-                        type="button" onClick={() => handleRemoveStep(index)}
-                        className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 dark:bg-white/5 text-slate-400 hover:bg-rose-100 hover:text-rose-600 transition-colors"
-                        title="Loại bỏ Node này"
-                      >
-                        <Trash2 className="w-4.5 h-4.5" />
-                      </button>
+                      <button type="button" onClick={() => handleRemoveStep(index)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 dark:bg-white/5 text-slate-400 hover:bg-rose-100 hover:text-rose-600 transition-colors"><Trash2 className="w-4.5 h-4.5" /></button>
                     </div>
                   </motion.div>
                 ))}

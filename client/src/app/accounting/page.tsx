@@ -7,9 +7,14 @@ import {
   BookOpen, Plus, Search, Lock, 
   Trash2, AlertOctagon, RefreshCcw, Loader2, CheckCircle2,
   FileEdit, ArrowRightLeft, Scale, ShieldAlert, FileText,
-  TrendingDown, TrendingUp, CalendarDays, Download
+  TrendingDown, TrendingUp, CalendarDays, Download, Filter, Unlock
 } from "lucide-react";
+import dayjs from "dayjs";
+import isBetween from "dayjs/plugin/isBetween";
 import { toast } from "react-hot-toast";
+
+// Kích hoạt plugin thời gian
+dayjs.extend(isBetween);
 
 // --- REDUX & API ---
 import { 
@@ -67,9 +72,12 @@ const AccountingSkeleton = () => (
 export default function AccountingPage() {
   const { t } = useTranslation();
 
-  // --- STATE TABS & LỌC ---
+  // --- STATE TABS & LỌC CHÍNH ---
   const [activeTab, setActiveTab] = useState<JournalTab>("ALL");
-  const [searchQuery, setSearchQuery] = useState("");
+  
+  // 🚀 STATE BỘ LỌC NÂNG CAO (Kế toán)
+  const [filterPeriod, setFilterPeriod] = useState("THIS_MONTH");
+  const [filterLockStatus, setFilterLockStatus] = useState("ALL");
 
   // --- STATE MODALS ĐIỀU PHỐI ---
   const [isFiscalModalOpen, setIsFiscalModalOpen] = useState(false);
@@ -82,40 +90,58 @@ export default function AccountingPage() {
   const [postEntry, { isLoading: isPosting }] = usePostJournalEntryMutation();
   const [deleteEntry, { isLoading: isDeleting }] = useDeleteJournalEntryMutation();
 
-  // --- XỬ LÝ LỌC TRÊN CLIENT ---
+  // --- 🚀 XỬ LÝ LỌC THÔNG MINH TRÊN CLIENT (Bao gồm Bộ lọc thời gian) ---
   const entries = useMemo(() => {
-    return rawEntries.filter((entry: JournalEntry) => {
+    return rawEntries.map((entry: JournalEntry) => ({
+      ...entry,
+      // Trường ảo gộp REF + Diễn giải để DataTable search mượt mà
+      searchField: `${entry.reference || ""} ${entry.description || ""}`.toLowerCase()
+    })).filter((entry: any) => {
+      // 1. Lọc theo Tab (Trạng thái Post)
       const matchTab = activeTab === "ALL" || entry.postingStatus === activeTab;
-      const searchStr = searchQuery.toLowerCase();
       
-      const matchSearch = 
-        (entry.reference && entry.reference.toLowerCase().includes(searchStr)) ||
-        (entry.description && entry.description.toLowerCase().includes(searchStr));
-      
-      return matchTab && matchSearch;
-    });
-  }, [rawEntries, activeTab, searchQuery]);
+      // 2. Lọc theo Tình trạng Khóa sổ
+      let matchLock = true;
+      if (filterLockStatus === "CLOSED") matchLock = entry.isPeriodClosed === true;
+      if (filterLockStatus === "OPEN") matchLock = entry.isPeriodClosed === false;
 
-  // --- TÍNH TOÁN KPI (DATA VIZ SỔ CÁI) CHỐNG LỖI SỐ THẬP PHÂN ---
+      // 3. Lọc theo Kỳ kế toán (Thời gian)
+      let matchPeriod = true;
+      const entryDate = dayjs(entry.entryDate);
+      if (filterPeriod === "THIS_MONTH") {
+        matchPeriod = entryDate.isSame(dayjs(), 'month');
+      } else if (filterPeriod === "LAST_MONTH") {
+        matchPeriod = entryDate.isSame(dayjs().subtract(1, 'month'), 'month');
+      } else if (filterPeriod === "THIS_QUARTER") {
+        matchPeriod = entryDate.isSame(dayjs(), 'year') && Math.floor(entryDate.month() / 3) === Math.floor(dayjs().month() / 3);
+      } else if (filterPeriod === "THIS_YEAR") {
+        matchPeriod = entryDate.isSame(dayjs(), 'year');
+      }
+      
+      return matchTab && matchLock && matchPeriod;
+    });
+  }, [rawEntries, activeTab, filterLockStatus, filterPeriod]);
+
+  // --- TÍNH TOÁN KPI (DATA VIZ SỔ CÁI ĐỘNG DỰA TRÊN KẾT QUẢ LỌC) ---
   const kpis = useMemo(() => {
     let totalDebit = 0, totalCredit = 0;
     let draftCount = 0, postedCount = 0;
 
-    rawEntries.forEach((entry: JournalEntry) => {
+    entries.forEach((entry: any) => {
       if (entry.postingStatus === "DRAFT") draftCount++;
       if (entry.postingStatus === "POSTED") postedCount++;
 
       // Cân đối Số phát sinh chỉ tính các phiếu đã POSTED
       if (entry.postingStatus === "POSTED") {
-        const entryDebit = entry.lines?.reduce((sum, line) => sum + (line.debit || 0), 0) || 0;
-        const entryCredit = entry.lines?.reduce((sum, line) => sum + (line.credit || 0), 0) || 0;
+        const entryDebit = entry.lines?.reduce((sum: number, line: any) => sum + (line.debit || 0), 0) || 0;
+        const entryCredit = entry.lines?.reduce((sum: number, line: any) => sum + (line.credit || 0), 0) || 0;
         totalDebit = safeRound(totalDebit + entryDebit);
         totalCredit = safeRound(totalCredit + entryCredit);
       }
     });
 
-    return { totalEntries: rawEntries.length, draftCount, postedCount, totalDebit, totalCredit };
-  }, [rawEntries]);
+    return { totalEntries: entries.length, draftCount, postedCount, totalDebit, totalCredit };
+  }, [entries]);
 
   // --- HANDLERS DỮ LIỆU ---
   const handlePostEntry = async (id: string, ref: string) => {
@@ -147,9 +173,9 @@ export default function AccountingPage() {
       return;
     }
     
-    const exportData = entries.map(e => {
-      const entryDebit = e.lines?.reduce((sum, line) => sum + (line.debit || 0), 0) || 0;
-      const entryCredit = e.lines?.reduce((sum, line) => sum + (line.credit || 0), 0) || 0;
+    const exportData = entries.map((e: any) => {
+      const entryDebit = e.lines?.reduce((sum: number, line: any) => sum + (line.debit || 0), 0) || 0;
+      const entryCredit = e.lines?.reduce((sum: number, line: any) => sum + (line.credit || 0), 0) || 0;
 
       return {
         "Ngày hạch toán": formatDate(e.entryDate),
@@ -166,12 +192,12 @@ export default function AccountingPage() {
   };
 
   // --- CỘT BẢNG (DATATABLE COLUMNS) ---
-  const columns: ColumnDef<JournalEntry>[] = [
+  const columns: ColumnDef<any>[] = [
     {
       header: "Ngày / Tham chiếu",
-      accessorKey: "reference",
+      accessorKey: "searchField", // 💡 Trỏ vào trường ảo để search được cả REF lẫn Mô tả
       sortable: true,
-      cell: (row) => (
+      cell: (row: any) => (
         <div className="flex flex-col max-w-[200px]">
           <span 
             className={cn(
@@ -192,7 +218,7 @@ export default function AccountingPage() {
     {
       header: "Diễn giải (Description)",
       accessorKey: "description",
-      cell: (row) => (
+      cell: (row: any) => (
         <div className="flex flex-col">
           <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm line-clamp-2">
             {row.description || "Không có diễn giải"}
@@ -209,8 +235,8 @@ export default function AccountingPage() {
       header: "Phát sinh NỢ (Debit)",
       accessorKey: "debit",
       align: "right",
-      cell: (row) => {
-        const totalDebit = safeRound(row.lines?.reduce((sum, line) => sum + (line.debit || 0), 0) || 0);
+      cell: (row: any) => {
+        const totalDebit = safeRound(row.lines?.reduce((sum: number, line: any) => sum + (line.debit || 0), 0) || 0);
         return <span className="font-black text-slate-800 dark:text-slate-200">{formatVND(totalDebit)}</span>;
       }
     },
@@ -218,8 +244,8 @@ export default function AccountingPage() {
       header: "Phát sinh CÓ (Credit)",
       accessorKey: "credit",
       align: "right",
-      cell: (row) => {
-        const totalCredit = safeRound(row.lines?.reduce((sum, line) => sum + (line.credit || 0), 0) || 0);
+      cell: (row: any) => {
+        const totalCredit = safeRound(row.lines?.reduce((sum: number, line: any) => sum + (line.credit || 0), 0) || 0);
         return <span className="font-black text-slate-800 dark:text-slate-200">{formatVND(totalCredit)}</span>;
       }
     },
@@ -227,9 +253,9 @@ export default function AccountingPage() {
       header: "Kiểm toán Cân đối",
       accessorKey: "balance",
       align: "center",
-      cell: (row) => {
-        const totalDebit = safeRound(row.lines?.reduce((sum, line) => sum + (line.debit || 0), 0) || 0);
-        const totalCredit = safeRound(row.lines?.reduce((sum, line) => sum + (line.credit || 0), 0) || 0);
+      cell: (row: any) => {
+        const totalDebit = safeRound(row.lines?.reduce((sum: number, line: any) => sum + (line.debit || 0), 0) || 0);
+        const totalCredit = safeRound(row.lines?.reduce((sum: number, line: any) => sum + (line.credit || 0), 0) || 0);
         const isBalanced = totalDebit === totalCredit && totalDebit > 0;
 
         return (
@@ -250,7 +276,7 @@ export default function AccountingPage() {
     {
       header: "Trạng thái",
       accessorKey: "postingStatus",
-      cell: (row) => {
+      cell: (row: any) => {
         const ui = getPostingStatusUI(row.postingStatus);
         const Icon = ui.icon;
         return (
@@ -264,7 +290,7 @@ export default function AccountingPage() {
       header: "Thao tác",
       accessorKey: "journalId",
       align: "right",
-      cell: (row) => {
+      cell: (row: any) => {
         const isDraft = row.postingStatus === "DRAFT";
         const isPosted = row.postingStatus === "POSTED";
         const isPeriodClosed = row.isPeriodClosed;
@@ -304,6 +330,43 @@ export default function AccountingPage() {
       }
     }
   ];
+
+  // 🚀 BỘ LỌC NÂNG CAO (ADVANCED FILTERS UI)
+  const accountingFiltersNode = (
+    <div className="flex flex-wrap items-center gap-4 w-full">
+      <div className="w-full sm:w-64">
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Kỳ Kế toán</label>
+        <div className="relative group">
+          <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+          <select 
+            value={filterPeriod} onChange={(e) => setFilterPeriod(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm appearance-none cursor-pointer"
+          >
+            <option value="ALL">Toàn thời gian (Lịch sử)</option>
+            <option value="THIS_MONTH">Tháng này</option>
+            <option value="LAST_MONTH">Tháng trước</option>
+            <option value="THIS_QUARTER">Quý này</option>
+            <option value="THIS_YEAR">Năm tài chính hiện tại</option>
+          </select>
+        </div>
+      </div>
+      
+      <div className="w-full sm:w-64">
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Trạng thái Khóa Sổ</label>
+        <div className="relative group">
+          {filterLockStatus === "CLOSED" ? <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" /> : <Unlock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />}
+          <select 
+            value={filterLockStatus} onChange={(e) => setFilterLockStatus(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm appearance-none cursor-pointer"
+          >
+            <option value="ALL">Tất cả trạng thái khóa</option>
+            <option value="OPEN">Kỳ đang MỞ (Cho phép chỉnh sửa)</option>
+            <option value="CLOSED">Kỳ đã ĐÓNG (Chỉ xem)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  );
 
   // --- ANIMATION ---
   const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
@@ -358,14 +421,14 @@ export default function AccountingPage() {
       {isLoading ? <AccountingSkeleton /> : (
         <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-6 w-full">
           
-          {/* 2. KHỐI THỐNG KÊ (KPI CARDS - BẢNG CÂN ĐỐI NHANH) */}
+          {/* 2. KHỐI THỐNG KÊ (KPI CARDS - BẢNG CÂN ĐỐI NHANH ĐỘNG THEO LỌC) */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
             
             <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-indigo-400 transition-colors">
               <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform"><BookOpen className="w-20 h-20 text-indigo-500"/></div>
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Lưu lượng Sổ cái</p>
               <h3 className="text-3xl font-black text-indigo-700 dark:text-indigo-400 truncate relative z-10">{kpis.totalEntries} <span className="text-sm font-medium text-slate-500">bút toán</span></h3>
-              <p className="text-[11px] font-bold text-slate-500 mt-2 relative z-10">Tất cả phát sinh trong hệ thống</p>
+              <p className="text-[11px] font-bold text-slate-500 mt-2 relative z-10">Thuộc {filterPeriod === "ALL" ? "mọi thời đại" : "kỳ kế toán đã chọn"}</p>
             </motion.div>
             
             <motion.div variants={itemVariants} className={cn("glass p-5 rounded-3xl border shadow-sm relative overflow-hidden group transition-colors", kpis.draftCount > 0 ? "border-amber-300 bg-amber-50/30 dark:border-amber-500/30 dark:bg-amber-900/10" : "border-slate-200 dark:border-white/10")}>
@@ -387,7 +450,7 @@ export default function AccountingPage() {
 
             <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-emerald-400 transition-colors lg:col-span-2">
                <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform"><Scale className="w-24 h-24 text-emerald-500"/></div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 relative z-10">Bảng Cân đối Phát sinh Nhanh (Trial Balance Preview)</p>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 relative z-10">Bảng Cân đối Phát sinh (Trial Balance Preview)</p>
               <div className="flex items-center justify-between relative z-10">
                 <div>
                   <p className="text-xs font-bold text-emerald-600 dark:text-emerald-500 mb-0.5 flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5"/> Tổng phát sinh NỢ</p>
@@ -427,18 +490,9 @@ export default function AccountingPage() {
               ))}
             </div>
 
-            {/* Thanh Tìm kiếm */}
-            <div className="relative w-full sm:w-80">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input 
-                type="text" placeholder="Tìm kiếm tham chiếu, diễn giải..." 
-                value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow shadow-sm"
-              />
-            </div>
           </motion.div>
 
-          {/* 4. BẢNG DỮ LIỆU ĐỘNG (DATATABLE) */}
+          {/* 4. BẢNG DỮ LIỆU ĐỘNG (DATATABLE) - ĐƯỢC BƠM ADVANCED FILTERS */}
           <motion.div variants={itemVariants} className="glass-panel rounded-3xl overflow-hidden shadow-md border border-slate-200 dark:border-white/10">
             {entries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-24 text-slate-400">
@@ -446,15 +500,17 @@ export default function AccountingPage() {
                   <BookOpen className="w-12 h-12 opacity-50" />
                 </div>
                 <p className="font-bold text-slate-600 dark:text-slate-300 text-xl">Sổ cái trống</p>
-                <p className="text-sm mt-1 max-w-[300px] text-center">Chưa có phát sinh kế toán nào khớp với tiêu chí tìm kiếm của bạn.</p>
+                <p className="text-sm mt-1 max-w-[300px] text-center">Chưa có phát sinh kế toán nào khớp với tiêu chí lọc.</p>
               </div>
             ) : (
               <DataTable 
                 data={entries} 
                 columns={columns} 
-                searchKey="reference" 
-                searchPlaceholder="Lọc nhanh mã tham chiếu trong bảng..." 
+                searchKey="searchField" 
+                searchPlaceholder="Lọc nhanh mã tham chiếu, diễn giải..." 
                 itemsPerPage={15} 
+                // 🚀 BƠM UI BỘ LỌC VÀO TRONG BẢNG
+                advancedFilterNode={accountingFiltersNode}
               />
             )}
           </motion.div>

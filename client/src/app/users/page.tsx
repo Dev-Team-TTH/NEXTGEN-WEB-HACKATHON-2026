@@ -1,45 +1,40 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { 
   Users, ShieldCheck, ShieldAlert, KeyRound, 
   Activity, Plus, Trash2, Edit, AlertOctagon, RefreshCcw, 
-  UserCheck, UserX, UserCog, History, Network, Mail, Briefcase, Loader2, Save, X, ChevronRight, CheckCircle2,
-  Phone, CalendarDays, Clock, MapPin, Lock, Fingerprint, EyeOff, Key,
-  AlertTriangle
+  UserCheck, UserX, UserCog, History, Network, Mail,
+  Phone, CalendarDays, Clock, MapPin, Lock,
+  AlertTriangle, Building2
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
 import { 
   useGetUsersQuery, 
-  useCreateUserMutation,
-  useUpdateUserMutation,
   useDeleteUserMutation,
   useGetRolesQuery,
   useDeleteRoleMutation,
-  useResetUserPasswordMutation,
   User 
 } from "@/state/api";
 
 // --- COMPONENTS & UTILS ---
 import Header from "@/app/(components)/Header";
 import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
-import Modal from "@/app/(components)/Modal";
 import RolePermissionModal from "./RolePermissionModal";
 import SystemAuditLog from "./SystemAuditLog";
 import OrganizationChart from "./OrganizationChart";
-
-// BỔ SUNG: Import siêu vũ khí RequirePermission để khóa UI
+import UserModal from "./UserModal"; 
 import RequirePermission from "@/app/(components)/RequirePermission";
 
 import { formatDate, formatDateTime, getInitials } from "@/utils/formatters";
 import { cn, generateAvatarColor } from "@/utils/helpers";
 
 // ==========================================
-// 1. THUẬT TOÁN BÓC TÁCH DỮ LIỆU ĐA NĂNG (GIA CỐ AN TOÀN)
+// THUẬT TOÁN BÓC TÁCH DỮ LIỆU
 // ==========================================
 const extractUserRoleId = (u: any): string => {
   if (!u) return "";
@@ -49,16 +44,15 @@ const extractUserRoleId = (u: any): string => {
   else if (Array.isArray(u.userRoles) && u.userRoles.length > 0) foundId = u.userRoles[0].roleId || u.userRoles[0].role?.id || u.userRoles[0].role?.roleId;
   else if (u.role && typeof u.role === "object") foundId = u.role.id || u.role.roleId;
   else if (Array.isArray(u.roleIds) && u.roleIds.length > 0) foundId = String(u.roleIds[0]);
-  
-  // Ép kiểu chuẩn xác để so sánh
   return foundId ? String(foundId) : "";
 };
 
 const getStatusUI = (status: string) => {
   switch (status) {
     case "ACTIVE": return { label: "Hoạt động", icon: UserCheck, color: "text-emerald-600 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-500/10 dark:border-emerald-500/20" };
-    case "INACTIVE": return { label: "Bị khóa", icon: UserX, color: "text-rose-600 bg-rose-50 border-rose-200 dark:text-rose-400 dark:bg-rose-500/10 dark:border-rose-500/20" };
+    case "INACTIVE": return { label: "Bị khóa (Thu hồi)", icon: UserX, color: "text-rose-600 bg-rose-50 border-rose-200 dark:text-rose-400 dark:bg-rose-500/10 dark:border-rose-500/20" };
     case "SUSPENDED": return { label: "Đình chỉ", icon: AlertOctagon, color: "text-amber-600 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-500/10 dark:border-amber-500/20" };
+    case "LOCKED": return { label: "Khóa bảo mật", icon: Lock, color: "text-slate-600 bg-slate-100 border-slate-300 dark:text-slate-400 dark:bg-slate-800 dark:border-slate-600" };
     default: return { label: status || "N/A", icon: Activity, color: "text-slate-600 bg-slate-50 border-slate-200 dark:text-slate-400 dark:bg-slate-500/10 dark:border-slate-500/20" };
   }
 };
@@ -68,7 +62,7 @@ type TabType = "USERS" | "ROLES" | "ORG_CHART" | "AUDIT_LOGS";
 const UsersSkeleton = () => (
   <div className="flex flex-col gap-6 w-full animate-pulse mt-6">
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-      {[1, 2, 3, 4].map(i => <div key={i} className="h-32 rounded-3xl bg-gradient-to-br from-slate-200 to-slate-100 dark:from-slate-800/50 dark:to-slate-800/30 border border-slate-200 dark:border-white/5"></div>)}
+      {[1, 2, 3, 4].map(i => <div key={i} className="h-32 rounded-3xl bg-slate-200 dark:bg-slate-800/50"></div>)}
     </div>
     <div className="h-16 w-full rounded-2xl bg-slate-200 dark:bg-slate-800/50"></div>
     <div className="h-[500px] w-full bg-slate-200 dark:bg-slate-800/50 rounded-3xl mt-2"></div>
@@ -83,133 +77,89 @@ export default function UsersPage() {
   const [isMounted, setIsMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>("USERS");
   
+  // States Modals
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [userForm, setUserForm] = useState({ fullName: "", email: "", phone: "", address: "", roleId: "", status: "ACTIVE" });
-
-  const [showPasswordAuth, setShowPasswordAuth] = useState(false);
-  const [adminPin, setAdminPin] = useState("");
-  const [revealedPassword, setRevealedPassword] = useState<string | null>(null);
-
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
   const [editingRole, setEditingRole] = useState<any | null>(null);
+
+  // 🚀 STATE BỘ LỌC NÂNG CAO CHO NGƯỜI DÙNG
+  const [filterStatus, setFilterStatus] = useState("ALL");
 
   // APIs
   const { data: rawUsers, isLoading: loadingUsers, isError, refetch } = useGetUsersQuery({});
   const { data: rawRoles, isLoading: loadingRoles } = useGetRolesQuery();
   
-  const [createUser, { isLoading: isCreatingUser }] = useCreateUserMutation();
-  const [updateUser, { isLoading: isUpdatingUser }] = useUpdateUserMutation();
   const [deleteUser, { isLoading: isDeletingUser }] = useDeleteUserMutation();
   const [deleteRole, { isLoading: isDeletingRole }] = useDeleteRoleMutation();
-  const [resetPassword, { isLoading: isResettingPassword }] = useResetUserPasswordMutation();
 
-  // Khắc phục lỗi Hydration
   useEffect(() => { setIsMounted(true); }, []);
 
   const isLoading = loadingUsers || loadingRoles;
-  const isSubmittingUser = isCreatingUser || isUpdatingUser;
-
-  const usersList: User[] = useMemo(() => Array.isArray(rawUsers) ? rawUsers : (rawUsers as any)?.data || [], [rawUsers]);
+  
+  // Lấy danh sách Roles
   const rolesList: any[] = useMemo(() => Array.isArray(rawRoles) ? rawRoles : (rawRoles as any)?.data || (rawRoles as any)?.roles || [], [rawRoles]);
 
+  // 🚀 TÍCH HỢP BỘ LỌC VÀO LIST USERS
+  const usersList: User[] = useMemo(() => {
+    let arr = Array.isArray(rawUsers) ? rawUsers : (rawUsers as any)?.data || [];
+    if (filterStatus !== "ALL") {
+      arr = arr.filter((u: any) => u.status === filterStatus);
+    }
+    return arr;
+  }, [rawUsers, filterStatus]);
+
+  // Tổng hợp thống kê (Dựa trên data nguyên bản để thẻ thống kê luôn đúng)
   const summary = useMemo(() => {
     let activeCount = 0, twoFactorEnabledCount = 0;
-    usersList.forEach(u => {
+    const fullArr = Array.isArray(rawUsers) ? rawUsers : (rawUsers as any)?.data || [];
+    
+    fullArr.forEach((u: any) => {
       if (u.status === "ACTIVE") activeCount++;
       if (u.is2FAEnabled) twoFactorEnabledCount++;
     });
-    const twoFactorRate = usersList.length > 0 ? Math.round((twoFactorEnabledCount / usersList.length) * 100) : 0;
-    return { totalUsers: usersList.length, activeCount, twoFactorRate, totalRoles: rolesList.length };
-  }, [usersList, rolesList]);
+    const twoFactorRate = fullArr.length > 0 ? Math.round((twoFactorEnabledCount / fullArr.length) * 100) : 0;
+    return { totalUsers: fullArr.length, activeCount, twoFactorRate, totalRoles: rolesList.length };
+  }, [rawUsers, rolesList]);
 
-  // Handlers User
-  const openUserModal = (user?: User) => {
-    setShowPasswordAuth(false);
-    setAdminPin("");
-    setRevealedPassword(null);
-    if (user) {
-      setEditingUser(user);
-      const currentRoleId = extractUserRoleId(user);
-      setUserForm({ fullName: user.fullName || "", email: user.email || "", phone: user.phone || (user as any).phoneNumber || "", address: user.address || (user as any).address || "", roleId: currentRoleId, status: user.status || "ACTIVE" });
-    } else {
-      setEditingUser(null);
-      setUserForm({ fullName: "", email: "", phone: "", address: "", roleId: "", status: "ACTIVE" });
-    }
+  // Handlers
+  const openUserModal = useCallback((user?: User) => {
+    setEditingUser(user || null);
     setIsUserModalOpen(true);
-  };
+  }, []);
 
-  const handleExecutePasswordReset = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingUser) return;
-    try {
-      const response = await resetPassword({ userId: editingUser.userId, adminPin }).unwrap();
-      setRevealedPassword(response.newPassword);
-      setShowPasswordAuth(false);
-      toast.success("Xác thực thành công. Mật khẩu đã được cấp lại!");
-    } catch (err: any) {
-      toast.error(err?.data?.message || "Mã PIN Không hợp lệ. Đã ghi log bảo mật!");
-      setAdminPin("");
-    }
-  };
+  const openRoleModal = useCallback((role?: any) => {
+    setEditingRole(role || null);
+    setIsRoleModalOpen(true);
+  }, []);
 
-  const handleSaveUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!userForm.fullName || !userForm.email || !userForm.roleId) {
-      toast.error("Vui lòng điền đủ Tên, Email và Vai trò!"); return;
-    }
-    try {
-      const payloadData = { fullName: userForm.fullName, email: userForm.email, phone: userForm.phone, address: userForm.address, status: userForm.status, roleIds: [userForm.roleId] };
-      if (editingUser) {
-        await updateUser({ id: editingUser.userId, data: payloadData as any }).unwrap();
-        toast.success("Cập nhật hồ sơ định danh thành công!");
-      } else {
-        await createUser({ ...payloadData, password: "Password@123" } as any).unwrap(); 
-        toast.success("Đã cấp phát tài khoản mới thành công!");
-      }
-      setIsUserModalOpen(false);
-    } catch (err: any) {
-      toast.error(err?.data?.message || "Lỗi hệ thống khi lưu thông tin!");
-    }
-  };
-
-  // NÂNG CẤP UX: Custom Toast Confirm thay cho window.confirm xấu xí
-  const handleDeleteUser = (id: string, name: string) => {
+  const handleDeleteUser = useCallback((id: string, name: string) => {
     toast.custom((t) => (
-      <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-white dark:bg-slate-900 shadow-2xl rounded-2xl pointer-events-auto flex flex-col ring-1 ring-black ring-opacity-5 border border-slate-200 dark:border-white/10 p-5`}>
+      <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-white dark:bg-slate-900 shadow-2xl rounded-2xl pointer-events-auto flex flex-col p-5 border border-slate-200 dark:border-white/10`}>
         <div className="flex items-start gap-4">
           <div className="w-10 h-10 rounded-full bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center shrink-0">
             <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400" />
           </div>
           <div>
             <h3 className="text-base font-bold text-slate-900 dark:text-white">Thu hồi Tài khoản?</h3>
-            <p className="mt-1 text-sm text-slate-500">Bạn có chắc chắn muốn xóa vĩnh viễn tài khoản <b>{name}</b>? Hành động này không thể hoàn tác.</p>
+            <p className="mt-1 text-sm text-slate-500">Xóa vĩnh viễn tài khoản <b>{name}</b>? Hành động này không thể hoàn tác.</p>
           </div>
         </div>
-        <div className="flex items-center gap-3 mt-5 justify-end">
-          <button onClick={() => toast.dismiss(t.id)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-xl transition-colors">Hủy bỏ</button>
+        <div className="flex justify-end gap-3 mt-5">
+          <button onClick={() => toast.dismiss(t.id)} className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-xl">Hủy bỏ</button>
           <button onClick={async () => {
             toast.dismiss(t.id);
-            try {
-              await deleteUser(id).unwrap();
-              toast.success(`Đã thu hồi tài khoản ${name}!`);
-            } catch (err: any) {
-              toast.error("Không thể xóa cứng tài khoản đang chứa dữ liệu giao dịch!");
-            }
-          }} className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-rose-500/30 transition-all active:scale-95">Xác nhận Xóa</button>
+            try { await deleteUser(id).unwrap(); toast.success(`Đã thu hồi tài khoản ${name}!`); } 
+            catch { toast.error("Không thể xóa cứng tài khoản đang chứa dữ liệu giao dịch!"); }
+          }} className="px-4 py-2 bg-rose-600 text-white text-sm font-bold rounded-xl shadow-lg">Xác nhận Xóa</button>
         </div>
       </div>
     ), { duration: 5000, id: `del-user-${id}` });
-  };
+  }, [deleteUser]);
 
-  const openRoleModal = (role?: any) => {
-    setEditingRole(role || null);
-    setIsRoleModalOpen(true);
-  };
-
-  const handleDeleteRole = (id: string, name: string) => {
+  const handleDeleteRole = useCallback((id: string, name: string) => {
     toast.custom((t) => (
-      <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-white dark:bg-slate-900 shadow-2xl rounded-2xl pointer-events-auto flex flex-col ring-1 ring-black ring-opacity-5 border border-slate-200 dark:border-white/10 p-5`}>
+      <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-white dark:bg-slate-900 shadow-2xl rounded-2xl pointer-events-auto flex flex-col p-5 border border-slate-200 dark:border-white/10`}>
         <div className="flex items-start gap-4">
           <div className="w-10 h-10 rounded-full bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center shrink-0">
             <Trash2 className="w-5 h-5 text-rose-600 dark:text-rose-400" />
@@ -219,23 +169,20 @@ export default function UsersPage() {
             <p className="mt-1 text-sm text-slate-500">Bạn muốn xóa vai trò <b>{name}</b> khỏi hệ thống?</p>
           </div>
         </div>
-        <div className="flex items-center gap-3 mt-5 justify-end">
-          <button onClick={() => toast.dismiss(t.id)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-xl transition-colors">Hủy bỏ</button>
+        <div className="flex justify-end gap-3 mt-5">
+          <button onClick={() => toast.dismiss(t.id)} className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-xl">Hủy bỏ</button>
           <button onClick={async () => {
             toast.dismiss(t.id);
-            try {
-              await deleteRole(id).unwrap();
-              toast.success(`Đã gỡ bỏ vai trò ${name}!`);
-            } catch (err: any) {
-              toast.error("Không thể gỡ bỏ vai trò đang được gán cho người dùng!");
-            }
-          }} className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold rounded-xl shadow-lg transition-all active:scale-95">Đồng ý</button>
+            try { await deleteRole(id).unwrap(); toast.success(`Đã gỡ bỏ vai trò ${name}!`); } 
+            catch { toast.error("Không thể gỡ bỏ vai trò đang được gán cho người dùng!"); }
+          }} className="px-4 py-2 bg-rose-600 text-white text-sm font-bold rounded-xl shadow-lg">Đồng ý</button>
         </div>
       </div>
     ), { duration: 5000, id: `del-role-${id}` });
-  };
+  }, [deleteRole]);
 
-  const userColumns: ColumnDef<User>[] = [
+  // CẤU HÌNH CỘT BẢNG
+  const userColumns: ColumnDef<User>[] = useMemo(() => [
     {
       header: "Định danh (Tài khoản)",
       accessorKey: "fullName",
@@ -253,17 +200,23 @@ export default function UsersPage() {
       )
     },
     {
-      header: "Thông tin Liên hệ",
+      header: "Thông tin & Phòng ban",
       accessorKey: "email",
       cell: (row) => (
         <div className="flex flex-col gap-1.5 min-w-[200px]">
           <span className="text-[12px] font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 text-slate-400 shrink-0"/> <span className="truncate">{row.email}</span></span>
-          {(row.phone || row.address) && (
-            <div className="flex items-center gap-3 text-[11px] text-slate-500">
-              {row.phone && <span className="flex items-center gap-1 shrink-0"><Phone className="w-3 h-3 text-slate-400"/> {row.phone}</span>}
-              {row.address && <span className="flex items-center gap-1 truncate" title={row.address}><MapPin className="w-3 h-3 text-slate-400 shrink-0"/> <span className="truncate max-w-[120px]">{row.address}</span></span>}
-            </div>
-          )}
+          
+          <div className="flex items-center gap-3 text-[11px] text-slate-500">
+            {((row as any).department || row.departmentId) ? (
+               <span className="flex items-center gap-1 shrink-0 text-indigo-600 dark:text-indigo-400 font-medium bg-indigo-50 dark:bg-indigo-900/20 px-1.5 py-0.5 rounded">
+                 <Building2 className="w-3 h-3"/> {((row as any).department)?.name || "Đã phân bổ bộ phận"}
+               </span>
+            ) : row.phone ? (
+               <span className="flex items-center gap-1 shrink-0"><Phone className="w-3 h-3 text-slate-400"/> {row.phone}</span>
+            ) : null}
+            
+            {row.address && <span className="flex items-center gap-1 truncate" title={row.address}><MapPin className="w-3 h-3 text-slate-400 shrink-0"/> <span className="truncate max-w-[120px]">{row.address}</span></span>}
+          </div>
         </div>
       )
     },
@@ -322,7 +275,6 @@ export default function UsersPage() {
       align: "right",
       cell: (row) => (
         <div className="flex items-center justify-end gap-1">
-          {/* NÂNG CẤP BẢO MẬT: Bọc RequirePermission */}
           <RequirePermission permissions={["MANAGE_USERS"]}>
             <button onClick={() => openUserModal(row)} title="Chỉnh sửa Hồ sơ" className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 rounded-xl transition-colors active:scale-95"><Edit className="w-4 h-4" /></button>
           </RequirePermission>
@@ -333,7 +285,29 @@ export default function UsersPage() {
         </div>
       )
     }
-  ];
+  ], [rolesList, isDeletingUser, openUserModal, handleDeleteUser]);
+
+  // 🚀 TẠO BỘ LỌC ĐỂ BƠM VÀO DATA TABLE
+  const userFiltersNode = (
+    <div className="flex flex-wrap items-center gap-4 w-full">
+      <div className="w-full sm:w-64">
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Lọc theo Trạng thái</label>
+        <div className="relative group">
+          <Activity className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+          <select 
+            value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm appearance-none cursor-pointer"
+          >
+            <option value="ALL">Tất cả tài khoản</option>
+            <option value="ACTIVE">Hoạt động bình thường</option>
+            <option value="SUSPENDED">Đình chỉ tạm thời</option>
+            <option value="LOCKED">Khóa bảo mật</option>
+            <option value="INACTIVE">Vô hiệu hóa (Nghỉ việc)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  );
 
   const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
   const itemVariants: Variants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } };
@@ -357,14 +331,12 @@ export default function UsersPage() {
           <AnimatePresence mode="wait">
             {activeTab === "USERS" ? (
               <motion.div key="btn-users" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
-                {/* NÂNG CẤP BẢO MẬT */}
                 <RequirePermission permissions={["MANAGE_USERS"]}>
                   <button onClick={() => openUserModal()} className="px-5 py-2.5 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-500/30 transition-all active:scale-95"><Plus className="w-5 h-5" /> <span className="hidden sm:inline">Cấp phát Tài khoản</span></button>
                 </RequirePermission>
               </motion.div>
             ) : activeTab === "ROLES" ? (
               <motion.div key="btn-roles" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
-                {/* NÂNG CẤP BẢO MẬT */}
                 <RequirePermission permissions={["MANAGE_USERS"]}>
                   <button onClick={() => openRoleModal()} className="px-5 py-2.5 flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-purple-500/30 transition-all active:scale-95"><Plus className="w-5 h-5" /> <span className="hidden sm:inline">Định nghĩa Vai trò</span></button>
                 </RequirePermission>
@@ -376,6 +348,7 @@ export default function UsersPage() {
 
       {isLoading ? <UsersSkeleton /> : (
         <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-6 w-full">
+          {/* STATISTIC CARDS */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
             <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:shadow-indigo-500/10 hover:border-indigo-400/50 transition-all duration-300">
               <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform duration-500"><Users className="w-24 h-24 text-indigo-500"/></div>
@@ -414,6 +387,7 @@ export default function UsersPage() {
             </motion.div>
           </div>
 
+          {/* TABS NAVIGATION */}
           <div className="w-full overflow-x-auto scrollbar-hide sticky top-4 z-30">
             <div className="flex items-center gap-2 p-1.5 bg-white/70 dark:bg-[#0B0F19]/70 backdrop-blur-xl rounded-2xl w-fit border border-slate-200/50 dark:border-white/10 shadow-lg shadow-slate-200/20 dark:shadow-black/50">
               <button onClick={() => setActiveTab("USERS")} className={cn("relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap", activeTab === "USERS" ? "text-indigo-600 dark:text-indigo-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300")}>
@@ -440,7 +414,15 @@ export default function UsersPage() {
               {activeTab === "USERS" && (
                 <motion.div key="users" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} transition={{ duration: 0.25 }}>
                   <div className="glass-panel rounded-3xl overflow-hidden shadow-md border border-slate-200 dark:border-white/10">
-                    <DataTable data={usersList} columns={userColumns} searchKey="fullName" searchPlaceholder="Tìm định danh, email, số điện thoại..." itemsPerPage={10} />
+                    <DataTable 
+                      data={usersList} 
+                      columns={userColumns} 
+                      searchKey="fullName" 
+                      searchPlaceholder="Tìm định danh, email, số điện thoại..." 
+                      itemsPerPage={10} 
+                      // 🚀 BƠM BỘ LỌC NÂNG CAO VÀO DATA TABLE 
+                      advancedFilterNode={userFiltersNode}
+                    />
                   </div>
                 </motion.div>
               )}
@@ -508,120 +490,13 @@ export default function UsersPage() {
         </motion.div>
       )}
 
-      {/* PORTAL MODAL */}
-      <Modal
-        isOpen={isUserModalOpen}
-        onClose={() => setIsUserModalOpen(false)}
-        title={editingUser ? "Quản trị Hồ sơ Định danh" : "Cấp phát Định danh mới"}
-        subtitle="Hệ thống Identity & Access Management (IAM)"
-        icon={<UserCheck className="w-6 h-6" />}
-        maxWidth="max-w-4xl"
-        disableOutsideClick={isSubmittingUser || isResettingPassword}
-        footer={
-          <>
-            <button type="button" onClick={() => setIsUserModalOpen(false)} disabled={isSubmittingUser || isResettingPassword} className="px-6 py-3 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors">
-              Hủy bỏ thao tác
-            </button>
-            <button form="user-form" type="submit" disabled={isSubmittingUser || isResettingPassword} className="flex items-center gap-2 px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100">
-              {isSubmittingUser ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-              {editingUser ? "Lưu Cập nhật" : "Khởi tạo Định danh"}
-            </button>
-          </>
-        }
-      >
-        <div className="p-8 grid grid-cols-1 lg:grid-cols-2 gap-10">
-          <form id="user-form" onSubmit={handleSaveUser} className="flex flex-col gap-6">
-            <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider border-b border-slate-100 dark:border-white/10 pb-3 flex items-center gap-2">
-              <Briefcase className="w-4 h-4 text-indigo-500" /> Dữ liệu Cá nhân
-            </h3>
-            <div className="space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5 group-focus-within:text-indigo-500 transition-colors">Họ và Tên <span className="text-rose-500">*</span></label>
-              <input type="text" required value={userForm.fullName} onChange={(e) => setUserForm({...userForm, fullName: e.target.value})} placeholder="VD: Nguyễn Văn A" className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white transition-all shadow-sm" />
-            </div>
-            <div className="space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5 group-focus-within:text-indigo-500 transition-colors"><Mail className="w-3.5 h-3.5"/> Email Đăng nhập <span className="text-rose-500">*</span></label>
-              <input type="email" required value={userForm.email} onChange={(e) => setUserForm({...userForm, email: e.target.value})} placeholder="nguyenvana@company.com" disabled={!!editingUser} className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed shadow-sm" />
-            </div>
-            <div className="space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5 group-focus-within:text-indigo-500 transition-colors"><Phone className="w-3.5 h-3.5"/> Số điện thoại</label>
-              <input type="tel" value={userForm.phone} onChange={(e) => setUserForm({...userForm, phone: e.target.value})} placeholder="0912..." className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white transition-all shadow-sm" />
-            </div>
-            <div className="space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5 group-focus-within:text-indigo-500 transition-colors"><MapPin className="w-3.5 h-3.5"/> Địa chỉ Liên hệ</label>
-              <textarea rows={2} value={userForm.address} onChange={(e) => setUserForm({...userForm, address: e.target.value})} placeholder="Số nhà, đường, quận/huyện..." className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white transition-all resize-none shadow-sm" />
-            </div>
-          </form>
-
-          <div className="flex flex-col gap-6">
-            <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider border-b border-slate-100 dark:border-white/10 pb-3 flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-purple-500" /> Truy cập & Bảo mật
-            </h3>
-            <div className="space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5 group-focus-within:text-purple-500 transition-colors"><KeyRound className="w-3.5 h-3.5"/> Chính sách Vai trò (IAM Role) <span className="text-rose-500">*</span></label>
-              <select form="user-form" required value={userForm.roleId} onChange={(e) => setUserForm({...userForm, roleId: e.target.value})} className="w-full px-4 py-3.5 bg-purple-50/50 dark:bg-purple-900/10 border border-purple-200 dark:border-purple-500/30 rounded-xl text-sm font-bold focus:ring-2 focus:ring-purple-500 outline-none text-purple-800 dark:text-purple-300 transition-all cursor-pointer shadow-inner">
-                <option value="" className="text-slate-500">-- Chọn Vai trò Cốt lõi --</option>
-                {rolesList.map((r, idx) => {
-                  const rId = String(r.roleId || r.id || `role-${idx}`);
-                  if (!rId || rId.includes('fallback')) return null;
-                  const rName = r.roleName || r.name || r.title || `Vai trò ${idx + 1}`;
-                  return (<option key={rId} value={rId} className="text-slate-900 dark:text-slate-100 font-medium">{rName}</option>);
-                })}
-              </select>
-            </div>
-            {editingUser && (
-              <div className="space-y-1.5 group">
-                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5 group-focus-within:text-indigo-500 transition-colors"><Activity className="w-3.5 h-3.5"/> Trạng thái Hoạt động</label>
-                <select form="user-form" value={userForm.status} onChange={(e) => setUserForm({...userForm, status: e.target.value})} className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white transition-all cursor-pointer">
-                  <option value="ACTIVE">🟢 Hoạt động bình thường</option>
-                  <option value="SUSPENDED">🟠 Đình chỉ tạm thời</option>
-                  <option value="INACTIVE">🔴 Khóa vĩnh viễn (Thu hồi)</option>
-                </select>
-              </div>
-            )}
-            
-            <div className="mt-2 p-5 bg-slate-50 dark:bg-black/30 border border-slate-200 dark:border-white/10 rounded-2xl">
-              <div className="flex items-center gap-2 mb-3">
-                <Lock className="w-4 h-4 text-slate-500" />
-                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">Mật khẩu Hệ thống</h4>
-              </div>
-              {!editingUser ? (
-                <div className="flex items-center gap-2 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-white/5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                  <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">Mặc định cấp: <code className="bg-slate-100 dark:bg-slate-900 px-2 py-1 rounded text-indigo-600 dark:text-indigo-400 font-black tracking-wider shadow-sm ml-1">Password@123</code></p>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  {revealedPassword ? (
-                    <div className="flex flex-col gap-2 p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-500/30 rounded-xl relative overflow-hidden">
-                      <div className="absolute -right-2 -top-2 w-16 h-16 bg-emerald-500/10 rounded-full blur-xl"></div>
-                      <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase relative z-10">Mật khẩu mới (Copy gửi User):</span>
-                      <div className="flex items-center justify-between relative z-10">
-                        <span className="text-xl font-mono font-black text-emerald-800 dark:text-emerald-300 tracking-widest">{revealedPassword}</span>
-                        <button type="button" onClick={() => setRevealedPassword(null)} className="text-emerald-600 hover:text-rose-500 transition-colors"><EyeOff className="w-5 h-5"/></button>
-                      </div>
-                    </div>
-                  ) : showPasswordAuth ? (
-                    <form onSubmit={handleExecutePasswordReset} className="flex flex-col gap-2 p-3 bg-white dark:bg-slate-800 border border-rose-300 dark:border-rose-500/50 rounded-xl shadow-inner">
-                      <div className="flex items-center gap-2">
-                        <Fingerprint className="w-5 h-5 text-rose-500 ml-2 animate-pulse shrink-0" />
-                        <input type="password" placeholder="Nhập mã PIN xác thực Quản trị viên..." value={adminPin} onChange={e => setAdminPin(e.target.value)} required className="flex-1 bg-transparent text-sm outline-none px-2 font-bold tracking-widest text-slate-900 dark:text-white" autoFocus />
-                        <button type="submit" disabled={isResettingPassword} className="px-4 py-2 bg-rose-600 text-white text-xs font-bold rounded-lg hover:bg-rose-700 disabled:opacity-50">{isResettingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : "Xác nhận"}</button>
-                      </div>
-                      <p className="text-[10px] text-rose-500 font-medium px-2">Hành động này sẽ cấp lại mật khẩu và ghi log bảo mật.</p>
-                    </form>
-                  ) : (
-                    <div className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl shadow-sm">
-                      <span className="text-sm font-mono font-bold text-slate-400 tracking-widest">••••••••••••</span>
-                      <button type="button" onClick={() => setShowPasswordAuth(true)} className="flex items-center gap-1.5 text-xs font-bold text-rose-600 dark:text-rose-400 hover:underline"><Key className="w-3.5 h-3.5"/> Yêu cầu cấp lại mật khẩu</button>
-                    </div>
-                  )}
-                  <p className="text-[10px] text-slate-500 leading-tight">Admin chỉ có quyền cấp lại mật khẩu thông qua xác thực bảo mật hệ thống.</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </Modal>
+      {/* COMPONENT MODAL THÊM/SỬA NGƯỜI DÙNG ĐƯỢC GỌI TỪ NGOÀI */}
+      <UserModal 
+        isOpen={isUserModalOpen} 
+        onClose={() => setIsUserModalOpen(false)} 
+        editingUser={editingUser} 
+        rolesList={rolesList} 
+      />
 
       <RolePermissionModal 
         isOpen={isRoleModalOpen} 
