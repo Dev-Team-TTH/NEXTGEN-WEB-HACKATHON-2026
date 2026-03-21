@@ -23,6 +23,7 @@ import Header from "@/app/(components)/Header";
 import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
 import Warehouse3DViewer from "@/app/(components)/Warehouse3DViewer";
 import UniversalScanner from "@/app/(components)/UniversalScanner";
+import RequirePermission from "@/app/(components)/RequirePermission"; // 🚀 TÍCH HỢP RBAC
 
 // --- SUB-PAGES & MODALS ---
 import ProductList from "./ProductList";
@@ -33,6 +34,7 @@ import TransferStockModal from "./TransferStockModal";
 // --- UTILS ---
 import { formatVND } from "@/utils/formatters";
 import { exportToCSV } from "@/utils/exportUtils";
+import { cn } from "@/utils/helpers";
 
 // ==========================================
 // 1. SKELETON LOADING
@@ -112,7 +114,7 @@ export default function InventoryPage() {
     return arr;
   }, [balances, filterWarehouse, filterStatus]);
 
-  // --- TÍNH TOÁN KPI TỔNG QUAN (Chỉ dựa trên hàng đã lọc) ---
+  // --- TÍNH TOÁN KPI TỔNG QUAN ---
   const summary = useMemo(() => {
     return filteredBalances.reduce((acc, curr) => ({
       totalValue: acc.totalValue + (curr.totalValue || 0),
@@ -120,6 +122,9 @@ export default function InventoryPage() {
       totalLocked: acc.totalLocked + (curr.lockedQty || 0),
     }), { totalValue: 0, totalAvailable: 0, totalLocked: 0 });
   }, [filteredBalances]);
+
+  // Kiểm tra xem user có đang dùng bộ lọc không (để hiển thị badge cảnh báo cho KPI)
+  const isFiltering = filterWarehouse !== "ALL" || filterStatus !== "ALL";
 
   // --- HANDLER EXPORT TỒN KHO ---
   const handleExportBalances = () => {
@@ -141,11 +146,11 @@ export default function InventoryPage() {
     toast.success("Xuất báo cáo tồn kho thành công!");
   };
 
-  // --- ĐỊNH NGHĨA CỘT CHO TAB TỒN KHO THỰC TẾ ---
-  const columns: ColumnDef<any>[] = [
+  // 🚀 ĐƯỢC TỐI ƯU HÓA: GÓI BẰNG useMemo ĐỂ TRÁNH RE-RENDER DATATABLE
+  const columns: ColumnDef<any>[] = useMemo(() => [
     {
       header: "Vật tư / Sản phẩm",
-      accessorKey: "productSearchName", // 💡 Dùng trường ảo để search được cả tên lẫn mã
+      accessorKey: "productSearchName", 
       sortable: true,
       cell: (row: any) => (
         <div className="flex items-center gap-3">
@@ -217,11 +222,10 @@ export default function InventoryPage() {
         </span>
       )
     }
-  ];
+  ], []);
 
-  // 🚀 TẠO BỘ LỌC ĐỂ BƠM VÀO DATA TABLE
-  // 💡 Đã Sửa lỗi TS1382 bằng cách escape dấu > thành &gt; an toàn cho JSX
-  const inventoryFiltersNode = (
+  // 🚀 ĐƯỢC TỐI ƯU HÓA: GÓI BẰNG useMemo ĐỂ CHỐNG RE-RENDER BỘ LỌC
+  const inventoryFiltersNode = useMemo(() => (
     <div className="flex flex-wrap items-center gap-4 w-full">
       <div className="w-full sm:w-64">
         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Lọc theo Kho lưu trữ</label>
@@ -255,7 +259,7 @@ export default function InventoryPage() {
         </div>
       </div>
     </div>
-  );
+  ), [filterWarehouse, filterStatus, uniqueWarehouses]);
 
   // --- CẤU HÌNH MOTION ---
   const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
@@ -282,13 +286,17 @@ export default function InventoryPage() {
         subtitle={t("Giám sát danh mục vật tư, tồn kho thời gian thực và lịch sử luân chuyển.")}
         rightNode={
           <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
-            <button 
-              onClick={handleExportBalances}
-              className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 border border-slate-200 dark:border-slate-700 shadow-sm"
-            >
-              <Download className="w-5 h-5" />
-              <span className="hidden sm:block text-sm font-bold">Xuất Báo cáo</span>
-            </button>
+            {/* 🚀 BẢO VỆ NÚT XUẤT EXCEL BẰNG RBAC */}
+            <RequirePermission permissions={["MANAGE_INVENTORY"]}>
+              <button 
+                onClick={handleExportBalances}
+                className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 border border-slate-200 dark:border-slate-700 shadow-sm"
+              >
+                <Download className="w-5 h-5" />
+                <span className="hidden sm:block text-sm font-bold">Xuất Báo cáo</span>
+              </button>
+            </RequirePermission>
+
             <button 
               onClick={() => setIsScannerOpen(true)}
               className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 border border-slate-200 dark:border-slate-700 shadow-sm"
@@ -296,20 +304,27 @@ export default function InventoryPage() {
               <ScanBarcode className="w-5 h-5" />
               <span className="hidden sm:block text-sm font-bold">Quét mã Bulk</span>
             </button>
-            <button 
-              onClick={() => setIsTransferModalOpen(true)}
-              className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-xl transition-all active:scale-95 border border-indigo-200 dark:border-indigo-500/30 shadow-sm"
-            >
-              <ArrowRightLeft className="w-5 h-5" />
-              <span className="hidden sm:block text-sm font-bold">Chuyển kho</span>
-            </button>
-            <button 
-              onClick={() => setIsAdjustModalOpen(true)}
-              className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg shadow-blue-500/30 transition-all active:scale-95"
-            >
-              <ClipboardEdit className="w-5 h-5" />
-              <span className="hidden sm:block text-sm font-bold">Kiểm kê đơn</span>
-            </button>
+            
+            {/* 🚀 ĐÃ BỌC RBAC CHO CÁC THAO TÁC KHO NGUY HIỂM */}
+            <RequirePermission permissions={["MANAGE_INVENTORY"]}>
+              <button 
+                onClick={() => setIsTransferModalOpen(true)}
+                className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-xl transition-all active:scale-95 border border-indigo-200 dark:border-indigo-500/30 shadow-sm"
+              >
+                <ArrowRightLeft className="w-5 h-5" />
+                <span className="hidden sm:block text-sm font-bold">Chuyển kho</span>
+              </button>
+            </RequirePermission>
+
+            <RequirePermission permissions={["MANAGE_INVENTORY"]}>
+              <button 
+                onClick={() => setIsAdjustModalOpen(true)}
+                className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg shadow-blue-500/30 transition-all active:scale-95"
+              >
+                <ClipboardEdit className="w-5 h-5" />
+                <span className="hidden sm:block text-sm font-bold">Kiểm kê đơn</span>
+              </button>
+            </RequirePermission>
           </div>
         }
       />
@@ -375,7 +390,11 @@ export default function InventoryPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
             <motion.div variants={itemVariants} className="glass p-5 rounded-2xl border-l-4 border-l-emerald-500 group hover:-translate-y-1 transition-transform">
               <div className="flex justify-between items-start mb-2">
-                <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Tổng Tồn Khả Dụng</p>
+                <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center">
+                  Tổng Tồn Khả Dụng
+                  {/* 🚀 UX: Huy hiệu báo hiệu đang lọc */}
+                  {isFiltering && <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400">Đã lọc</span>}
+                </p>
                 <div className="p-2 bg-emerald-100 dark:bg-emerald-500/20 rounded-lg"><Box className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /></div>
               </div>
               <h3 className="text-3xl font-black text-slate-900 dark:text-white truncate">{formatQty(summary.totalAvailable)}</h3>
@@ -383,7 +402,10 @@ export default function InventoryPage() {
 
             <motion.div variants={itemVariants} className="glass p-5 rounded-2xl border-l-4 border-l-rose-500 group hover:-translate-y-1 transition-transform relative overflow-hidden">
               <div className="flex justify-between items-start mb-2 relative z-10">
-                <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Hàng Đang Khóa</p>
+                <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center">
+                  Hàng Đang Khóa
+                  {isFiltering && <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400">Đã lọc</span>}
+                </p>
                 <div className="p-2 bg-rose-100 dark:bg-rose-500/20 rounded-lg"><Lock className="w-4 h-4 text-rose-600 dark:text-rose-400" /></div>
               </div>
               <h3 className="text-3xl font-black text-rose-600 dark:text-rose-400 relative z-10 truncate">{formatQty(summary.totalLocked)}</h3>
@@ -391,7 +413,10 @@ export default function InventoryPage() {
 
             <motion.div variants={itemVariants} className="glass p-5 rounded-2xl border-l-4 border-l-blue-500 group hover:-translate-y-1 transition-transform">
               <div className="flex justify-between items-start mb-2">
-                <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Tổng Giá Trị (MAC)</p>
+                <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center">
+                  Tổng Giá Trị (MAC)
+                  {isFiltering && <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400">Đã lọc</span>}
+                </p>
                 <div className="p-2 bg-blue-100 dark:bg-blue-500/20 rounded-lg"><DollarSign className="w-4 h-4 text-blue-600 dark:text-blue-400" /></div>
               </div>
               <h3 className="text-3xl font-black text-blue-600 dark:text-blue-400 truncate">{formatVND(summary.totalValue)}</h3>

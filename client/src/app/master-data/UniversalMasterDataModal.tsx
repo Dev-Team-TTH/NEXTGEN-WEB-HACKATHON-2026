@@ -9,7 +9,7 @@ export interface MasterDataField {
   label: string;
   type: "text" | "number" | "email" | "tel" | "select" | "textarea";
   required?: boolean;
-  options?: { label: string; value: string | number }[]; // Dành cho type="select"
+  options?: { label: string; value: string | number }[]; 
   placeholder?: string;
 }
 
@@ -29,7 +29,6 @@ export default function UniversalMasterDataModal({
 }: UniversalMasterDataModalProps) {
   const [formData, setFormData] = useState<Record<string, any>>({});
 
-  // Reset & Populate Form
   useEffect(() => {
     if (isOpen) {
       if (initialData) {
@@ -37,7 +36,6 @@ export default function UniversalMasterDataModal({
       } else {
         const emptyForm: Record<string, any> = {};
         fields.forEach(f => emptyForm[f.name] = f.type === "number" ? "" : "");
-        // Mặc định luôn có isActive nếu có trên form
         emptyForm.isActive = true; 
         setFormData(emptyForm);
       }
@@ -61,16 +59,16 @@ export default function UniversalMasterDataModal({
     
     switch (field.type) {
       case "textarea":
-        return <textarea name={field.name} required={field.required} value={formData[field.name] || ""} onChange={handleChange} placeholder={field.placeholder} rows={3} className={`${commonClasses} resize-none`} />;
+        return <textarea name={field.name} required={field.required} value={formData[field.name] ?? ""} onChange={handleChange} placeholder={field.placeholder} rows={3} className={`${commonClasses} resize-none`} />;
       case "select":
         return (
-          <select name={field.name} required={field.required} value={formData[field.name] || ""} onChange={handleChange} className={commonClasses}>
-            <option value="">-- Chọn --</option>
-            {field.options?.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          <select name={field.name} required={field.required} value={formData[field.name] ?? ""} onChange={handleChange} className={`${commonClasses} cursor-pointer appearance-none`}>
+            <option value="" disabled className="text-slate-400">-- Vui lòng chọn dữ liệu --</option>
+            {field.options?.map((opt, idx) => <option key={`${opt.value}-${idx}`} value={opt.value} className="text-slate-900 dark:text-white bg-white dark:bg-slate-900">{opt.label}</option>)}
           </select>
         );
       default:
-        return <input type={field.type} name={field.name} required={field.required} value={formData[field.name] || ""} onChange={handleChange} placeholder={field.placeholder} className={commonClasses} />;
+        return <input type={field.type} step={field.type === "number" ? "any" : undefined} name={field.name} required={field.required} value={formData[field.name] ?? ""} onChange={handleChange} placeholder={field.placeholder} className={commonClasses} />;
     }
   };
 
@@ -98,7 +96,7 @@ export default function UniversalMasterDataModal({
             {renderField(field)}
           </div>
         ))}
-        {/* Toggle Status (Active/Inactive) */}
+        
         <div className="sm:col-span-2 flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-200 dark:border-white/5 mt-2">
           <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Trạng thái Hoạt động</span>
           <button type="button" onClick={() => setFormData(prev => ({ ...prev, isActive: prev.isActive === false ? true : false }))} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${formData.isActive !== false ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-600'}`}>

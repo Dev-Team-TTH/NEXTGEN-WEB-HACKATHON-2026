@@ -4,7 +4,8 @@ import React, { useState, useMemo } from "react";
 import { motion, Variants } from "framer-motion";
 import { 
   ArrowDownLeft, ArrowUpRight, ArrowRightLeft, 
-  Settings2, FileText, AlertOctagon, RefreshCcw, Download 
+  Settings2, FileText, AlertOctagon, RefreshCcw, Download,
+  Filter
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -37,10 +38,6 @@ const getDirectionUI = (direction: string) => {
 // ==========================================
 const HistorySkeleton = () => (
   <div className="w-full animate-pulse flex flex-col gap-6 mt-4">
-    <div className="flex gap-4">
-      <div className="h-10 w-32 bg-slate-200 dark:bg-slate-800 rounded-full"></div>
-      <div className="h-10 w-32 bg-slate-200 dark:bg-slate-800 rounded-full"></div>
-    </div>
     <div className="h-[400px] w-full bg-slate-200 dark:bg-slate-800/50 rounded-3xl"></div>
   </div>
 );
@@ -49,7 +46,7 @@ const HistorySkeleton = () => (
 // COMPONENT CHÍNH: LỊCH SỬ GIAO DỊCH KHO
 // ==========================================
 export default function TransactionHistory() {
-  const [filterDirection, setFilterDirection] = useState<string | "ALL">("ALL");
+  const [filterDirection, setFilterDirection] = useState<string>("ALL");
 
   // 👉 FETCH DATA THẬT
   const { data: responseData, isLoading, isError, refetch, isFetching } = useGetInventoryTransactionsQuery({});
@@ -61,10 +58,19 @@ export default function TransactionHistory() {
     return (responseData as any).data || [];
   }, [responseData]);
 
-  // Lọc dữ liệu
+  // Lọc dữ liệu & Bơm trường ảo để Search
   const filteredData = useMemo(() => {
-    if (filterDirection === "ALL") return transactions;
-    return transactions.filter((tx: InventoryTransaction) => tx.movementDirection === filterDirection);
+    let arr = transactions.map((tx: any) => ({
+      ...tx,
+      // Trường ảo để DataTable có thể Search được cả Mã Phiếu (Ref)
+      searchReference: tx.document?.documentNumber || tx.documentId || ""
+    }));
+
+    if (filterDirection !== "ALL") {
+      arr = arr.filter((tx: any) => tx.movementDirection === filterDirection);
+    }
+    
+    return arr;
   }, [transactions, filterDirection]);
 
   // --- HANDLER EXPORT THẺ KHO ---
@@ -73,8 +79,8 @@ export default function TransactionHistory() {
       toast.error("Không có dữ liệu thẻ kho để xuất!"); return;
     }
     
-    const exportData = filteredData.map((tx: InventoryTransaction) => ({
-      "Thời gian": formatDateTime(tx.timestamp), // SỬ DỤNG UTILS
+    const exportData = filteredData.map((tx: any) => ({
+      "Thời gian": formatDateTime(tx.timestamp),
       "Loại giao dịch": getDirectionUI(tx.movementDirection).label,
       "Mã Sản phẩm": tx.product?.productCode || "N/A",
       "Tên Sản phẩm": tx.product?.name || "N/A",
@@ -89,7 +95,7 @@ export default function TransactionHistory() {
   };
 
   // --- ĐỊNH NGHĨA CỘT CHO DATATABLE ---
-  const columns: ColumnDef<InventoryTransaction>[] = [
+  const columns: ColumnDef<any>[] = [
     {
       header: "Thời gian",
       accessorKey: "timestamp",
@@ -97,10 +103,10 @@ export default function TransactionHistory() {
       cell: (row) => (
         <div className="flex flex-col">
           <span className="font-semibold text-slate-800 dark:text-slate-200">
-            {formatDate(row.timestamp)} {/* SỬ DỤNG UTILS */}
+            {formatDate(row.timestamp)}
           </span>
           <span className="text-xs text-slate-500">
-            {formatDate(row.timestamp, "HH:mm:ss")} {/* SỬ DỤNG UTILS */}
+            {formatDate(row.timestamp, "HH:mm:ss")}
           </span>
         </div>
       )
@@ -165,7 +171,7 @@ export default function TransactionHistory() {
     },
     {
       header: "Chứng từ (Ref)",
-      accessorKey: "document",
+      accessorKey: "searchReference", // 💡 Trỏ vào trường ảo để Search DataTable
       cell: (row) => (
         <div className="flex flex-col">
           <span className="text-sm font-bold text-blue-600 dark:text-blue-400 cursor-pointer hover:underline">
@@ -180,6 +186,33 @@ export default function TransactionHistory() {
       )
     }
   ];
+
+  // 🚀 TẠO BỘ LỌC NÂNG CAO ĐỂ BƠM VÀO DATA TABLE
+  const historyFiltersNode = (
+    <div className="flex flex-wrap items-center justify-between gap-4 w-full">
+      <div className="w-full sm:w-80">
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Lọc theo Loại Giao dịch</label>
+        <div className="relative group">
+          <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+          <select 
+            value={filterDirection} onChange={(e) => setFilterDirection(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm appearance-none cursor-pointer"
+          >
+            <option value="ALL">Tất cả giao dịch kho</option>
+            <option value="IN">Nhập kho (IN)</option>
+            <option value="OUT">Xuất kho (OUT)</option>
+            <option value="TRANSFER">Điều chuyển nội bộ (TRANSFER)</option>
+            <option value="ADJUSTMENT">Kiểm kê / Điều chỉnh (ADJUSTMENT)</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Tích hợp nút Xuất dữ liệu vào góc bộ lọc cho gọn gàng */}
+      <button onClick={handleExportData} className="flex items-center gap-1.5 px-4 py-2 mt-4 sm:mt-0 rounded-xl text-sm font-bold transition-all active:scale-95 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-sm">
+        <Download className="w-4 h-4" /> <span className="hidden sm:inline">Xuất Thẻ Kho</span>
+      </button>
+    </div>
+  );
 
   // --- CẤU HÌNH MOTION ---
   const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
@@ -199,41 +232,6 @@ export default function TransactionHistory() {
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show" className="w-full flex flex-col gap-4 mt-6">
-      
-      {/* KHU VỰC BỘ LỌC VÀ EXPORT */}
-      <motion.div variants={itemVariants} className="flex flex-wrap items-center gap-2 mb-2">
-        {/* Buttons Filter */}
-        <button onClick={() => setFilterDirection("ALL")} className={cn(
-          "px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border",
-          filterDirection === "ALL" ? "bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900" : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-        )}>
-          Tất cả
-        </button>
-        <button onClick={() => setFilterDirection("IN")} className={cn(
-          "flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border",
-          filterDirection === "IN" ? "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-500/20 dark:border-emerald-500/30" : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-        )}>
-          <ArrowDownLeft className="w-4 h-4" /> Nhập kho
-        </button>
-        <button onClick={() => setFilterDirection("OUT")} className={cn(
-          "flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border",
-          filterDirection === "OUT" ? "bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-500/20 dark:border-rose-500/30" : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-        )}>
-          <ArrowUpRight className="w-4 h-4" /> Xuất kho
-        </button>
-        <button onClick={() => setFilterDirection("ADJUSTMENT")} className={cn(
-          "flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 border",
-          filterDirection === "ADJUSTMENT" ? "bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-500/20 dark:border-amber-500/30" : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-        )}>
-          <Settings2 className="w-4 h-4" /> Điều chỉnh
-        </button>
-
-        {/* Nút Export */}
-        <button onClick={handleExportData} className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-95 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-sm">
-          <Download className="w-4 h-4" /> <span className="hidden sm:inline">Xuất Dữ liệu</span>
-        </button>
-      </motion.div>
-
       {/* KHU VỰC HIỂN THỊ DỮ LIỆU */}
       <motion.div variants={itemVariants} className="w-full">
         {isLoading ? (
@@ -244,11 +242,14 @@ export default function TransactionHistory() {
               data={filteredData} 
               columns={columns} 
               itemsPerPage={10}
+              searchKey="searchReference" 
+              searchPlaceholder="Tìm mã chứng từ (Ref)..."
+              // 🚀 BƠM ADVANCED FILTER VÀO DATATABLE ĐỂ ĐỒNG BỘ UI
+              advancedFilterNode={historyFiltersNode}
             />
           </div>
         )}
       </motion.div>
-
     </motion.div>
   );
 }

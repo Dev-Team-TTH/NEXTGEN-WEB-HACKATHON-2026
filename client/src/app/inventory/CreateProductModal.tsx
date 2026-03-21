@@ -79,22 +79,49 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // 🚀 VALIDATION 1: Bắt buộc điền các trường lõi
     if (!formData.productCode || !formData.name || !formData.categoryId || !formData.uomId) {
       toast.error("Vui lòng điền đầy đủ các trường bắt buộc (*)");
       return;
     }
 
-    if (Number(formData.price) < 0 || Number(formData.purchasePrice) < 0) {
+    // 🚀 VALIDATION 2: Bắt lỗi gõ chữ vào ô số hoặc gõ số âm
+    const priceVal = Number(formData.price);
+    const purchasePriceVal = Number(formData.purchasePrice);
+    const reorderVal = Number(formData.reorderPoint);
+
+    if (isNaN(priceVal) || isNaN(purchasePriceVal) || isNaN(reorderVal)) {
+      toast.error("Giá tiền và Định mức tồn kho phải là một số hợp lệ!");
+      return;
+    }
+
+    if (priceVal < 0 || purchasePriceVal < 0) {
       toast.error("Giá tiền không được là số âm!");
       return;
+    }
+
+    if (reorderVal < 0) {
+      toast.error("Định mức tồn tối thiểu không được âm!");
+      return;
+    }
+
+    // 🚀 VALIDATION 3: Cảnh báo Nghiệp vụ Kế toán (Bán phá giá)
+    if (priceVal > 0 && purchasePriceVal > 0 && priceVal < purchasePriceVal) {
+      if (!window.confirm(`CẢNH BÁO: Giá bán (${formData.price}) đang thấp hơn Giá vốn (${formData.purchasePrice}).\nBạn có chắc chắn muốn tạo sản phẩm này (Bán lỗ) không?`)) {
+        return; // Hủy lưu nếu người dùng bấm Cancel
+      }
     }
 
     try {
       const payload = {
         ...formData,
-        price: safeRound(Number(formData.price || 0)),
-        purchasePrice: safeRound(Number(formData.purchasePrice || 0)),
-        reorderPoint: Number(formData.reorderPoint || 0),
+        // Loại bỏ khoảng trắng thừa để CSDL sạch đẹp
+        productCode: formData.productCode.trim().toUpperCase(),
+        name: formData.name.trim(),
+        barcode: formData.barcode.trim(),
+        price: safeRound(priceVal),
+        purchasePrice: safeRound(purchasePriceVal),
+        reorderPoint: reorderVal,
         supplierId: formData.supplierId || undefined, 
       };
 
@@ -102,7 +129,7 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
       toast.success(`Đã tạo thành công sản phẩm: ${formData.name}`);
       onClose();
     } catch (error: any) {
-      toast.error(error?.data?.message || "Lỗi khi tạo sản phẩm!");
+      toast.error(error?.data?.message || "Lỗi giao tiếp với máy chủ khi tạo sản phẩm!");
     }
   };
 
@@ -281,17 +308,28 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
               </h3>
             </div>
 
+            {/* 🚀 ĐÃ BỔ SUNG VALIDATION MÀU SẮC ĐỂ CẢNH BÁO BÁN LỖ */}
             <div className="space-y-1.5 group">
               <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors">
                 Giá Bán Cơ Sở (VND)
               </label>
               <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500" />
+                <DollarSign className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4", Number(formData.price) > 0 && Number(formData.price) < Number(formData.purchasePrice) ? "text-rose-500" : "text-emerald-500")} />
                 <input 
-                  type="number" name="price" value={formData.price} onChange={handleChange} min="0"
-                  className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-emerald-600 dark:text-emerald-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                  type="number" name="price" value={formData.price} onChange={handleChange} min="0" step="1000"
+                  className={cn(
+                    "w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border rounded-xl text-sm font-bold outline-none transition-all",
+                    Number(formData.price) > 0 && Number(formData.price) < Number(formData.purchasePrice) 
+                      ? "text-rose-600 border-rose-300 focus:ring-rose-500 bg-rose-50/50 dark:bg-rose-500/10" 
+                      : "text-emerald-600 dark:text-emerald-400 border-slate-200 dark:border-slate-700 focus:ring-emerald-500"
+                  )}
                 />
               </div>
+              {Number(formData.price) > 0 && Number(formData.price) < Number(formData.purchasePrice) && (
+                <p className="text-[10px] font-bold text-rose-500 mt-1 flex items-center gap-1 animate-pulse">
+                  <AlertCircle className="w-3 h-3" /> Giá bán đang thấp hơn Giá nhập!
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5 group">
@@ -301,7 +339,7 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
               <div className="relative">
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-orange-500" />
                 <input 
-                  type="number" name="purchasePrice" value={formData.purchasePrice} onChange={handleChange} min="0"
+                  type="number" name="purchasePrice" value={formData.purchasePrice} onChange={handleChange} min="0" step="1000"
                   className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-orange-600 dark:text-orange-400 focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                 />
               </div>
@@ -320,8 +358,10 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
               </div>
             </div>
 
-            <div className="sm:col-span-2 flex flex-col sm:flex-row gap-4 p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800 mt-2">
-              <label className="flex items-center gap-3 cursor-pointer group">
+            {/* 🚀 NÂNG CẤP UX: Trạng thái Checked sẽ sáng viền Box để dễ nhìn hơn */}
+            <div className="sm:col-span-2 flex flex-col sm:flex-row gap-4 p-4 rounded-2xl border transition-colors mt-2 bg-slate-50 dark:bg-slate-800/30 border-slate-100 dark:border-slate-800">
+              
+              <label className={cn("flex-1 flex items-center gap-3 p-3 cursor-pointer group rounded-xl border transition-all", formData.hasVariants ? "bg-indigo-50 border-indigo-200 dark:bg-indigo-500/10 dark:border-indigo-500/30" : "border-transparent")}>
                 <div className="relative flex items-center justify-center">
                   <input 
                     type="checkbox" name="hasVariants" checked={formData.hasVariants} onChange={handleChange}
@@ -329,12 +369,12 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
                   />
                   <CheckCircle2 className="absolute text-white w-3.5 h-3.5 opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" />
                 </div>
-                <span className="text-sm font-bold text-slate-700 dark:text-slate-300 group-hover:text-indigo-500 transition-colors">
+                <span className={cn("text-sm font-bold transition-colors", formData.hasVariants ? "text-indigo-700 dark:text-indigo-400" : "text-slate-700 dark:text-slate-300 group-hover:text-indigo-500")}>
                   Có Biến thể (Màu sắc, Size...)
                 </span>
               </label>
 
-              <label className="flex items-center gap-3 cursor-pointer group">
+              <label className={cn("flex-1 flex items-center gap-3 p-3 cursor-pointer group rounded-xl border transition-all", formData.hasBatches ? "bg-indigo-50 border-indigo-200 dark:bg-indigo-500/10 dark:border-indigo-500/30" : "border-transparent")}>
                 <div className="relative flex items-center justify-center">
                   <input 
                     type="checkbox" name="hasBatches" checked={formData.hasBatches} onChange={handleChange}
@@ -342,10 +382,11 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
                   />
                   <CheckCircle2 className="absolute text-white w-3.5 h-3.5 opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" />
                 </div>
-                <span className="text-sm font-bold text-slate-700 dark:text-slate-300 group-hover:text-indigo-500 transition-colors">
+                <span className={cn("text-sm font-bold transition-colors", formData.hasBatches ? "text-indigo-700 dark:text-indigo-400" : "text-slate-700 dark:text-slate-300 group-hover:text-indigo-500")}>
                   Quản lý Lô / Hạn Sử Dụng
                 </span>
               </label>
+
             </div>
 
           </div>
