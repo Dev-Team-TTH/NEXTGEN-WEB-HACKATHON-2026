@@ -1,11 +1,11 @@
-import { Request, Response } from "express";
+import { Response } from "express";
+import { ActionType } from "@prisma/client";
 import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
+import { AuthRequest } from "../middleware/authMiddleware"; // 🚀 IMPORT CHUẨN KIẾN TRÚC
 
-// Custom Request Interface để loại bỏ (req as any)
-interface AuthRequest extends Request {
-  user?: { userId: string; [key: string]: any };
-}
+// Hàm Helper lấy userId an toàn
+const getUserId = (req: AuthRequest) => req.user?.userId || req.body.userId;
 
 // ==========================================
 // 1. TRUY VẤN TỒN KHO TRỰC TIẾP (INVENTORY BALANCES)
@@ -123,7 +123,7 @@ export const getInventoryTransactions = async (req: AuthRequest, res: Response):
 // ==========================================
 export const adjustStock = async (req: AuthRequest, res: Response): Promise<void> => {
   const { branchId, warehouseId, binId, productId, variantId, batchId, adjustQuantity, unitCost, note } = req.body;
-  const userId = req.user?.userId || req.body.userId;
+  const userId = getUserId(req);
 
   try {
     const qty = Number(adjustQuantity);
@@ -169,7 +169,6 @@ export const adjustStock = async (req: AuthRequest, res: Response): Promise<void
         newAvgCost = qtyAfter > 0 ? (newTotalValue / qtyAfter) : 0; 
       } else { 
         newTotalValue -= totalCostChange;
-        // Xuất kho không làm thay đổi giá trị trung bình mỗi unit
       }
 
       await tx.inventoryBalance.upsert({
@@ -203,7 +202,7 @@ export const adjustStock = async (req: AuthRequest, res: Response): Promise<void
       return { doc, txLine };
     });
 
-    await logAudit("InventoryTransaction", result.txLine.transactionId, "CREATE", null, result, userId, req.ip);
+    await logAudit("InventoryTransaction", result.txLine.transactionId, ActionType.CREATE, null, result, userId, req.ip);
     res.status(201).json({ message: "Điều chỉnh kho thành công!", result });
   } catch (error: any) {
     res.status(400).json({ message: "Lỗi điều chỉnh kho", error: error.message });
@@ -215,7 +214,7 @@ export const adjustStock = async (req: AuthRequest, res: Response): Promise<void
 // ==========================================
 export const transferStock = async (req: AuthRequest, res: Response): Promise<void> => {
   const { branchId, fromWarehouseId, toWarehouseId, note, items } = req.body;
-  const userId = req.user?.userId || req.body.userId;
+  const userId = getUserId(req);
 
   try {
     if (!items || items.length === 0) {
@@ -237,7 +236,6 @@ export const transferStock = async (req: AuthRequest, res: Response): Promise<vo
 
       let docTotalAmount = 0;
 
-      // Kỹ thuật PRE-FETCH để tránh lỗi N+1 Query
       const sourceConditions = items.map((item: any) => ({
         warehouseId: fromWarehouseId, binId: item.fromBinId || null, productId: item.productId,
         variantId: item.variantId || null, batchId: item.batchId || null
@@ -253,7 +251,6 @@ export const transferStock = async (req: AuthRequest, res: Response): Promise<vo
         tx.inventoryBalance.findMany({ where: { OR: destConditions } })
       ]);
 
-      // Tạo Lookup Map (O(1) time complexity)
       const getBalanceKey = (w: string, b: string | null, p: string, v: string | null, ba: string | null) => 
         `${w}_${b || 'null'}_${p}_${v || 'null'}_${ba || 'null'}`;
       
@@ -275,13 +272,11 @@ export const transferStock = async (req: AuthRequest, res: Response): Promise<vo
         const totalLineCost = qty * unitCost;
         docTotalAmount += totalLineCost;
 
-        // Xử lý trừ kho xuất
         await tx.inventoryBalance.update({
           where: { balanceId: sourceBalance.balanceId },
           data: { quantity: { decrement: qty }, totalValue: { decrement: totalLineCost } }
         });
 
-        // Xử lý cộng kho nhập
         const destKey = getBalanceKey(toWarehouseId, item.toBinId, item.productId, item.variantId, item.batchId);
         const destBalance = destMap.get(destKey);
 
@@ -321,7 +316,7 @@ export const transferStock = async (req: AuthRequest, res: Response): Promise<vo
       return doc;
     });
 
-    await logAudit("Document (Transfer)", transferDoc.documentId, "CREATE", null, transferDoc, userId, req.ip);
+    await logAudit("Document (Transfer)", transferDoc.documentId, ActionType.CREATE, null, transferDoc, userId, req.ip);
     res.status(201).json({ message: "Chuyển kho nội bộ thành công!", document: transferDoc });
   } catch (error: any) {
     res.status(400).json({ message: "Lỗi chuyển kho", error: error.message });
@@ -331,7 +326,7 @@ export const transferStock = async (req: AuthRequest, res: Response): Promise<vo
 // ==========================================
 // 5. THUẬT TOÁN TỰ ĐỘNG NHẶT HÀNG (FIFO / FEFO)
 // ==========================================
-export const autoPickStock = async (req: Request, res: Response): Promise<void> => {
+export const autoPickStock = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { warehouseId, productId, variantId, requiredQuantity } = req.body;
     const qtyNeeded = Number(requiredQuantity);
@@ -420,7 +415,7 @@ export const autoPickStock = async (req: Request, res: Response): Promise<void> 
 // ==========================================
 // 6. CẢNH BÁO TỒN KHO AN TOÀN (LOW STOCK ALERTS)
 // ==========================================
-export const getLowStockAlerts = async (req: Request, res: Response): Promise<void> => {
+export const getLowStockAlerts = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const groupedBalances = await prisma.inventoryBalance.groupBy({
       by: ['productId'],
@@ -460,7 +455,7 @@ export const getLowStockAlerts = async (req: Request, res: Response): Promise<vo
 // ==========================================
 // 7. CẢNH BÁO HÀNG SẮP HẾT HẠN (EXPIRING BATCHES)
 // ==========================================
-export const getExpiringBatches = async (req: Request, res: Response): Promise<void> => {
+export const getExpiringBatches = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const daysThreshold = Number(req.query.days) || 30; 
     
@@ -494,7 +489,7 @@ export const getExpiringBatches = async (req: Request, res: Response): Promise<v
 // ==========================================
 export const bulkStockTake = async (req: AuthRequest, res: Response): Promise<void> => {
   const { branchId, warehouseId, note, items } = req.body;
-  const userId = req.user?.userId || req.body.userId;
+  const userId = getUserId(req);
 
   try {
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -517,7 +512,6 @@ export const bulkStockTake = async (req: AuthRequest, res: Response): Promise<vo
 
       let totalCostVariance = 0;
 
-      // KIẾN TRÚC ENTERPRISE: Fetch toàn bộ balances 1 lần duy nhất thay vì query trong vòng lặp (N+1 Issue)
       const balanceConditions = items.map((item: any) => ({
         warehouseId, binId: item.binId || null, productId: item.productId, 
         variantId: item.variantId || null, batchId: item.batchId || null
@@ -591,7 +585,7 @@ export const bulkStockTake = async (req: AuthRequest, res: Response): Promise<vo
       return doc;
     });
 
-    await logAudit("Document (StockTake)", result.documentId, "CREATE", null, result, userId, req.ip);
+    await logAudit("Document (StockTake)", result.documentId, ActionType.CREATE, null, result, userId, req.ip);
     res.status(201).json({ message: "Chốt sổ kiểm kê hàng loạt thành công!", document: result });
   } catch (error: any) {
     res.status(400).json({ message: "Lỗi xử lý kiểm kê hàng loạt", error: error.message });

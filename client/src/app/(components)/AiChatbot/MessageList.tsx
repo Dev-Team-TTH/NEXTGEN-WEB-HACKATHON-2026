@@ -1,23 +1,47 @@
 import React, { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, User, ArrowUpRight } from "lucide-react";
+import { Sparkles, User, ArrowUpRight, AlertCircle } from "lucide-react";
 import { Message } from "./types";
-import { cn } from "@/utils/helpers"; // IMPORT SIÊU VŨ KHÍ
+import { cn } from "@/utils/helpers";
 
 interface MessageListProps {
   messages: Message[];
   isTyping: boolean;
 }
 
-// Helper format markdown in đậm cơ bản từ AI
+// ==========================================
+// TRÌNH PHÂN TÍCH MARKDOWN (MINI-PARSER)
+// Xử lý in đậm và gạch đầu dòng từ Gemini API
+// ==========================================
 const formatAIText = (text: string) => {
-  const parts = text.split(/(\*\*.*?\*\*)/g);
-  return parts.map((part, idx) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={idx} className="font-bold text-indigo-700 dark:text-indigo-300">{part.slice(2, -2)}</strong>;
+  return text.split('\n').map((line, idx) => {
+    let formattedLine = line.trim();
+    if (!formattedLine) return <div key={idx} className="h-1.5" />; // Khoảng cách giữa các đoạn
+    
+    // Regex xử lý **in đậm**
+    const boldRegex = /\*\*(.*?)\*\*/g;
+    const renderContent = () => (
+      <span dangerouslySetInnerHTML={{ 
+        __html: formattedLine.replace(boldRegex, '<strong class="font-bold text-indigo-700 dark:text-indigo-300">$1</strong>') 
+      }} />
+    );
+
+    // Xử lý danh sách (Bullet points)
+    if (formattedLine.startsWith('- ') || formattedLine.startsWith('* ')) {
+      formattedLine = formattedLine.substring(2);
+      return (
+        <li key={idx} className="ml-4 mb-1 list-disc marker:text-indigo-500 font-medium">
+          {renderContent()}
+        </li>
+      );
     }
-    // Xử lý xuống dòng
-    return <span key={idx}>{part.split('\n').map((line, i) => <React.Fragment key={i}>{line}<br/></React.Fragment>)}</span>;
+
+    // Xử lý văn bản bình thường
+    return (
+      <p key={idx} className="mb-1.5 last:mb-0 leading-relaxed">
+        {renderContent()}
+      </p>
+    );
   });
 };
 
@@ -42,18 +66,26 @@ export default function MessageList({ messages, isTyping }: MessageListProps) {
             {/* Avatar */}
             <div className={cn(
               "w-8 h-8 shrink-0 rounded-full flex items-center justify-center mt-1 shadow-sm border border-slate-200/50 dark:border-white/5",
-              isUser ? "bg-blue-100 dark:bg-blue-500/20" : "bg-indigo-100 dark:bg-indigo-500/20"
+              isUser ? "bg-blue-100 dark:bg-blue-500/20" : msg.isError ? "bg-rose-100 dark:bg-rose-500/20" : "bg-indigo-100 dark:bg-indigo-500/20"
             )}>
-              {isUser ? <User className="w-4.5 h-4.5 text-blue-600 dark:text-blue-400" /> : <Sparkles className="w-4.5 h-4.5 text-indigo-600 dark:text-indigo-400" />}
+              {isUser ? (
+                <User className="w-4.5 h-4.5 text-blue-600 dark:text-blue-400" />
+              ) : msg.isError ? (
+                <AlertCircle className="w-4.5 h-4.5 text-rose-600 dark:text-rose-400" />
+              ) : (
+                <Sparkles className="w-4.5 h-4.5 text-indigo-600 dark:text-indigo-400" />
+              )}
             </div>
 
             {/* Khối Nội dung */}
             <div className="flex flex-col gap-2 min-w-0">
               <div className={cn(
-                "p-3.5 rounded-2xl text-[13.5px] leading-relaxed shadow-sm font-medium",
+                "p-3.5 rounded-2xl text-[13.5px] shadow-sm font-medium",
                 isUser 
                   ? "bg-blue-600 text-white rounded-tr-sm" 
-                  : "bg-white dark:bg-[#1E293B] text-slate-800 dark:text-slate-200 rounded-tl-sm border border-slate-200/80 dark:border-white/10"
+                  : msg.isError 
+                    ? "bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300 rounded-tl-sm border border-rose-200 dark:border-rose-500/20"
+                    : "bg-white dark:bg-[#1E293B] text-slate-800 dark:text-slate-200 rounded-tl-sm border border-slate-200/80 dark:border-white/10"
               )}>
                 {formatAIText(msg.text)}
               </div>

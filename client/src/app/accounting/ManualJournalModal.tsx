@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { 
   Calculator, Plus, Trash2, Save, FileEdit, 
   Scale, ShieldAlert, CheckCircle2, Loader2, 
-  AlignLeft, Hash
+  AlignLeft, Hash, CalendarDays
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -13,6 +13,7 @@ import { toast } from "react-hot-toast";
 import { 
   useGetAccountsQuery,
   useGetCostCentersQuery,
+  useGetFiscalPeriodsQuery,
   useCreateJournalEntryMutation,
   useUpdateJournalEntryMutation,
   JournalEntry
@@ -20,14 +21,14 @@ import {
 
 // --- IMPORT CORE MODAL & UTILS ---
 import Modal from "@/app/(components)/Modal";
-import { formatVND, safeRound } from "@/utils/formatters";
+import { formatVND, safeRound, formatDate } from "@/utils/formatters";
 import { cn } from "@/utils/helpers";
 
 // ==========================================
 // 1. INTERFACES
 // ==========================================
 interface JournalLineForm {
-  id: string; // Fake ID for React Map Key
+  id: string; 
   accountId: string;
   costCenterId: string;
   description: string;
@@ -38,7 +39,7 @@ interface JournalLineForm {
 interface ManualJournalModalProps {
   isOpen: boolean;
   onClose: () => void;
-  entry?: JournalEntry | null; // Truyền vào nếu là Edit Bản Nháp
+  entry?: JournalEntry | null; 
 }
 
 const getTodayInputFormat = () => new Date().toISOString().split('T')[0];
@@ -58,14 +59,16 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
   // --- API HOOKS ---
   const { data: accounts = [], isLoading: loadingAccs } = useGetAccountsQuery(undefined, { skip: !isOpen });
   const { data: costCenters = [], isLoading: loadingCCs } = useGetCostCentersQuery(undefined, { skip: !isOpen });
+  const { data: periods = [], isLoading: loadingPeriods } = useGetFiscalPeriodsQuery(undefined, { skip: !isOpen });
   
   const [createEntry, { isLoading: isCreating }] = useCreateJournalEntryMutation();
   const [updateEntry, { isLoading: isUpdating }] = useUpdateJournalEntryMutation();
 
   const isSubmitting = isCreating || isUpdating;
 
-  // --- STATE BẢN GHI (HEADER) ---
+  // --- STATE BẢN GHI (HEADER CHUẨN HÓA) ---
   const [entryDate, setEntryDate] = useState(getTodayInputFormat());
+  const [fiscalPeriodId, setFiscalPeriodId] = useState("");
   const [reference, setReference] = useState("");
   const [description, setDescription] = useState("");
 
@@ -76,6 +79,7 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
     if (isOpen) {
       if (entry) {
         setEntryDate(new Date(entry.entryDate).toISOString().split('T')[0]);
+        setFiscalPeriodId(entry.fiscalPeriodId || ""); // Đã map từ interface mới
         setReference(entry.reference || "");
         setDescription(entry.description || "");
         
@@ -90,6 +94,7 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
         setLines(existingLines.length > 0 ? existingLines : generateEmptyLines(2));
       } else {
         setEntryDate(getTodayInputFormat());
+        setFiscalPeriodId("");
         setReference(generateJVReference());
         setDescription("");
         setLines(generateEmptyLines(2));
@@ -108,49 +113,41 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
     }));
   };
 
-  // --- HANDLERS CÁC DÒNG ---
   const addLine = () => setLines([...lines, ...generateEmptyLines(1)]);
-  
   const removeLine = (id: string) => {
     if (lines.length <= 2) return toast.error("Một bút toán kế toán kép phải có ít nhất 2 dòng!");
     setLines(lines.filter(l => l.id !== id));
   };
-
   const updateLine = (id: string, field: keyof JournalLineForm, value: any) => {
     setLines(lines.map(line => {
       if (line.id !== id) return line;
       const updatedLine = { ...line, [field]: value };
-      
       if (field === 'debit' && Number(value) > 0) updatedLine.credit = "";
       if (field === 'credit' && Number(value) > 0) updatedLine.debit = "";
-      
       return updatedLine;
     }));
   };
 
-  // --- AUTO-BALANCING ENGINE (SỬ DỤNG SAFE ROUND CHỐNG LỖI KẾ TOÁN) ---
   const balanceCheck = useMemo(() => {
     let totalDebit = 0;
     let totalCredit = 0;
-
     lines.forEach(line => {
       totalDebit = safeRound(totalDebit + (Number(line.debit) || 0));
       totalCredit = safeRound(totalCredit + (Number(line.credit) || 0));
     });
-
     const isBalanced = totalDebit === totalCredit && totalDebit > 0;
     const diff = safeRound(Math.abs(totalDebit - totalCredit));
-
     return { totalDebit, totalCredit, isBalanced, diff };
   }, [lines]);
 
-  // --- SUBMIT FORM ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!fiscalPeriodId) {
+      toast.error("Vui lòng chọn Kỳ Kế Toán (Fiscal Period) để khóa sổ!"); return;
+    }
     if (!balanceCheck.isBalanced) {
       toast.error("Bút toán LỆCH TỔNG! Tổng Nợ phải bằng Tổng Có."); return;
     }
-
     const validLines = lines.filter(l => l.accountId && (Number(l.debit) > 0 || Number(l.credit) > 0));
     if (validLines.length < 2) {
       toast.error("Vui lòng nhập đầy đủ Tài khoản và Số tiền cho ít nhất 2 dòng (Nợ/Có)!"); return;
@@ -158,6 +155,7 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
 
     try {
       const payload = {
+        fiscalPeriodId, // 🚀 TRƯỜNG ĐÃ ĐƯỢC CHUẨN HÓA TRONG INTERFACE
         entryDate: new Date(entryDate).toISOString(),
         reference,
         description,
@@ -184,7 +182,6 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
     }
   };
 
-  // --- FOOTER RENDER ---
   const modalFooter = (
     <>
       <button 
@@ -195,7 +192,7 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
       </button>
       <button 
         onClick={handleSubmit} 
-        disabled={isSubmitting || !balanceCheck.isBalanced} 
+        disabled={isSubmitting || !balanceCheck.isBalanced || !fiscalPeriodId} 
         className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-sm font-bold rounded-xl shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
       >
         {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
@@ -209,16 +206,16 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
       isOpen={isOpen}
       onClose={onClose}
       title={entry ? "Chỉnh sửa Bút toán Nháp" : "Hạch toán Thủ công (Manual Journal)"}
-      subtitle="Quy tắc Kế toán Kép (Double-Entry)"
+      subtitle="Quy tắc Kế toán Kép (Double-Entry) với Ràng buộc Khóa sổ"
       icon={entry ? <FileEdit className="w-6 h-6" /> : <Calculator className="w-6 h-6" />}
-      maxWidth="max-w-6xl"
+      maxWidth="max-w-7xl"
       disableOutsideClick={isSubmitting}
       footer={modalFooter}
     >
       <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 flex flex-col gap-6">
         
-        {/* KHỐI THÔNG TIN CHUNG (HEADER BÚT TOÁN) */}
-        <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* KHỐI THÔNG TIN CHUNG */}
+        <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5">Ngày hạch toán *</label>
             <input 
@@ -227,13 +224,25 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
             />
           </div>
           <div className="space-y-1.5">
+            <label className="text-xs font-bold text-rose-500 uppercase flex items-center gap-1.5"><CalendarDays className="w-3.5 h-3.5"/> Kỳ Kế Toán *</label>
+            {loadingPeriods ? <div className="h-12 w-full bg-slate-200 dark:bg-slate-700 animate-pulse rounded-xl" /> : (
+              <select 
+                value={fiscalPeriodId} onChange={(e) => setFiscalPeriodId(e.target.value)} required
+                className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/50 rounded-xl text-sm font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-rose-500 transition-shadow shadow-sm"
+              >
+                <option value="">-- Chọn Kỳ --</option>
+                {periods.map(p => <option key={p.periodId} value={p.periodId}>{p.periodName} ({formatDate(p.startDate, 'MM/YYYY')})</option>)}
+              </select>
+            )}
+          </div>
+          <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5"><Hash className="w-3.5 h-3.5"/> Mã tham chiếu</label>
             <input 
               type="text" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="VD: JV-001..."
               className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow shadow-sm"
             />
           </div>
-          <div className="space-y-1.5 md:col-span-3">
+          <div className="space-y-1.5 lg:col-span-1">
             <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5"><AlignLeft className="w-3.5 h-3.5"/> Diễn giải chung *</label>
             <input 
               type="text" required value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Lý do hạch toán..."
@@ -284,7 +293,6 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
                           </select>
                         )}
                       </td>
-
                       <td className="px-4 py-3">
                         {loadingCCs ? <div className="h-9 w-full bg-slate-100 dark:bg-slate-800 rounded animate-pulse" /> : (
                           <select 
@@ -296,7 +304,6 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
                           </select>
                         )}
                       </td>
-
                       <td className="px-4 py-3">
                         <input 
                           type="text" value={line.description} onChange={(e) => updateLine(line.id, "description", e.target.value)}
@@ -304,7 +311,6 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
                           className="w-full bg-transparent border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
                         />
                       </td>
-
                       <td className="px-4 py-3">
                         <input 
                           type="number" min="0" value={line.debit} onChange={(e) => updateLine(line.id, "debit", e.target.value)}
@@ -312,7 +318,6 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
                           className="w-full bg-emerald-50/30 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/50 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-500 text-right font-black text-emerald-600 dark:text-emerald-400 disabled:opacity-30 disabled:bg-slate-100 dark:disabled:bg-slate-800"
                         />
                       </td>
-
                       <td className="px-4 py-3">
                         <input 
                           type="number" min="0" value={line.credit} onChange={(e) => updateLine(line.id, "credit", e.target.value)}
@@ -320,7 +325,6 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
                           className="w-full bg-blue-50/30 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/50 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500 text-right font-black text-blue-600 dark:text-blue-400 disabled:opacity-30 disabled:bg-slate-100 dark:disabled:bg-slate-800"
                         />
                       </td>
-
                       <td className="px-4 py-3 text-center">
                         <button type="button" onClick={() => removeLine(line.id)} className="p-2 text-rose-400 hover:text-rose-600 bg-transparent hover:bg-rose-50 dark:hover:bg-rose-500/20 rounded-lg transition-colors opacity-0 group-hover:opacity-100">
                           <Trash2 className="w-4 h-4"/>
@@ -336,7 +340,6 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
 
         {/* 3. BẢNG CÂN ĐỐI (BALANCE CHECK) */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mt-2 bg-slate-50 dark:bg-slate-800/30 p-5 rounded-2xl border border-slate-200 dark:border-white/5">
-          {/* Trạng thái Lệch/Cân */}
           <div className={cn(
             "px-4 py-3 rounded-2xl border flex items-center gap-3 transition-colors shadow-sm",
             balanceCheck.isBalanced 
@@ -349,8 +352,6 @@ export default function ManualJournalModal({ isOpen, onClose, entry }: ManualJou
               {!balanceCheck.isBalanced && <p className="text-xs font-bold mt-0.5">Độ lệch: {formatVND(balanceCheck.diff)}</p>}
             </div>
           </div>
-
-          {/* Khối Tổng Nợ / Có */}
           <div className="flex items-center gap-6 md:gap-10 pr-2">
             <div className="text-right">
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tổng Nợ (Debit)</p>

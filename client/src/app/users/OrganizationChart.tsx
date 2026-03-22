@@ -15,7 +15,6 @@ import { getInitials } from "@/utils/formatters";
 // COMPONENT CON: NODE CÂY (TREE NODE) VỚI TÍNH NĂNG COLLAPSE
 // ==========================================
 const TreeNode = ({ node, isRoot = false }: { node: any, isRoot?: boolean }) => {
-  // Mặc định: Root và Department được mở, nhưng nếu Department có User thì TỰ ĐỘNG ĐÓNG để chống lag DOM
   const [isExpanded, setIsExpanded] = useState(isRoot || node.type === "ROOT");
   const hasChildren = node.children && node.children.length > 0;
 
@@ -33,7 +32,6 @@ const TreeNode = ({ node, isRoot = false }: { node: any, isRoot?: boolean }) => 
               ? "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500/50 cursor-pointer" 
               : "bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-slate-800/80"
         )}
-        // Nếu là phòng ban và có nhân viên, cho phép click vào cả thẻ để Mở/Đóng
         onClick={() => {
           if (node.type === "DEPARTMENT" && hasChildren) {
             setIsExpanded(!isExpanded);
@@ -55,7 +53,6 @@ const TreeNode = ({ node, isRoot = false }: { node: any, isRoot?: boolean }) => 
           {node.subtitle}
         </p>
 
-        {/* NÚT MỞ/ĐÓNG NODE CON */}
         {hasChildren && !isRoot && (
           <button 
             onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
@@ -66,7 +63,6 @@ const TreeNode = ({ node, isRoot = false }: { node: any, isRoot?: boolean }) => 
           </button>
         )}
         
-        {/* HIỂN THỊ SỐ LƯỢNG KHI BỊ ĐÓNG */}
         {hasChildren && !isExpanded && !isRoot && (
           <div className="absolute -top-2 -right-2 bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-md shadow-sm border border-white dark:border-slate-800">
             {node.children.length}
@@ -74,7 +70,6 @@ const TreeNode = ({ node, isRoot = false }: { node: any, isRoot?: boolean }) => 
         )}
       </motion.div>
 
-      {/* RENDER CÁC NHÁNH CON VỚI ANIMATE PRESENCE (HIỆU ỨNG MƯỢT & CHỐNG LAG DOM) */}
       <AnimatePresence>
         {hasChildren && isExpanded && (
           <motion.div 
@@ -84,21 +79,17 @@ const TreeNode = ({ node, isRoot = false }: { node: any, isRoot?: boolean }) => 
             style={{ transformOrigin: "top" }}
             className="relative flex flex-col items-center pt-6"
           >
-            {/* Trục dọc nối từ Node cha xuống */}
             <div className="absolute top-0 w-px h-6 bg-slate-300 dark:bg-slate-700" />
             
-            {/* Thanh ngang nối các Node con */}
             {node.children.length > 1 && (
               <div className="absolute top-6 h-px bg-slate-300 dark:bg-slate-700" 
                    style={{ width: `calc(100% - ${100 / node.children.length}%)` }} 
               />
             )}
             
-            {/* Render các Node con */}
             <div className="flex gap-4 sm:gap-8 justify-center relative pt-6 pb-2">
               {node.children.map((child: any) => (
                 <div key={child.id} className="relative flex flex-col items-center">
-                  {/* Trục dọc nối từ thanh ngang xuống Node con */}
                   <div className="absolute -top-6 w-px h-6 bg-slate-300 dark:bg-slate-700" />
                   <TreeNode node={child} />
                 </div>
@@ -149,7 +140,8 @@ export default function OrganizationChart() {
         deptNode.children.push({
           id: u.userId,
           name: u.fullName,
-          subtitle: u.role || "Nhân viên",
+          // 🚀 FIX LỖI [object Object]: Truy xuất đúng trường roleName theo API mới
+          subtitle: u.role?.roleName || "Nhân viên",
           type: "USER"
         });
       });
@@ -167,7 +159,8 @@ export default function OrganizationChart() {
         children: unassignedUsers.map((u: any) => ({
           id: u.userId,
           name: u.fullName,
-          subtitle: u.role || "Nhân viên",
+          // 🚀 FIX LỖI [object Object]
+          subtitle: u.role?.roleName || "Nhân viên",
           type: "USER"
         }))
       };

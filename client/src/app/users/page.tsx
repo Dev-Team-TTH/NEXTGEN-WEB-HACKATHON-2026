@@ -36,15 +36,12 @@ import { cn, generateAvatarColor } from "@/utils/helpers";
 // ==========================================
 // THUẬT TOÁN BÓC TÁCH DỮ LIỆU
 // ==========================================
+// 🚀 FIX LỖI: Đã cập nhật logic để tìm roleId chuẩn xác theo cấu trúc 1-1 mới
 const extractUserRoleId = (u: any): string => {
   if (!u) return "";
-  let foundId = "";
-  if (typeof u.roleId === "string" && u.roleId) foundId = u.roleId;
-  else if (Array.isArray(u.roles) && u.roles.length > 0) foundId = u.roles[0].id || u.roles[0].roleId;
-  else if (Array.isArray(u.userRoles) && u.userRoles.length > 0) foundId = u.userRoles[0].roleId || u.userRoles[0].role?.id || u.userRoles[0].role?.roleId;
-  else if (u.role && typeof u.role === "object") foundId = u.role.id || u.role.roleId;
-  else if (Array.isArray(u.roleIds) && u.roleIds.length > 0) foundId = String(u.roleIds[0]);
-  return foundId ? String(foundId) : "";
+  if (typeof u.roleId === "string" && u.roleId) return u.roleId;
+  if (u.role && typeof u.role === "object" && u.role.roleId) return u.role.roleId;
+  return "";
 };
 
 const getStatusUI = (status: string) => {
@@ -83,7 +80,7 @@ export default function UsersPage() {
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
   const [editingRole, setEditingRole] = useState<any | null>(null);
 
-  // 🚀 STATE BỘ LỌC NÂNG CAO CHO NGƯỜI DÙNG
+  // BỘ LỌC
   const [filterStatus, setFilterStatus] = useState("ALL");
 
   // APIs
@@ -100,7 +97,6 @@ export default function UsersPage() {
   // Lấy danh sách Roles
   const rolesList: any[] = useMemo(() => Array.isArray(rawRoles) ? rawRoles : (rawRoles as any)?.data || (rawRoles as any)?.roles || [], [rawRoles]);
 
-  // 🚀 TÍCH HỢP BỘ LỌC VÀO LIST USERS
   const usersList: User[] = useMemo(() => {
     let arr = Array.isArray(rawUsers) ? rawUsers : (rawUsers as any)?.data || [];
     if (filterStatus !== "ALL") {
@@ -109,7 +105,7 @@ export default function UsersPage() {
     return arr;
   }, [rawUsers, filterStatus]);
 
-  // Tổng hợp thống kê (Dựa trên data nguyên bản để thẻ thống kê luôn đúng)
+  // Tổng hợp thống kê
   const summary = useMemo(() => {
     let activeCount = 0, twoFactorEnabledCount = 0;
     const fullArr = Array.isArray(rawUsers) ? rawUsers : (rawUsers as any)?.data || [];
@@ -287,7 +283,6 @@ export default function UsersPage() {
     }
   ], [rolesList, isDeletingUser, openUserModal, handleDeleteUser]);
 
-  // 🚀 TẠO BỘ LỌC ĐỂ BƠM VÀO DATA TABLE
   const userFiltersNode = (
     <div className="flex flex-wrap items-center gap-4 w-full">
       <div className="w-full sm:w-64">
@@ -420,7 +415,6 @@ export default function UsersPage() {
                       searchKey="fullName" 
                       searchPlaceholder="Tìm định danh, email, số điện thoại..." 
                       itemsPerPage={10} 
-                      // 🚀 BƠM BỘ LỌC NÂNG CAO VÀO DATA TABLE 
                       advancedFilterNode={userFiltersNode}
                     />
                   </div>
@@ -434,6 +428,7 @@ export default function UsersPage() {
                       const roleNameStr = r.roleName || r.name || r.title || `Vai trò ${idx + 1}`;
                       const roleDesc = r.description || "Tập hợp các quyền hạn cho phép truy cập và thao tác trên phân hệ.";
                       const permsCount = r.permissions?.length || 0;
+                      // 🚀 FIX BUG ĐẾM TÀI KHOẢN: Sử dụng hàm extractUserRoleId đã cập nhật
                       const usersWithRole = r._count?.users || usersList.filter((u: any) => extractUserRoleId(u) === roleId).length;
 
                       return (

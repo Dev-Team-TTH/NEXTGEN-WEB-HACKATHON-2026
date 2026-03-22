@@ -41,7 +41,6 @@ import { cn } from "@/utils/helpers";
 // ==========================================
 // 1. HELPERS & FORMATTERS
 // ==========================================
-// Phân loại Trạng thái Bút toán
 const getPostingStatusUI = (status: string) => {
   switch (status) {
     case "POSTED": return { label: "Đã Ghi Sổ", icon: CheckCircle2, color: "text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30" };
@@ -74,8 +73,6 @@ export default function AccountingPage() {
 
   // --- STATE TABS & LỌC CHÍNH ---
   const [activeTab, setActiveTab] = useState<JournalTab>("ALL");
-  
-  // 🚀 STATE BỘ LỌC NÂNG CAO (Kế toán)
   const [filterPeriod, setFilterPeriod] = useState("THIS_MONTH");
   const [filterLockStatus, setFilterLockStatus] = useState("ALL");
 
@@ -85,42 +82,53 @@ export default function AccountingPage() {
   const [selectedEntryForReverse, setSelectedEntryForReverse] = useState<string | null>(null);
   const [selectedEntryForEdit, setSelectedEntryForEdit] = useState<JournalEntry | null>(null);
 
-  // 👉 FETCH & MUTATION API
-  const { data: rawEntries = [], isLoading, isError, refetch, isFetching } = useGetJournalEntriesQuery({});
+  // 🚀 THUẬT TOÁN TÍNH TOÁN NGÀY BẮT ĐẦU VÀ KẾT THÚC (CHUẨN BỊ CHO BACKEND)
+  const dateFilters = useMemo(() => {
+    const now = dayjs();
+    switch (filterPeriod) {
+      case "THIS_MONTH":
+        return { startDate: now.startOf('month').toISOString(), endDate: now.endOf('month').toISOString() };
+      case "LAST_MONTH":
+        const lastMonth = now.subtract(1, 'month');
+        return { startDate: lastMonth.startOf('month').toISOString(), endDate: lastMonth.endOf('month').toISOString() };
+      case "THIS_QUARTER":
+        const startQuarterMonth = Math.floor(now.month() / 3) * 3;
+        return { 
+          startDate: now.month(startQuarterMonth).startOf('month').toISOString(), 
+          endDate: now.month(startQuarterMonth + 2).endOf('month').toISOString() 
+        };
+      case "THIS_YEAR":
+        return { startDate: now.startOf('year').toISOString(), endDate: now.endOf('year').toISOString() };
+      default:
+        return { startDate: undefined, endDate: undefined };
+    }
+  }, [filterPeriod]);
+
+  // 👉 FETCH & MUTATION API (ĐÃ TỐI ƯU HÓA: ÉP BACKEND PHẢI LỌC DỮ LIỆU)
+  const { data: rawEntries = [], isLoading, isError, refetch, isFetching } = useGetJournalEntriesQuery({
+    postingStatus: activeTab !== "ALL" ? activeTab : undefined,
+    startDate: dateFilters.startDate,
+    endDate: dateFilters.endDate
+  });
+
   const [postEntry, { isLoading: isPosting }] = usePostJournalEntryMutation();
   const [deleteEntry, { isLoading: isDeleting }] = useDeleteJournalEntryMutation();
 
-  // --- 🚀 XỬ LÝ LỌC THÔNG MINH TRÊN CLIENT (Bao gồm Bộ lọc thời gian) ---
+  // --- 🚀 XỬ LÝ LỌC NHẸ Ở CLIENT (Chỉ lọc những tham số Backend chưa support DB Direct) ---
   const entries = useMemo(() => {
     return rawEntries.map((entry: JournalEntry) => ({
       ...entry,
-      // Trường ảo gộp REF + Diễn giải để DataTable search mượt mà
       searchField: `${entry.reference || ""} ${entry.description || ""}`.toLowerCase()
     })).filter((entry: any) => {
-      // 1. Lọc theo Tab (Trạng thái Post)
-      const matchTab = activeTab === "ALL" || entry.postingStatus === activeTab;
-      
-      // 2. Lọc theo Tình trạng Khóa sổ
+      // Vì Thời gian và Trạng thái đã được lọc bởi API Backend, 
+      // ta chỉ cần lọc Tình trạng Khóa sổ ở Client.
       let matchLock = true;
       if (filterLockStatus === "CLOSED") matchLock = entry.isPeriodClosed === true;
       if (filterLockStatus === "OPEN") matchLock = entry.isPeriodClosed === false;
-
-      // 3. Lọc theo Kỳ kế toán (Thời gian)
-      let matchPeriod = true;
-      const entryDate = dayjs(entry.entryDate);
-      if (filterPeriod === "THIS_MONTH") {
-        matchPeriod = entryDate.isSame(dayjs(), 'month');
-      } else if (filterPeriod === "LAST_MONTH") {
-        matchPeriod = entryDate.isSame(dayjs().subtract(1, 'month'), 'month');
-      } else if (filterPeriod === "THIS_QUARTER") {
-        matchPeriod = entryDate.isSame(dayjs(), 'year') && Math.floor(entryDate.month() / 3) === Math.floor(dayjs().month() / 3);
-      } else if (filterPeriod === "THIS_YEAR") {
-        matchPeriod = entryDate.isSame(dayjs(), 'year');
-      }
       
-      return matchTab && matchLock && matchPeriod;
+      return matchLock;
     });
-  }, [rawEntries, activeTab, filterLockStatus, filterPeriod]);
+  }, [rawEntries, filterLockStatus]);
 
   // --- TÍNH TOÁN KPI (DATA VIZ SỔ CÁI ĐỘNG DỰA TRÊN KẾT QUẢ LỌC) ---
   const kpis = useMemo(() => {
@@ -131,7 +139,6 @@ export default function AccountingPage() {
       if (entry.postingStatus === "DRAFT") draftCount++;
       if (entry.postingStatus === "POSTED") postedCount++;
 
-      // Cân đối Số phát sinh chỉ tính các phiếu đã POSTED
       if (entry.postingStatus === "POSTED") {
         const entryDebit = entry.lines?.reduce((sum: number, line: any) => sum + (line.debit || 0), 0) || 0;
         const entryCredit = entry.lines?.reduce((sum: number, line: any) => sum + (line.credit || 0), 0) || 0;
@@ -195,7 +202,7 @@ export default function AccountingPage() {
   const columns: ColumnDef<any>[] = [
     {
       header: "Ngày / Tham chiếu",
-      accessorKey: "searchField", // 💡 Trỏ vào trường ảo để search được cả REF lẫn Mô tả
+      accessorKey: "searchField",
       sortable: true,
       cell: (row: any) => (
         <div className="flex flex-col max-w-[200px]">
@@ -297,7 +304,6 @@ export default function AccountingPage() {
 
         return (
           <div className="flex items-center justify-end gap-1.5">
-            {/* Nếu là BẢN NHÁP (Chưa ghi sổ) */}
             {isDraft && !isPeriodClosed && (
               <>
                 <button onClick={() => setSelectedEntryForEdit(row)} title="Sửa Bút toán Nháp" className="p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/30 rounded-xl transition-colors shadow-sm">
@@ -312,14 +318,12 @@ export default function AccountingPage() {
               </>
             )}
 
-            {/* Nếu ĐÃ GHI SỔ (Chỉ được đảo bút toán) */}
             {isPosted && !isPeriodClosed && !row.isReversed && (
               <button onClick={() => setSelectedEntryForReverse(row.journalId)} title="Đảo Bút toán (Reverse)" className="px-3 py-1.5 text-[10px] font-black text-white bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600 rounded-lg transition-transform active:scale-95 shadow-md shadow-orange-500/30 flex items-center gap-1.5">
                 <ArrowRightLeft className="w-3.5 h-3.5" /> ĐẢO SỔ
               </button>
             )}
 
-            {/* Nếu kỳ kế toán đã khóa */}
             {isPeriodClosed && (
               <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg flex items-center gap-1" title="Kỳ kế toán đã đóng. Không thể thao tác.">
                 <Lock className="w-3.5 h-3.5"/> KỲ ĐÃ KHÓA
@@ -368,7 +372,6 @@ export default function AccountingPage() {
     </div>
   );
 
-  // --- ANIMATION ---
   const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
   const itemVariants: Variants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } };
 
@@ -387,7 +390,7 @@ export default function AccountingPage() {
   return (
     <div className="w-full flex flex-col gap-6 pb-10">
       
-      {/* 1. HEADER CHUẨN ENTERPRISE */}
+      {/* HEADER */}
       <Header 
         title={t("Sổ Nhật Ký Chung (General Journal)")} 
         subtitle={t("Trung tâm kiểm soát mọi bút toán Nợ/Có. Đảm bảo tính toàn vẹn và cân đối kế toán.")}
@@ -421,7 +424,7 @@ export default function AccountingPage() {
       {isLoading ? <AccountingSkeleton /> : (
         <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-6 w-full">
           
-          {/* 2. KHỐI THỐNG KÊ (KPI CARDS - BẢNG CÂN ĐỐI NHANH ĐỘNG THEO LỌC) */}
+          {/* KPI CARDS */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
             
             <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-indigo-400 transition-colors">
@@ -466,10 +469,9 @@ export default function AccountingPage() {
 
           </div>
 
-          {/* 3. THANH CÔNG CỤ ĐIỀU HƯỚNG TABS (STICKY GLASSMORPHISM) */}
+          {/* TABS ĐIỀU HƯỚNG */}
           <motion.div variants={itemVariants} className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-3 rounded-3xl border border-slate-200/50 dark:border-white/10 shadow-sm z-30 sticky top-4">
             
-            {/* Tabs Filter */}
             <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200/50 dark:border-white/5">
               {[
                 { id: "ALL", label: "Toàn bộ Sổ cái" },
@@ -492,7 +494,7 @@ export default function AccountingPage() {
 
           </motion.div>
 
-          {/* 4. BẢNG DỮ LIỆU ĐỘNG (DATATABLE) - ĐƯỢC BƠM ADVANCED FILTERS */}
+          {/* BẢNG DỮ LIỆU ĐỘNG */}
           <motion.div variants={itemVariants} className="glass-panel rounded-3xl overflow-hidden shadow-md border border-slate-200 dark:border-white/10">
             {entries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-24 text-slate-400">
@@ -509,7 +511,6 @@ export default function AccountingPage() {
                 searchKey="searchField" 
                 searchPlaceholder="Lọc nhanh mã tham chiếu, diễn giải..." 
                 itemsPerPage={15} 
-                // 🚀 BƠM UI BỘ LỌC VÀO TRONG BẢNG
                 advancedFilterNode={accountingFiltersNode}
               />
             )}
@@ -518,29 +519,10 @@ export default function AccountingPage() {
         </motion.div>
       )}
 
-      {/* ==========================================
-          5. KHU VỰC TÍCH HỢP CÁC SIÊU MODALS ĐÃ HOÀN THIỆN
-          ========================================== */}
-          
-      {/* Cổng 1: Khóa sổ */}
-      <FiscalPeriodModal 
-        isOpen={isFiscalModalOpen} 
-        onClose={() => { setIsFiscalModalOpen(false); refetch(); }} 
-      />
-
-      {/* Cổng 2: Tạo/Sửa bút toán */}
-      <ManualJournalModal 
-        entry={selectedEntryForEdit} 
-        isOpen={isManualJournalOpen || !!selectedEntryForEdit} 
-        onClose={() => { setIsManualJournalOpen(false); setSelectedEntryForEdit(null); refetch(); }} 
-      />
-
-      {/* Cổng 3: Cỗ máy đảo sổ */}
-      <ReverseEntryModal 
-        journalId={selectedEntryForReverse} 
-        isOpen={!!selectedEntryForReverse} 
-        onClose={() => { setSelectedEntryForReverse(null); refetch(); }} 
-      />
+      {/* SIÊU MODALS ĐIỀU PHỐI */}
+      <FiscalPeriodModal isOpen={isFiscalModalOpen} onClose={() => { setIsFiscalModalOpen(false); refetch(); }} />
+      <ManualJournalModal entry={selectedEntryForEdit} isOpen={isManualJournalOpen || !!selectedEntryForEdit} onClose={() => { setIsManualJournalOpen(false); setSelectedEntryForEdit(null); refetch(); }} />
+      <ReverseEntryModal journalId={selectedEntryForReverse} isOpen={!!selectedEntryForReverse} onClose={() => { setSelectedEntryForReverse(null); refetch(); }} />
 
     </div>
   );

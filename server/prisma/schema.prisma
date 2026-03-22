@@ -26,13 +26,13 @@ enum ApprovalStatus {
 }
 
 enum TransactionType {
-  PURCHASE_ORDER    // PO (Đơn đặt hàng mua)
-  SALES_ORDER       // SO (Đơn đặt hàng bán)
-  PURCHASE_RECEIPT  // Phiếu Nhập kho
-  SALES_ISSUE       // Phiếu Xuất kho
+  PURCHASE_ORDER // PO (Đơn đặt hàng mua)
+  SALES_ORDER // SO (Đơn đặt hàng bán)
+  PURCHASE_RECEIPT // Phiếu Nhập kho
+  SALES_ISSUE // Phiếu Xuất kho
   INTERNAL_TRANSFER // Chuyển kho nội bộ
-  ADJUSTMENT        // Kiểm kê/Điều chỉnh
-  RETURN            // Trả hàng
+  ADJUSTMENT // Kiểm kê/Điều chỉnh
+  RETURN // Trả hàng
 }
 
 enum TransactionStatus {
@@ -40,20 +40,20 @@ enum TransactionStatus {
   PENDING_APPROVAL
   COMPLETED
   CANCELLED
-  REJECTED          // ĐÃ THÊM: Trạng thái từ chối
+  REJECTED // ĐÃ THÊM: Trạng thái từ chối
 }
 
 enum PaymentStatus {
-  UNPAID    
-  PARTIAL   
-  PAID      
+  UNPAID
+  PARTIAL
+  PAID
 }
 
 enum PaymentMethod {
   CASH
   BANK_TRANSFER
   CREDIT_CARD
-  CLEARING 
+  CLEARING
 }
 
 enum PostingStatus {
@@ -63,23 +63,23 @@ enum PostingStatus {
 }
 
 enum AssetStatus {
-  AVAILABLE      
-  IN_USE         
-  IN_MAINTENANCE 
-  BROKEN         
-  LIQUIDATED     
-  LOST           
+  AVAILABLE
+  IN_USE
+  IN_MAINTENANCE
+  BROKEN
+  LIQUIDATED
+  LOST
 }
 
 enum MaintenanceType {
-  PREVENTIVE 
-  CORRECTIVE 
-  UPGRADE    
+  PREVENTIVE
+  CORRECTIVE
+  UPGRADE
 }
 
 enum DepreciationMethod {
-  STRAIGHT_LINE      
-  DECLINING_BALANCE  
+  STRAIGHT_LINE
+  DECLINING_BALANCE
 }
 
 enum ActionType {
@@ -90,8 +90,8 @@ enum ActionType {
   REJECT
   ASSIGN
   RETURN
-  SUBMIT            // ĐÃ THÊM: Dùng khi trình duyệt
-  CANCEL            // ĐÃ THÊM: Dùng khi thu hồi
+  SUBMIT // ĐÃ THÊM: Dùng khi trình duyệt
+  CANCEL // ĐÃ THÊM: Dùng khi thu hồi
 }
 
 enum MovementDirection {
@@ -100,53 +100,74 @@ enum MovementDirection {
 }
 
 enum CostingMethod {
-  STANDARD          
-  FIFO              
-  MOVING_AVERAGE    
+  STANDARD
+  FIFO
+  MOVING_AVERAGE
+}
+
+enum AccountType {
+  CASH
+  BANK
+  AR
+  AP
+  EXPENSE
+  REVENUE
+  INVENTORY
+  ASSET
+  EQUITY
+}
+
+enum UomType {
+  UNIT
+  WEIGHT
+  VOLUME
+  LENGTH
 }
 
 // ==========================================
 // 2. TÀI CHÍNH KẾ TOÁN VĨ MÔ (IFRS, TAX, MULTI-CURRENCY)
 // ==========================================
 model Currency {
-  currencyCode  String   @id 
+  currencyCode  String         @id
   name          String
   symbol        String?
   exchangeRates ExchangeRate[]
   documents     Document[]
   priceLists    PriceList[]
+  customers     Customer[]
+  suppliers     Supplier[]
 }
 
 model ExchangeRate {
-  rateId       String   @id @default(uuid())
+  rateId       String    @id @default(uuid())
   currencyCode String
-  rate         Decimal  @db.Decimal(18, 6) 
+  rate         Decimal   @db.Decimal(18, 6)
   validFrom    DateTime
   validTo      DateTime?
-  currency     Currency @relation(fields: [currencyCode], references: [currencyCode], onDelete: Restrict)
+  currency     Currency  @relation(fields: [currencyCode], references: [currencyCode], onDelete: Restrict)
 
   @@index([currencyCode, validFrom])
 }
 
 model FiscalYear {
-  fiscalYearId String   @id @default(uuid())
-  year         Int      @unique
+  fiscalYearId String         @id @default(uuid())
+  year         Int            @unique
   startDate    DateTime
   endDate      DateTime
-  isClosed     Boolean  @default(false) 
+  isClosed     Boolean        @default(false)
   periods      FiscalPeriod[]
 }
 
 model FiscalPeriod {
   periodId     String   @id @default(uuid())
   fiscalYearId String
-  periodNumber Int      
+  periodNumber Int
   startDate    DateTime
   endDate      DateTime
   isClosed     Boolean  @default(false)
 
-  fiscalYear   FiscalYear @relation(fields: [fiscalYearId], references: [fiscalYearId], onDelete: Restrict)
-  
+  fiscalYear FiscalYear @relation(fields: [fiscalYearId], references: [fiscalYearId], onDelete: Restrict)
+
   depreciations AssetDepreciationHistory[]
   documents     Document[]
   journals      JournalEntry[]
@@ -155,26 +176,27 @@ model FiscalPeriod {
 }
 
 model TaxCode {
-  taxId        String   @id @default(uuid())
-  code         String   @unique 
-  name         String
-  rate         Decimal  @db.Decimal(5, 2) 
-  description  String?
-  documents    DocumentTax[]
+  taxId             String            @id @default(uuid())
+  code              String            @unique
+  name              String
+  rate              Decimal           @db.Decimal(5, 2)
+  description       String?
+  documents         DocumentTax[]
+  productCategories ProductCategory[]
 }
 
 // ==========================================
 // 3. SECURITY, RBAC & AUDIT TOÀN HỆ THỐNG
 // ==========================================
 model Users {
-  userId              String    @id @default(uuid())
-  email               String    @unique
-  passwordHash        String
-  fullName            String
-  phone               String?
+  userId       String     @id @default(uuid())
+  email        String     @unique
+  passwordHash String
+  fullName     String
+  phone        String?
   address      String?
-  status              UserStatus @default(ACTIVE)
-  
+  status       UserStatus @default(ACTIVE)
+
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
   twoFactorEnabled    Boolean   @default(false)
@@ -182,26 +204,28 @@ model Users {
   passwordChangedAt   DateTime  @default(now())
   lastLoginAt         DateTime?
   isDeleted           Boolean   @default(false)
-  
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
 
-  departmentId        String?
-  department          Department? @relation(fields: [departmentId], references: [departmentId], onDelete: SetNull)
-  
-  roles               UserRole[]
-  refreshTokens       RefreshToken[]
-  loginHistories      LoginHistory[]
-  auditLogs           SystemAuditLog[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  createdDocuments    Document[]             @relation("DocCreatedBy")
-  approvedDocuments   Document[]             @relation("DocApprovedBy")
-  assignedAssets      AssetAssignmentHistory[] @relation("AssetAssignedTo")
-  returnedAssets      AssetAssignmentHistory[] @relation("AssetReturnedBy")
-  createdApprovals    ApprovalRequest[]      @relation("ApprovalRequester")
-  actionedApprovals   ApprovalLog[]          @relation("ApprovalActioner")
-  journalEntries      JournalEntry[]         @relation("JournalCreatedBy")
-  paymentsProcessed   PaymentTransaction[]   @relation("PaymentProcessedBy")
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [departmentId], onDelete: SetNull)
+
+  roleId         String?
+  role           Role?            @relation(fields: [roleId], references: [roleId], onDelete: SetNull)
+  refreshTokens  RefreshToken[]
+  loginHistories LoginHistory[]
+  auditLogs      SystemAuditLog[]
+  chatHistories  ChatHistory[]
+
+  createdDocuments  Document[]               @relation("DocCreatedBy")
+  approvedDocuments Document[]               @relation("DocApprovedBy")
+  assignedAssets    AssetAssignmentHistory[] @relation("AssetAssignedTo")
+  returnedAssets    AssetAssignmentHistory[] @relation("AssetReturnedBy")
+  createdApprovals  ApprovalRequest[]        @relation("ApprovalRequester")
+  actionedApprovals ApprovalLog[]            @relation("ApprovalActioner")
+  journalEntries    JournalEntry[]           @relation("JournalCreatedBy")
+  paymentsProcessed PaymentTransaction[]     @relation("PaymentProcessedBy")
 
   @@index([email])
   @@index([departmentId])
@@ -209,24 +233,24 @@ model Users {
 }
 
 model Role {
-  roleId      String         @id @default(uuid())
-  roleName    String         @unique 
+  roleId      String  @id @default(uuid())
+  roleName    String  @unique
   description String?
-  isDeleted   Boolean        @default(false)
-  
-  permissions RolePermission[]
-  users       UserRole[]
-  approvalSteps ApprovalStep[] 
+  isDeleted   Boolean @default(false)
+
+  permissions   RolePermission[]
+  users         Users[]
+  approvalSteps ApprovalStep[]
 }
 
 model Permission {
-  permissionId String @id @default(uuid())
-  code         String @unique
-  name         String?   // Bổ sung: Tên hiển thị (Ví dụ: "Quản lý nhân sự")
-  description  String?   // Bổ sung: Mô tả chi tiết chức năng
-  module       String    // Phân hệ (Ví dụ: "USERS", "INVENTORY")
+  permissionId String  @id @default(uuid())
+  code         String  @unique
+  name         String? // Bổ sung: Tên hiển thị (Ví dụ: "Quản lý nhân sự")
+  description  String? // Bổ sung: Mô tả chi tiết chức năng
+  module       String // Phân hệ (Ví dụ: "USERS", "INVENTORY")
 
-  roles        RolePermission[]
+  roles RolePermission[]
 }
 
 model RolePermission {
@@ -236,15 +260,6 @@ model RolePermission {
   permission   Permission @relation(fields: [permissionId], references: [permissionId], onDelete: Cascade)
 
   @@id([roleId, permissionId])
-}
-
-model UserRole {
-  userId String
-  roleId String
-  user   Users @relation(fields: [userId], references: [userId], onDelete: Cascade)
-  role   Role  @relation(fields: [roleId], references: [roleId], onDelete: Cascade)
-
-  @@id([userId, roleId])
 }
 
 model RefreshToken {
@@ -262,23 +277,23 @@ model LoginHistory {
   userId    String
   ipAddress String?
   userAgent String?
-  status    String   
+  status    String
   timestamp DateTime @default(now())
   user      Users    @relation(fields: [userId], references: [userId], onDelete: Cascade)
 }
 
 model SystemAuditLog {
-  logId       String     @id @default(uuid())
-  tableName   String     
-  recordId    String     
-  action      ActionType 
-  oldValues   Json?
-  newValues   Json?      
-  userId      String?
-  ipAddress   String?
-  timestamp   DateTime   @default(now())
+  logId     String     @id @default(uuid())
+  tableName String
+  recordId  String
+  action    ActionType
+  oldValues Json?
+  newValues Json?
+  userId    String?
+  ipAddress String?
+  timestamp DateTime   @default(now())
 
-  user        Users?     @relation(fields: [userId], references: [userId], onDelete: SetNull)
+  user Users? @relation(fields: [userId], references: [userId], onDelete: SetNull)
 
   @@index([tableName, recordId])
   @@index([timestamp])
@@ -289,65 +304,66 @@ model SystemAuditLog {
 // 4. ORGANIZATION & BUDGET CONTROL
 // ==========================================
 model Company {
-  companyId   String       @id @default(uuid())
-  code        String       @unique
-  name        String
-  taxCode     String?
-  address     String?
-  isDeleted   Boolean      @default(false)
-  branches    Branch[]
+  companyId String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  taxCode   String?
+  address   String?
+  isDeleted Boolean  @default(false)
+  branches  Branch[]
 }
 
 model Branch {
-  branchId    String       @id @default(uuid())
-  companyId   String
-  code        String       @unique
-  name        String
-  isDeleted   Boolean      @default(false)
-  company     Company      @relation(fields: [companyId], references: [companyId], onDelete: Restrict)
-  
+  branchId  String  @id @default(uuid())
+  companyId String
+  code      String  @unique
+  name      String
+  isDeleted Boolean @default(false)
+  company   Company @relation(fields: [companyId], references: [companyId], onDelete: Restrict)
+  address   String?
+
   departments Department[]
   warehouses  Warehouse[]
   documents   Document[]
   journals    JournalEntry[]
   workflows   ApprovalWorkflow[]
-  
+
   inventoryTxs InventoryTransaction[]
 }
 
 model Department {
-  departmentId String      @id @default(uuid())
+  departmentId String   @id @default(uuid())
   branchId     String
-  code         String      @unique
+  code         String   @unique
   name         String
-  isDeleted    Boolean     @default(false)
-  branch       Branch      @relation(fields: [branchId], references: [branchId], onDelete: Restrict)
+  isDeleted    Boolean  @default(false)
+  branch       Branch   @relation(fields: [branchId], references: [branchId], onDelete: Restrict)
   users        Users[]
   assets       Assets[]
 }
 
 model CostCenter {
-  costCenterId String      @id @default(uuid())
-  code         String      @unique
+  costCenterId String        @id @default(uuid())
+  code         String        @unique
   name         String
   description  String?
-  isDeleted    Boolean     @default(false)
+  isDeleted    Boolean       @default(false)
   assets       Assets[]
   journalLines JournalLine[]
   budgets      Budget[]
 }
 
 model Budget {
-  budgetId         String      @id @default(uuid())
+  budgetId         String  @id @default(uuid())
   costCenterId     String
   year             Int
-  totalAmount      Decimal     @db.Decimal(18, 2)
-  usedAmount       Decimal     @db.Decimal(18, 2) @default(0.00)
-  encumberedAmount Decimal     @db.Decimal(18, 2) @default(0.00) 
-  
-  version          Int         @default(1) 
-  
-  costCenter   CostCenter  @relation(fields: [costCenterId], references: [costCenterId], onDelete: Restrict)
+  totalAmount      Decimal @db.Decimal(18, 2)
+  usedAmount       Decimal @default(0.00) @db.Decimal(18, 2)
+  encumberedAmount Decimal @default(0.00) @db.Decimal(18, 2)
+
+  version Int @default(1)
+
+  costCenter CostCenter @relation(fields: [costCenterId], references: [costCenterId], onDelete: Restrict)
 
   @@unique([costCenterId, year])
 }
@@ -356,103 +372,112 @@ model Budget {
 // 5. MASTER DATA, ĐỐI TÁC & BẢNG GIÁ (PRICE LIST)
 // ==========================================
 model PriceList {
-  priceListId  String   @id @default(uuid())
-  code         String   @unique
+  priceListId  String  @id @default(uuid())
+  code         String  @unique
   name         String
   currencyCode String
-  isActive     Boolean  @default(true)
-  isDeleted    Boolean  @default(false)
-  
-  currency     Currency @relation(fields: [currencyCode], references: [currencyCode], onDelete: Restrict)
-  
-  items        PriceListItem[]
-  customers    Customer[]
-  suppliers    Supplier[]
+  isActive     Boolean @default(true)
+  isDeleted    Boolean @default(false)
+
+  currency Currency @relation(fields: [currencyCode], references: [currencyCode], onDelete: Restrict)
+
+  items     PriceListItem[]
+  customers Customer[]
+  suppliers Supplier[]
 }
 
 model PriceListItem {
-  itemId       String   @id @default(uuid())
-  priceListId  String
-  productId    String
-  
-  variantId    String?  
-  
-  price        Decimal  @db.Decimal(18, 2)
-  minQuantity  Int      @default(1) 
-  validFrom    DateTime?
-  validTo      DateTime?
-  
-  priceList    PriceList       @relation(fields: [priceListId], references: [priceListId], onDelete: Cascade)
-  product      Products        @relation(fields: [productId], references: [productId], onDelete: Restrict)
-  variant      ProductVariant? @relation(fields: [variantId], references: [variantId], onDelete: Restrict)
+  itemId      String @id @default(uuid())
+  priceListId String
+  productId   String
+
+  variantId String?
+
+  price       Decimal   @db.Decimal(18, 2)
+  minQuantity Int       @default(1)
+  validFrom   DateTime?
+  validTo     DateTime?
+
+  priceList PriceList       @relation(fields: [priceListId], references: [priceListId], onDelete: Cascade)
+  product   Products        @relation(fields: [productId], references: [productId], onDelete: Restrict)
+  variant   ProductVariant? @relation(fields: [variantId], references: [variantId], onDelete: Restrict)
 
   @@index([priceListId, productId])
 }
 
 model UnitOfMeasure {
-  uomId     String     @id @default(uuid())
-  code      String     @unique 
+  uomId     String  @id @default(uuid())
+  code      String  @unique
   name      String
-  isDeleted Boolean    @default(false)
-  
-  products  Products[]
-  assets    Assets[]
-  
+  isDeleted Boolean @default(false)
+
+  products Products[]
+  assets   Assets[]
+
   conversionsFrom ProductUomConversion[] @relation("FromUOM")
   conversionsTo   ProductUomConversion[] @relation("ToUOM")
+  uomType         UomType
 }
 
 model ProductCategory {
-  categoryId  String     @id @default(uuid())
-  code        String     @unique
-  name        String
-  parentId    String?
-  isDeleted   Boolean    @default(false)
-  
-  inventoryAccountId String? 
+  categoryId String  @id @default(uuid())
+  code       String  @unique
+  name       String
+  parentId   String?
+  isDeleted  Boolean @default(false)
+
+  inventoryAccountId String?
   cogsAccountId      String?
-  incomeAccountId    String? 
+  incomeAccountId    String?
 
-  inventoryAccount   Account? @relation("InventoryAccount", fields: [inventoryAccountId], references: [accountId], onDelete: Restrict)
-  cogsAccount        Account? @relation("CogsAccount", fields: [cogsAccountId], references: [accountId], onDelete: Restrict)
-  incomeAccount      Account? @relation("IncomeAccount", fields: [incomeAccountId], references: [accountId], onDelete: Restrict)
+  inventoryAccount Account? @relation("InventoryAccount", fields: [inventoryAccountId], references: [accountId], onDelete: Restrict)
+  cogsAccount      Account? @relation("CogsAccount", fields: [cogsAccountId], references: [accountId], onDelete: Restrict)
+  incomeAccount    Account? @relation("IncomeAccount", fields: [incomeAccountId], references: [accountId], onDelete: Restrict)
 
-  products    Products[]
+  products Products[]
+  taxId    String?
+  tax      TaxCode?   @relation(fields: [taxId], references: [taxId], onDelete: SetNull)
 }
 
 model Supplier {
-  supplierId  String     @id @default(uuid())
-  code        String     @unique
+  supplierId  String  @id @default(uuid())
+  code        String  @unique
   name        String
   taxCode     String?
   email       String?
   phone       String?
   address     String?
-  priceListId String?    
-  isDeleted   Boolean    @default(false)
-  
-  priceList   PriceList? @relation(fields: [priceListId], references: [priceListId], onDelete: Restrict)
+  priceListId String?
+  isDeleted   Boolean @default(false)
 
-  products    Products[]
-  assets      Assets[]
+  priceList PriceList? @relation(fields: [priceListId], references: [priceListId], onDelete: Restrict)
+
+  products     Products[]
+  assets       Assets[]
   maintenances AssetMaintenance[]
-  documents   Document[]
+  documents    Document[]
+  currencyCode String?
+  paymentTerms String?
+  currency     Currency?          @relation(fields: [currencyCode], references: [currencyCode], onDelete: Restrict)
 }
 
 model Customer {
-  customerId  String     @id @default(uuid())
-  code        String     @unique
+  customerId  String  @id @default(uuid())
+  code        String  @unique
   name        String
   taxCode     String?
   email       String?
   phone       String?
   address     String?
-  priceListId String?    
-  isDeleted   Boolean    @default(false)
-  
-  priceList   PriceList? @relation(fields: [priceListId], references: [priceListId], onDelete: Restrict)
-  
-  documents   Document[]
+  priceListId String?
+  isDeleted   Boolean @default(false)
+
+  priceList PriceList? @relation(fields: [priceListId], references: [priceListId], onDelete: Restrict)
+
+  documents    Document[]
+  currencyCode String?
+  creditLimit  Decimal?   @db.Decimal(18, 2)
+  currency     Currency?  @relation(fields: [currencyCode], references: [currencyCode], onDelete: Restrict)
 }
 
 model Warehouse {
@@ -460,11 +485,12 @@ model Warehouse {
   branchId    String
   code        String             @unique
   name        String
+  address     String?
   isDeleted   Boolean            @default(false)
   branch      Branch             @relation(fields: [branchId], references: [branchId], onDelete: Restrict)
   bins        BinLocation[]
   balances    InventoryBalance[]
-  
+
   fromTransactions InventoryTransaction[] @relation("TxFromWarehouse")
   toTransactions   InventoryTransaction[] @relation("TxToWarehouse")
 }
@@ -472,12 +498,12 @@ model Warehouse {
 model BinLocation {
   binId       String             @id @default(uuid())
   warehouseId String
-  code        String             
+  code        String
   name        String?
   isDeleted   Boolean            @default(false)
   warehouse   Warehouse          @relation(fields: [warehouseId], references: [warehouseId], onDelete: Restrict)
   balances    InventoryBalance[]
-  
+
   fromTransactions InventoryTransaction[] @relation("TxFromBin")
   toTransactions   InventoryTransaction[] @relation("TxToBin")
 
@@ -488,34 +514,34 @@ model BinLocation {
 // 6. INVENTORY & PRODUCTS 
 // ==========================================
 model Products {
-  productId      String   @id @default(uuid())
-  productCode    String   @unique
-  name           String
-  barcode        String?  @unique
-  imageUrl       String?
-  price          Decimal  @db.Decimal(18, 2) 
-  purchasePrice  Decimal? @db.Decimal(18, 2) @default(0.00)
-  
-  costingMethod  CostingMethod @default(MOVING_AVERAGE)
-  standardCost   Decimal       @db.Decimal(18, 2) @default(0.00)
-  
-  uomId          String    
-  categoryId     String
-  supplierId     String?
-  reorderPoint   Int      @default(0)
-  
-  hasVariants    Boolean  @default(false)
-  hasBatches     Boolean  @default(false)
-  
-  status         UserStatus @default(ACTIVE)
-  isDeleted      Boolean    @default(false) 
-  
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  productId     String   @id @default(uuid())
+  productCode   String   @unique
+  name          String
+  barcode       String?  @unique
+  imageUrl      String?
+  price         Decimal  @db.Decimal(18, 2)
+  purchasePrice Decimal? @default(0.00) @db.Decimal(18, 2)
 
-  uom            UnitOfMeasure    @relation(fields: [uomId], references: [uomId], onDelete: Restrict)
-  category       ProductCategory  @relation(fields: [categoryId], references: [categoryId], onDelete: Restrict)
-  supplier       Supplier?        @relation(fields: [supplierId], references: [supplierId], onDelete: Restrict)
+  costingMethod CostingMethod @default(MOVING_AVERAGE)
+  standardCost  Decimal       @default(0.00) @db.Decimal(18, 2)
+
+  uomId        String
+  categoryId   String
+  supplierId   String?
+  reorderPoint Int     @default(0)
+
+  hasVariants Boolean @default(false)
+  hasBatches  Boolean @default(false)
+
+  status    UserStatus @default(ACTIVE)
+  isDeleted Boolean    @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  uom      UnitOfMeasure   @relation(fields: [uomId], references: [uomId], onDelete: Restrict)
+  category ProductCategory @relation(fields: [categoryId], references: [categoryId], onDelete: Restrict)
+  supplier Supplier?       @relation(fields: [supplierId], references: [supplierId], onDelete: Restrict)
 
   variants       ProductVariant[]
   batches        ProductBatch[]
@@ -530,29 +556,29 @@ model Products {
 }
 
 model ProductUomConversion {
-  conversionId   String   @id @default(uuid())
-  productId      String
-  fromUomId      String   
-  toUomId        String   
-  
-  conversionFactor Decimal @db.Decimal(18, 6) 
-  
-  product        Products      @relation(fields: [productId], references: [productId], onDelete: Cascade)
-  fromUom        UnitOfMeasure @relation("FromUOM", fields: [fromUomId], references: [uomId], onDelete: Restrict)
-  toUom          UnitOfMeasure @relation("ToUOM", fields: [toUomId], references: [uomId], onDelete: Restrict)
+  conversionId String @id @default(uuid())
+  productId    String
+  fromUomId    String
+  toUomId      String
+
+  conversionFactor Decimal @db.Decimal(18, 6)
+
+  product Products      @relation(fields: [productId], references: [productId], onDelete: Cascade)
+  fromUom UnitOfMeasure @relation("FromUOM", fields: [fromUomId], references: [uomId], onDelete: Restrict)
+  toUom   UnitOfMeasure @relation("ToUOM", fields: [toUomId], references: [uomId], onDelete: Restrict)
 
   @@unique([productId, fromUomId, toUomId])
 }
 
 model ProductVariant {
-  variantId      String   @id @default(uuid())
-  productId      String
-  sku            String   @unique
-  attributes     String   
-  additionalPrice Decimal @db.Decimal(18, 2) @default(0.00)
-  isDeleted      Boolean  @default(false)
+  variantId       String  @id @default(uuid())
+  productId       String
+  sku             String  @unique
+  attributes      String
+  additionalPrice Decimal @default(0.00) @db.Decimal(18, 2)
+  isDeleted       Boolean @default(false)
 
-  product        Products @relation(fields: [productId], references: [productId], onDelete: Restrict)
+  product        Products               @relation(fields: [productId], references: [productId], onDelete: Restrict)
   batches        ProductBatch[]
   balances       InventoryBalance[]
   transactions   InventoryTransaction[]
@@ -562,15 +588,15 @@ model ProductVariant {
 }
 
 model ProductBatch {
-  batchId         String   @id @default(uuid())
-  batchNumber     String  
-  productId       String
-  variantId       String?   
-  
+  batchId     String  @id @default(uuid())
+  batchNumber String
+  productId   String
+  variantId   String?
+
   manufactureDate DateTime?
   expiryDate      DateTime?
-  product         Products        @relation(fields: [productId], references: [productId], onDelete: Restrict)
-  variant         ProductVariant? @relation(fields: [variantId], references: [variantId], onDelete: Restrict)
+  product         Products               @relation(fields: [productId], references: [productId], onDelete: Restrict)
+  variant         ProductVariant?        @relation(fields: [variantId], references: [variantId], onDelete: Restrict)
   balances        InventoryBalance[]
   transactions    InventoryTransaction[]
 
@@ -579,27 +605,27 @@ model ProductBatch {
 }
 
 model InventoryBalance {
-  balanceId   String   @id @default(uuid())
+  balanceId   String @id @default(uuid())
   warehouseId String
   productId   String
-  
-  binId       String?
-  variantId   String?   
-  batchId     String?
-  quantity    Int      @default(0) 
-  lockedQty   Int      @default(0) 
-  
-  totalValue  Decimal  @db.Decimal(18, 2) @default(0.00)
-  avgCost     Decimal  @db.Decimal(18, 2) @default(0.00)
-  
-  warehouse   Warehouse       @relation(fields: [warehouseId], references: [warehouseId], onDelete: Restrict)
-  bin         BinLocation?    @relation(fields: [binId], references: [binId], onDelete: Restrict)
-  product     Products        @relation(fields: [productId], references: [productId], onDelete: Restrict)
-  variant     ProductVariant? @relation(fields: [variantId], references: [variantId], onDelete: Restrict)
-  batch       ProductBatch?   @relation(fields: [batchId], references: [batchId], onDelete: Restrict)
+
+  binId     String?
+  variantId String?
+  batchId   String?
+  quantity  Int     @default(0)
+  lockedQty Int     @default(0)
+
+  totalValue Decimal @default(0.00) @db.Decimal(18, 2)
+  avgCost    Decimal @default(0.00) @db.Decimal(18, 2)
+
+  warehouse Warehouse       @relation(fields: [warehouseId], references: [warehouseId], onDelete: Restrict)
+  bin       BinLocation?    @relation(fields: [binId], references: [binId], onDelete: Restrict)
+  product   Products        @relation(fields: [productId], references: [productId], onDelete: Restrict)
+  variant   ProductVariant? @relation(fields: [variantId], references: [variantId], onDelete: Restrict)
+  batch     ProductBatch?   @relation(fields: [batchId], references: [batchId], onDelete: Restrict)
 
   @@unique([warehouseId, binId, productId, variantId, batchId])
-  @@index([warehouseId, productId, variantId]) 
+  @@index([warehouseId, productId, variantId])
   @@index([productId])
 }
 
@@ -607,45 +633,45 @@ model InventoryBalance {
 // 7. TRANSACTIONS, AP/AR & STOCK LEDGER
 // ==========================================
 model Document {
-  documentId      String             @id @default(uuid())
-  documentNumber  String             @unique 
-  branchId        String             
-  fiscalPeriodId  String?
-  type            TransactionType
-  status          TransactionStatus  @default(DRAFT)
-  referenceDoc    String?
-  note            String?
-  
-  supplierId      String?
-  customerId      String?
-  
-  currencyCode    String             @default("VND") 
-  exchangeRate    Decimal            @db.Decimal(18, 6) @default(1.0)
-  totalAmount     Decimal            @db.Decimal(18, 2) @default(0.00)
-  
-  paymentStatus   PaymentStatus      @default(UNPAID)
-  paidAmount      Decimal            @db.Decimal(18, 2) @default(0.00)
-  
-  isLocked        Boolean            @default(false)
+  documentId     String            @id @default(uuid())
+  documentNumber String            @unique
+  branchId       String
+  fiscalPeriodId String?
+  type           TransactionType
+  status         TransactionStatus @default(DRAFT)
+  referenceDoc   String?
+  note           String?
+
+  supplierId String?
+  customerId String?
+
+  currencyCode String  @default("VND")
+  exchangeRate Decimal @default(1.0) @db.Decimal(18, 6)
+  totalAmount  Decimal @default(0.00) @db.Decimal(18, 2)
+
+  paymentStatus PaymentStatus @default(UNPAID)
+  paidAmount    Decimal       @default(0.00) @db.Decimal(18, 2)
+
+  isLocked         Boolean   @default(false)
   documentSnapshot Json?
-  createdById     String
-  approvedById    String?
-  createdAt       DateTime           @default(now())
-  approvedAt      DateTime?
-  supplier        Supplier?          @relation(fields: [supplierId], references: [supplierId], onDelete: Restrict)
-  customer        Customer?          @relation(fields: [customerId], references: [customerId], onDelete: Restrict)
-  
-  branch          Branch             @relation(fields: [branchId], references: [branchId], onDelete: Restrict)
-  fiscalPeriod    FiscalPeriod?      @relation(fields: [fiscalPeriodId], references: [periodId], onDelete: Restrict)
-  currency        Currency           @relation(fields: [currencyCode], references: [currencyCode], onDelete: Restrict)
-  createdBy       Users              @relation("DocCreatedBy", fields: [createdById], references: [userId], onDelete: Restrict)
-  approvedBy      Users?             @relation("DocApprovedBy", fields: [approvedById], references: [userId], onDelete: SetNull)
-  
+  createdById      String
+  approvedById     String?
+  createdAt        DateTime  @default(now())
+  approvedAt       DateTime?
+  supplier         Supplier? @relation(fields: [supplierId], references: [supplierId], onDelete: Restrict)
+  customer         Customer? @relation(fields: [customerId], references: [customerId], onDelete: Restrict)
+
+  branch       Branch        @relation(fields: [branchId], references: [branchId], onDelete: Restrict)
+  fiscalPeriod FiscalPeriod? @relation(fields: [fiscalPeriodId], references: [periodId], onDelete: Restrict)
+  currency     Currency      @relation(fields: [currencyCode], references: [currencyCode], onDelete: Restrict)
+  createdBy    Users         @relation("DocCreatedBy", fields: [createdById], references: [userId], onDelete: Restrict)
+  approvedBy   Users?        @relation("DocApprovedBy", fields: [approvedById], references: [userId], onDelete: SetNull)
+
   transactions    InventoryTransaction[]
   taxes           DocumentTax[]
   landedCosts     LandedCost[]
   approvalRequest ApprovalRequest?
-  journalEntries  JournalEntry[]     
+  journalEntries  JournalEntry[]
   payments        PaymentTransaction[]
 
   @@index([branchId])
@@ -657,147 +683,147 @@ model Document {
 }
 
 model PaymentTransaction {
-  paymentId     String        @id @default(uuid())
-  documentId    String
+  paymentId      String        @id @default(uuid())
+  documentId     String
   journalEntryId String?
-  amount        Decimal       @db.Decimal(18, 2)
-  paymentDate   DateTime      @default(now())
-  paymentMethod PaymentMethod @default(CASH)
-  reference     String?
-  note          String?
-  processedById String
-  
-  document      Document      @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
-  journalEntry  JournalEntry? @relation(fields: [journalEntryId], references: [journalId], onDelete: SetNull)
-  processedBy   Users         @relation("PaymentProcessedBy", fields: [processedById], references: [userId], onDelete: Restrict)
+  amount         Decimal       @db.Decimal(18, 2)
+  paymentDate    DateTime      @default(now())
+  paymentMethod  PaymentMethod @default(CASH)
+  reference      String?
+  note           String?
+  processedById  String
+
+  document     Document      @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [journalId], onDelete: SetNull)
+  processedBy  Users         @relation("PaymentProcessedBy", fields: [processedById], references: [userId], onDelete: Restrict)
 
   @@index([documentId])
   @@index([paymentDate])
 }
 
 model DocumentTax {
-  docTaxId     String   @id @default(uuid())
-  documentId   String
-  taxId        String
-  taxAmount    Decimal  @db.Decimal(18, 2)
+  docTaxId   String  @id @default(uuid())
+  documentId String
+  taxId      String
+  taxAmount  Decimal @db.Decimal(18, 2)
 
-  document     Document @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
-  tax          TaxCode  @relation(fields: [taxId], references: [taxId], onDelete: Restrict)
+  document Document @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+  tax      TaxCode  @relation(fields: [taxId], references: [taxId], onDelete: Restrict)
 }
 
 model LandedCost {
-  landedCostId  String   @id @default(uuid())
-  documentId    String
-  description   String   
-  amount        Decimal  @db.Decimal(18, 2)
-  isAllocated   Boolean  @default(false)
+  landedCostId String  @id @default(uuid())
+  documentId   String
+  description  String
+  amount       Decimal @db.Decimal(18, 2)
+  isAllocated  Boolean @default(false)
 
-  document      Document @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
 }
 
 model InventoryTransaction {
-  transactionId  String   @id @default(uuid())
-  documentId     String
-  branchId       String   
-  journalEntryId String?
-  movementDirection MovementDirection 
-  
+  transactionId     String            @id @default(uuid())
+  documentId        String
+  branchId          String
+  journalEntryId    String?
+  movementDirection MovementDirection
+
   fromWarehouseId String?
   toWarehouseId   String?
   fromBinId       String?
-  toBinId         String?  
+  toBinId         String?
   variantId       String?
   batchId         String?
-  productId      String
-  
-  quantity       Int      
-  quantityBefore Int      @default(0) 
-  quantityAfter  Int      @default(0) 
-  unitCost       Decimal  @db.Decimal(18, 2) 
-  movingAvgCost  Decimal  @db.Decimal(18, 2) @default(0.00) 
-  totalCost      Decimal  @db.Decimal(18, 2)
-  
-  timestamp      DateTime @default(now())
+  productId       String
 
-  document       Document        @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
-  branch         Branch          @relation(fields: [branchId], references: [branchId], onDelete: Restrict)
-  journalEntry   JournalEntry?   @relation(fields: [journalEntryId], references: [journalId], onDelete: SetNull)
-  
-  fromWarehouse  Warehouse?      @relation("TxFromWarehouse", fields: [fromWarehouseId], references: [warehouseId], onDelete: Restrict)
-  toWarehouse    Warehouse?      @relation("TxToWarehouse", fields: [toWarehouseId], references: [warehouseId], onDelete: Restrict)
-  fromBin        BinLocation?    @relation("TxFromBin", fields: [fromBinId], references: [binId], onDelete: Restrict)
-  toBin          BinLocation?    @relation("TxToBin", fields: [toBinId], references: [binId], onDelete: Restrict)
-  
-  product        Products        @relation(fields: [productId], references: [productId], onDelete: Restrict)
-  variant        ProductVariant? @relation(fields: [variantId], references: [variantId], onDelete: Restrict)
-  batch          ProductBatch?   @relation(fields: [batchId], references: [batchId], onDelete: Restrict)
+  quantity       Int
+  quantityBefore Int     @default(0)
+  quantityAfter  Int     @default(0)
+  unitCost       Decimal @db.Decimal(18, 2)
+  movingAvgCost  Decimal @default(0.00) @db.Decimal(18, 2)
+  totalCost      Decimal @db.Decimal(18, 2)
+
+  timestamp DateTime @default(now())
+
+  document     Document      @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+  branch       Branch        @relation(fields: [branchId], references: [branchId], onDelete: Restrict)
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [journalId], onDelete: SetNull)
+
+  fromWarehouse Warehouse?   @relation("TxFromWarehouse", fields: [fromWarehouseId], references: [warehouseId], onDelete: Restrict)
+  toWarehouse   Warehouse?   @relation("TxToWarehouse", fields: [toWarehouseId], references: [warehouseId], onDelete: Restrict)
+  fromBin       BinLocation? @relation("TxFromBin", fields: [fromBinId], references: [binId], onDelete: Restrict)
+  toBin         BinLocation? @relation("TxToBin", fields: [toBinId], references: [binId], onDelete: Restrict)
+
+  product Products        @relation(fields: [productId], references: [productId], onDelete: Restrict)
+  variant ProductVariant? @relation(fields: [variantId], references: [variantId], onDelete: Restrict)
+  batch   ProductBatch?   @relation(fields: [batchId], references: [batchId], onDelete: Restrict)
 
   @@index([documentId])
-  @@index([branchId, timestamp]) 
-  @@index([productId, timestamp]) 
+  @@index([branchId, timestamp])
+  @@index([productId, timestamp])
 }
 
 // ==========================================
 // 8. ASSET MANAGEMENT 
 // ==========================================
 model AssetCategory {
-  categoryId  String     @id @default(uuid())
-  code        String     @unique
-  name        String
-  depreciationRate Decimal? @db.Decimal(5, 2) 
-  isDeleted   Boolean    @default(false)
-  
+  categoryId       String   @id @default(uuid())
+  code             String   @unique
+  name             String
+  depreciationRate Decimal? @db.Decimal(5, 2)
+  isDeleted        Boolean  @default(false)
+
   fixedAssetAccountId        String?
-  depreciationAccountId      String? 
-  accumDepreciationAccountId String? 
+  depreciationAccountId      String?
+  accumDepreciationAccountId String?
 
   fixedAssetAccount        Account? @relation("FixedAssetAccount", fields: [fixedAssetAccountId], references: [accountId], onDelete: Restrict)
   depreciationAccount      Account? @relation("DepreciationAccount", fields: [depreciationAccountId], references: [accountId], onDelete: Restrict)
   accumDepreciationAccount Account? @relation("AccumDeprAccount", fields: [accumDepreciationAccountId], references: [accountId], onDelete: Restrict)
 
-  assets      Assets[]
+  assets Assets[]
 }
 
 model Assets {
-  assetId        String   @id @default(uuid())
-  assetCode      String   @unique 
-  name           String   
-  barcode        String?  @unique 
-  serialNumber   String?  @unique 
-  imageUrl       String?
-  status         AssetStatus @default(AVAILABLE)
-  isDeleted      Boolean     @default(false)
-  
-  purchaseDate   DateTime
-  purchasePrice  Decimal  @db.Decimal(18, 2)
-  currentValue   Decimal  @db.Decimal(18, 2)
-  salvageValue   Decimal  @db.Decimal(18, 2) @default(0.00) 
-  
+  assetId      String      @id @default(uuid())
+  assetCode    String      @unique
+  name         String
+  barcode      String?     @unique
+  serialNumber String?     @unique
+  imageUrl     String?
+  status       AssetStatus @default(AVAILABLE)
+  isDeleted    Boolean     @default(false)
+
+  purchaseDate  DateTime
+  purchasePrice Decimal  @db.Decimal(18, 2)
+  currentValue  Decimal  @db.Decimal(18, 2)
+  salvageValue  Decimal  @default(0.00) @db.Decimal(18, 2)
+
   depreciationMethod DepreciationMethod?
-  depreciationMonths Int? @default(0)
-  
-  maintenanceCycleMonths Int? 
+  depreciationMonths Int?                @default(0)
+
+  maintenanceCycleMonths Int?
   nextMaintenanceDate    DateTime?
-  categoryId     String
-  uomId          String?
-  departmentId   String?     
-  costCenterId   String?     
-  supplierId     String?
-  category       AssetCategory  @relation(fields: [categoryId], references: [categoryId], onDelete: Restrict)
-  uom            UnitOfMeasure? @relation(fields: [uomId], references: [uomId], onDelete: Restrict)
-  department     Department?    @relation(fields: [departmentId], references: [departmentId], onDelete: Restrict)
-  costCenter     CostCenter?    @relation(fields: [costCenterId], references: [costCenterId], onDelete: Restrict)
-  supplier       Supplier?      @relation(fields: [supplierId], references: [supplierId], onDelete: Restrict)
+  categoryId             String
+  uomId                  String?
+  departmentId           String?
+  costCenterId           String?
+  supplierId             String?
+  category               AssetCategory  @relation(fields: [categoryId], references: [categoryId], onDelete: Restrict)
+  uom                    UnitOfMeasure? @relation(fields: [uomId], references: [uomId], onDelete: Restrict)
+  department             Department?    @relation(fields: [departmentId], references: [departmentId], onDelete: Restrict)
+  costCenter             CostCenter?    @relation(fields: [costCenterId], references: [costCenterId], onDelete: Restrict)
+  supplier               Supplier?      @relation(fields: [supplierId], references: [supplierId], onDelete: Restrict)
 
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  assignments    AssetAssignmentHistory[]
-  maintenances   AssetMaintenance[]
-  depreciations  AssetDepreciationHistory[]
-  revaluations   AssetRevaluation[]
-  liquidation    AssetLiquidation?
-  histories      AssetHistory[]
+  assignments   AssetAssignmentHistory[]
+  maintenances  AssetMaintenance[]
+  depreciations AssetDepreciationHistory[]
+  revaluations  AssetRevaluation[]
+  liquidation   AssetLiquidation?
+  histories     AssetHistory[]
 
   @@index([categoryId])
   @@index([departmentId])
@@ -808,13 +834,13 @@ model Assets {
 model AssetAssignmentHistory {
   assignmentId String    @id @default(uuid())
   assetId      String
-  assignedToId String    
+  assignedToId String
   assignedById String
   assignedAt   DateTime  @default(now())
   returnedAt   DateTime?
   returnedById String?
-  conditionOut String?   
-  conditionIn  String?   
+  conditionOut String?
+  conditionIn  String?
   note         String?
   asset        Assets    @relation(fields: [assetId], references: [assetId], onDelete: Cascade)
   assignedTo   Users     @relation("AssetAssignedTo", fields: [assignedToId], references: [userId], onDelete: Restrict)
@@ -825,18 +851,18 @@ model AssetAssignmentHistory {
 }
 
 model AssetMaintenance {
-  maintenanceId   String   @id @default(uuid())
-  assetId         String
-  type            MaintenanceType
-  description     String
-  vendorId        String?
-  cost            Decimal  @db.Decimal(18, 2) @default(0.00)
-  startDate       DateTime
-  completedDate   DateTime?
-  nextDueDate     DateTime? 
+  maintenanceId String          @id @default(uuid())
+  assetId       String
+  type          MaintenanceType
+  description   String
+  vendorId      String?
+  cost          Decimal         @default(0.00) @db.Decimal(18, 2)
+  startDate     DateTime
+  completedDate DateTime?
+  nextDueDate   DateTime?
 
-  asset           Assets    @relation(fields: [assetId], references: [assetId], onDelete: Cascade)
-  vendor          Supplier? @relation(fields: [vendorId], references: [supplierId], onDelete: Restrict)
+  asset  Assets    @relation(fields: [assetId], references: [assetId], onDelete: Cascade)
+  vendor Supplier? @relation(fields: [vendorId], references: [supplierId], onDelete: Restrict)
 
   @@index([assetId])
 }
@@ -844,18 +870,18 @@ model AssetMaintenance {
 model AssetDepreciationHistory {
   historyId       String   @id @default(uuid())
   assetId         String
-  fiscalPeriodId  String   
+  fiscalPeriodId  String
   journalEntryId  String?
-  depreciationAmt Decimal  @db.Decimal(18, 2) 
-  accumulatedAmt  Decimal  @db.Decimal(18, 2) 
-  remainingValue  Decimal  @db.Decimal(18, 2) 
+  depreciationAmt Decimal  @db.Decimal(18, 2)
+  accumulatedAmt  Decimal  @db.Decimal(18, 2)
+  remainingValue  Decimal  @db.Decimal(18, 2)
   calculatedAt    DateTime @default(now())
 
-  asset           Assets       @relation(fields: [assetId], references: [assetId], onDelete: Cascade)
-  fiscalPeriod    FiscalPeriod @relation(fields: [fiscalPeriodId], references: [periodId], onDelete: Restrict)
-  journalEntry    JournalEntry? @relation(fields: [journalEntryId], references: [journalId], onDelete: SetNull)
+  asset        Assets        @relation(fields: [assetId], references: [assetId], onDelete: Cascade)
+  fiscalPeriod FiscalPeriod  @relation(fields: [fiscalPeriodId], references: [periodId], onDelete: Restrict)
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [journalId], onDelete: SetNull)
 
-  @@unique([assetId, fiscalPeriodId]) 
+  @@unique([assetId, fiscalPeriodId])
 }
 
 model AssetRevaluation {
@@ -867,7 +893,7 @@ model AssetRevaluation {
   reason        String
   recordedAt    DateTime @default(now())
 
-  asset         Assets   @relation(fields: [assetId], references: [assetId], onDelete: Cascade)
+  asset Assets @relation(fields: [assetId], references: [assetId], onDelete: Cascade)
 }
 
 model AssetLiquidation {
@@ -875,24 +901,24 @@ model AssetLiquidation {
   assetId         String   @unique
   liquidationDate DateTime
   reason          String
-  salePrice       Decimal  @db.Decimal(18, 2) @default(0.00)
+  salePrice       Decimal  @default(0.00) @db.Decimal(18, 2)
   buyerName       String?
-  profitLoss      Decimal  @db.Decimal(18, 2) 
+  profitLoss      Decimal  @db.Decimal(18, 2)
   createdAt       DateTime @default(now())
 
-  asset           Assets   @relation(fields: [assetId], references: [assetId], onDelete: Restrict)
+  asset Assets @relation(fields: [assetId], references: [assetId], onDelete: Restrict)
 }
 
 model AssetHistory {
   historyId    String     @id @default(uuid())
   assetId      String
-  actionType   ActionType 
-  description  String  
+  actionType   ActionType
+  description  String
   snapshotData Json?
   changedById  String
   timestamp    DateTime   @default(now())
 
-  asset        Assets     @relation(fields: [assetId], references: [assetId], onDelete: Cascade)
+  asset Assets @relation(fields: [assetId], references: [assetId], onDelete: Cascade)
 
   @@index([assetId])
   @@index([timestamp])
@@ -902,62 +928,62 @@ model AssetHistory {
 // 9. APPROVAL WORKFLOW 
 // ==========================================
 model ApprovalWorkflow {
-  workflowId   String   @id @default(uuid())
-  branchId     String?
-  module       String   
-  name         String
-  isActive     Boolean  @default(true)     // ĐÃ THÊM: Trạng thái kích hoạt Workflow
-  steps        ApprovalStep[]
-  requests     ApprovalRequest[] 
-  
-  branch       Branch?           @relation(fields: [branchId], references: [branchId], onDelete: Restrict)
+  workflowId String            @id @default(uuid())
+  branchId   String?
+  module     String
+  name       String
+  isActive   Boolean           @default(true) // ĐÃ THÊM: Trạng thái kích hoạt Workflow
+  steps      ApprovalStep[]
+  requests   ApprovalRequest[]
+
+  branch Branch? @relation(fields: [branchId], references: [branchId], onDelete: Restrict)
 
   @@index([branchId, module])
 }
 
 model ApprovalStep {
-  stepId       String   @id @default(uuid())
-  workflowId   String
-  stepOrder    Int      
-  roleId       String   
-  
-  workflow     ApprovalWorkflow @relation(fields: [workflowId], references: [workflowId], onDelete: Cascade)
-  role         Role             @relation(fields: [roleId], references: [roleId], onDelete: Restrict)
+  stepId     String @id @default(uuid())
+  workflowId String
+  stepOrder  Int
+  roleId     String
+
+  workflow ApprovalWorkflow @relation(fields: [workflowId], references: [workflowId], onDelete: Cascade)
+  role     Role             @relation(fields: [roleId], references: [roleId], onDelete: Restrict)
 
   @@unique([workflowId, stepOrder])
 }
 
 model ApprovalRequest {
-  requestId    String         @id @default(uuid())
-  workflowId   String?
-  documentId   String?        @unique 
-  requesterId  String
-  status       ApprovalStatus @default(PENDING)
-  currentStep  Int            @default(1)
-  
-  requestSnapshot Json?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  requestId   String         @id @default(uuid())
+  workflowId  String?
+  documentId  String?        @unique
+  requesterId String
+  status      ApprovalStatus @default(PENDING)
+  currentStep Int            @default(1)
 
-  document     Document?        @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
-  workflow     ApprovalWorkflow? @relation(fields: [workflowId], references: [workflowId], onDelete: Restrict) 
-  requester    Users            @relation("ApprovalRequester", fields: [requesterId], references: [userId], onDelete: Restrict)
-  logs         ApprovalLog[]
+  requestSnapshot Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  document  Document?         @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+  workflow  ApprovalWorkflow? @relation(fields: [workflowId], references: [workflowId], onDelete: Restrict)
+  requester Users             @relation("ApprovalRequester", fields: [requesterId], references: [userId], onDelete: Restrict)
+  logs      ApprovalLog[]
 
   @@index([status])
 }
 
 model ApprovalLog {
-  logId        String         @id @default(uuid())
-  requestId    String
-  actionerId   String
-  action       ActionType     
-  comments     String?        
-  stepOrder    Int
-  createdAt    DateTime       @default(now())
+  logId      String     @id @default(uuid())
+  requestId  String
+  actionerId String
+  action     ActionType
+  comments   String?
+  stepOrder  Int
+  createdAt  DateTime   @default(now())
 
-  request      ApprovalRequest @relation(fields: [requestId], references: [requestId], onDelete: Cascade)
-  actioner     Users           @relation("ApprovalActioner", fields: [actionerId], references: [userId], onDelete: Restrict)
+  request  ApprovalRequest @relation(fields: [requestId], references: [requestId], onDelete: Cascade)
+  actioner Users           @relation("ApprovalActioner", fields: [actionerId], references: [userId], onDelete: Restrict)
 
   @@index([requestId])
 }
@@ -966,69 +992,85 @@ model ApprovalLog {
 // 10. ACCOUNTING CORE 
 // ==========================================
 model Account {
-  accountId   String   @id @default(uuid())
-  accountCode String   @unique 
+  accountId   String        @id @default(uuid())
+  accountCode String        @unique
   name        String
-  type        String   
-  isActive    Boolean  @default(true)
+  type        AccountType
+  isActive    Boolean       @default(true)
   lines       JournalLine[]
-  
+
   productCategoriesInventory ProductCategory[] @relation("InventoryAccount")
   productCategoriesCogs      ProductCategory[] @relation("CogsAccount")
   productCategoriesIncome    ProductCategory[] @relation("IncomeAccount")
 
-  assetCategoriesFixed       AssetCategory[] @relation("FixedAssetAccount")
-  assetCategoriesDepr        AssetCategory[] @relation("DepreciationAccount")
-  assetCategoriesAccum       AssetCategory[] @relation("AccumDeprAccount")
+  assetCategoriesFixed AssetCategory[] @relation("FixedAssetAccount")
+  assetCategoriesDepr  AssetCategory[] @relation("DepreciationAccount")
+  assetCategoriesAccum AssetCategory[] @relation("AccumDeprAccount")
+  parentAccountId      String?
+  parentAccount        Account?        @relation("AccountHierarchy", fields: [parentAccountId], references: [accountId], onDelete: Restrict)
+  subAccounts          Account[]       @relation("AccountHierarchy")
 }
 
 model JournalEntry {
-  journalId       String   @id @default(uuid())
-  branchId        String   
-  fiscalPeriodId  String   
-  documentId      String?
-  entryDate       DateTime
-  reference       String?
-  description     String
-  
-  postingStatus   PostingStatus @default(DRAFT)
-  reversalEntryId String?       @unique 
-  
-  createdById     String
-  createdAt       DateTime @default(now())
+  journalId      String   @id @default(uuid())
+  branchId       String
+  fiscalPeriodId String
+  documentId     String?
+  entryDate      DateTime
+  reference      String?
+  description    String
 
-  branch          Branch        @relation(fields: [branchId], references: [branchId], onDelete: Restrict)
-  fiscalPeriod    FiscalPeriod  @relation(fields: [fiscalPeriodId], references: [periodId], onDelete: Restrict)
-  document        Document?     @relation(fields: [documentId], references: [documentId], onDelete: Restrict)
-  createdBy       Users         @relation("JournalCreatedBy", fields: [createdById], references: [userId], onDelete: Restrict)
-  
-  reversalEntry   JournalEntry? @relation("Reversal", fields: [reversalEntryId], references: [journalId], onDelete: Restrict)
-  reversedBy      JournalEntry? @relation("Reversal")
-  
-  lines           JournalLine[]
-  inventoryTx     InventoryTransaction[]
-  depreciations   AssetDepreciationHistory[]
-  payments        PaymentTransaction[] 
+  postingStatus   PostingStatus @default(DRAFT)
+  reversalEntryId String?       @unique
+
+  createdById String
+  createdAt   DateTime @default(now())
+
+  branch       Branch       @relation(fields: [branchId], references: [branchId], onDelete: Restrict)
+  fiscalPeriod FiscalPeriod @relation(fields: [fiscalPeriodId], references: [periodId], onDelete: Restrict)
+  document     Document?    @relation(fields: [documentId], references: [documentId], onDelete: Restrict)
+  createdBy    Users        @relation("JournalCreatedBy", fields: [createdById], references: [userId], onDelete: Restrict)
+
+  reversalEntry JournalEntry? @relation("Reversal", fields: [reversalEntryId], references: [journalId], onDelete: Restrict)
+  reversedBy    JournalEntry? @relation("Reversal")
+
+  lines         JournalLine[]
+  inventoryTx   InventoryTransaction[]
+  depreciations AssetDepreciationHistory[]
+  payments      PaymentTransaction[]
 
   @@index([branchId, entryDate])
   @@index([postingStatus])
 }
 
 model JournalLine {
-  lineId       String   @id @default(uuid())
+  lineId       String  @id @default(uuid())
   journalId    String
   accountId    String
   costCenterId String?
-  
-  debit        Decimal  @db.Decimal(18, 2) @default(0.00) 
-  credit       Decimal  @db.Decimal(18, 2) @default(0.00) 
-  
-  description  String?
 
-  journal      JournalEntry  @relation(fields: [journalId], references: [journalId], onDelete: Cascade)
-  account      Account       @relation(fields: [accountId], references: [accountId], onDelete: Restrict)
-  costCenter   CostCenter?   @relation(fields: [costCenterId], references: [costCenterId], onDelete: Restrict)
+  debit  Decimal @default(0.00) @db.Decimal(18, 2)
+  credit Decimal @default(0.00) @db.Decimal(18, 2)
+
+  description String?
+
+  journal    JournalEntry @relation(fields: [journalId], references: [journalId], onDelete: Cascade)
+  account    Account      @relation(fields: [accountId], references: [accountId], onDelete: Restrict)
+  costCenter CostCenter?  @relation(fields: [costCenterId], references: [costCenterId], onDelete: Restrict)
 
   @@index([journalId])
   @@index([accountId])
+}
+
+model ChatHistory {
+  chatId      String   @id @default(uuid())
+  userId      String
+  message     String   @db.Text
+  reply       String   @db.Text
+  contextData Json?
+  timestamp   DateTime @default(now())
+  user        Users    @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([timestamp])
 }

@@ -43,15 +43,34 @@ export default function UniversalMasterDataModal({
   }, [isOpen, initialData, fields]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value, type } = e.target;
+    const { name, value, type, tagName } = e.target;
     let finalValue: any = value;
-    if (type === "number") finalValue = value === "" ? "" : Number(value);
+    
+    // 🚀 TỐI ƯU KIỂU DỮ LIỆU (TYPE-SAFETY CHO PRISMA BACKEND)
+    if (type === "number") {
+      finalValue = value === "" ? "" : Number(value);
+    } 
+    // Nếu là trường Select và User chọn tùy chọn "Trống", ép về null để Prisma không báo lỗi UUID
+    else if (tagName === "SELECT" && value === "") {
+      finalValue = null;
+    }
+
     setFormData(prev => ({ ...prev, [name]: finalValue }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await onSave(formData);
+    
+    // 🚀 BƯỚC LÀM SẠCH DATA TRƯỚC KHI GỬI (DATA SANITIZATION)
+    const cleanedData = { ...formData };
+    fields.forEach(f => {
+      // Nếu trường không bắt buộc và đang là chuỗi rỗng, chuyển thành null
+      if (!f.required && (cleanedData[f.name] === "" || cleanedData[f.name] === undefined)) {
+        cleanedData[f.name] = null;
+      }
+    });
+
+    await onSave(cleanedData);
   };
 
   const renderField = (field: MasterDataField) => {
@@ -63,8 +82,15 @@ export default function UniversalMasterDataModal({
       case "select":
         return (
           <select name={field.name} required={field.required} value={formData[field.name] ?? ""} onChange={handleChange} className={`${commonClasses} cursor-pointer appearance-none`}>
-            <option value="" disabled className="text-slate-400">-- Vui lòng chọn dữ liệu --</option>
-            {field.options?.map((opt, idx) => <option key={`${opt.value}-${idx}`} value={opt.value} className="text-slate-900 dark:text-white bg-white dark:bg-slate-900">{opt.label}</option>)}
+            {/* 🚀 THÔNG MINH HÓA DROPDOWN: Cho phép chọn lại tùy chọn rỗng nếu trường không bắt buộc */}
+            <option value="" disabled={field.required} className="text-slate-400">
+              {field.required ? "-- Vui lòng chọn dữ liệu --" : "-- Trống (Không bắt buộc) --"}
+            </option>
+            {field.options?.map((opt, idx) => (
+              <option key={`${opt.value}-${idx}`} value={opt.value} className="text-slate-900 dark:text-white bg-white dark:bg-slate-900">
+                {opt.label}
+              </option>
+            ))}
           </select>
         );
       default:

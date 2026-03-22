@@ -24,6 +24,7 @@ export interface User {
   phone?: string;
   address?: string;
   departmentId?: string;
+  roleId?: string;
   status: string;
   permissions?: string[];
   is2FAEnabled?: boolean;
@@ -297,6 +298,7 @@ export interface JournalEntry {
   description: string;
   postingStatus: string;
   lines: JournalLine[]; 
+  fiscalPeriodId?: string;
   isPeriodClosed?: boolean; 
   reversalEntryId?: string; 
   isReversed?: boolean;     
@@ -347,6 +349,8 @@ export interface Account {
   accountType: string;
   description?: string;
   isActive: boolean;
+  parentAccountId?: string | null;
+  parentAccount?: { accountCode: string; name: string };
 }
 
 export interface FiscalYear {
@@ -408,8 +412,8 @@ export interface PriceList {
 
 export interface Budget {
   budgetId: string;
-  departmentId: string;
-  periodId: string;
+  costCenterId: string;
+  year: number;
   totalAmount: number;
   usedAmount: number;
   isActive: boolean;
@@ -465,6 +469,8 @@ export interface Customer {
   phone?: string;
   address?: string;
   taxCode?: string;
+  currencyCode?: string;
+  paymentTerms?: string;
 }
 
 export interface Warehouse {
@@ -487,12 +493,15 @@ export interface ProductCategory {
   code: string;
   name: string;
   description?: string;
+  taxId?: string;
+  tax?: { code: string; rate: number };
 }
 
 export interface UnitOfMeasure {
   uomId: string;
   code: string;
   name: string;
+  uomType?: string;
 }
 
 // --- UOM CONVERSION, LANDED COST, AUDIT LOG ---
@@ -1095,7 +1104,13 @@ export const api = createApi({
     updatePriceList: build.mutation<PriceList, { id: string; data: Partial<PriceList> }>({ query: ({ id, data }) => ({ url: `/advanced-finance/price-lists/${id}`, method: "PUT", body: data }), invalidatesTags: ["PriceLists"] }),
     deletePriceList: build.mutation<void, string>({ query: (id) => ({ url: `/advanced-finance/price-lists/${id}`, method: "DELETE" }), invalidatesTags: ["PriceLists"] }),
 
-    getBudgets: build.query<Budget[], any>({ query: (params) => ({ url: "/advanced-finance/budgets", params }), providesTags: ["Budgets"] }),
+    getBudgets: build.query<Budget[], any | void>({ 
+      query: (params) => ({ 
+        url: "/advanced-finance/budgets", 
+        params: params || {} 
+      }), 
+      providesTags: ["Budgets"] 
+    }),
     createBudget: build.mutation<Budget, Partial<Budget>>({ query: (body) => ({ url: "/advanced-finance/budgets", method: "POST", body }), invalidatesTags: ["Budgets"] }),
     updateBudget: build.mutation<Budget, { id: string; data: Partial<Budget> }>({ query: ({ id, data }) => ({ url: `/advanced-finance/budgets/${id}`, method: "PUT", body: data }), invalidatesTags: ["Budgets"] }),
     deleteBudget: build.mutation<void, string>({ query: (id) => ({ url: `/advanced-finance/budgets/${id}`, method: "DELETE" }), invalidatesTags: ["Budgets"] }),
@@ -1115,6 +1130,14 @@ export const api = createApi({
         body,
         // Lưu ý quan trọng: KHÔNG set Content-Type thủ công ở đây.
         // FetchBaseQuery sẽ tự động nhận diện FormData và set thành multipart/form-data cùng boundary chuẩn.
+      }),
+    }),
+
+    askChatbot: build.mutation<{ success: boolean; data: string }, { message: string; contextData?: any; history?: { role: "user" | "model", parts: { text: string }[] }[] }>({
+      query: (body) => ({
+        url: "/chatbot/ask",
+        method: "POST",
+        body,
       }),
     }),
   }),
@@ -1322,5 +1345,6 @@ export const {
 
   useGetGlobalSearchQuery,
   useUploadFileMutation,
+  useAskChatbotMutation,
 
 } = api;

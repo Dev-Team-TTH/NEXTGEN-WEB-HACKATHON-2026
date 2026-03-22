@@ -11,7 +11,7 @@ import {
   getCashflowReport,
   getTrialBalanceReport
 } from "../controllers/accountingController";
-import { authenticateToken } from "../middleware/authMiddleware"; // Middleware bảo vệ hệ thống
+import { authenticateToken } from "../middleware/authMiddleware"; 
 
 const router = Router();
 
@@ -34,7 +34,7 @@ router.post("/journal-entries/:id/post", postJournalEntry);
 router.post("/journal-entries/:id/reverse", reverseJournalEntry);
 
 // ------------------------------------------------------------------
-// API THANH TOÁN CHỨNG TỪ (AP/AR)
+// API THANH TOÁN CHỨNG TỪ (AP/AR) & BÁO CÁO
 // ------------------------------------------------------------------
 router.post("/documents/:documentId/pay", processPayment);
 router.get("/reports/cashflow", getCashflowReport);

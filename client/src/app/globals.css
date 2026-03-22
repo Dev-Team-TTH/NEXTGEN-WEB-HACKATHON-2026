@@ -3,32 +3,62 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    --foreground-rgb: 15, 23, 42; /* slate-900 */
-    --background-start-rgb: 248, 250, 252; /* slate-50 */
-    --background-end-rgb: 255, 255, 255;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --foreground-rgb: 248, 250, 252; /* slate-50 */
-      --background-start-rgb: 11, 15, 25; /* #0B0F19 */
-      --background-end-rgb: 11, 15, 25;
-    }
-  }
-
   /* ==========================================
-     VŨ KHÍ 1: TRỊ TẬN GỐC LỖI FLICKERING SCROLLBAR
+     HỆ THỐNG MÀU SẮC PHÂN LỚP (SEMANTIC COLOR SYSTEM)
+     Thiết kế khoa học giúp đồng bộ hóa mọi module trong ERP
      ========================================== */
+  :root {
+    /* Tầng Nền (Background Layer) */
+    --bg-main: 248, 250, 252;       /* slate-50 - Nền tổng thể của toàn bộ app */
+    --bg-surface: 255, 255, 255;    /* white - Nền của các thẻ (card), bảng, modal */
+    --bg-input: 255, 255, 255;      /* white - Nền của form nhập liệu */
+    
+    /* Tầng Chữ (Text Layer) */
+    --text-primary: 15, 23, 42;     /* slate-900 - Chữ chính, tiêu đề (Tương phản cao) */
+    --text-muted: 100, 116, 139;    /* slate-500 - Chữ phụ, ghi chú (Làm dịu mắt) */
+    
+    /* Tầng Tương tác (Interactive Layer) */
+    --border-base: 226, 232, 240;   /* slate-200 - Viền cơ bản của các khối */
+    --accent-glow: 59, 130, 246;    /* blue-500 - Màu highlight khi bôi đen / focus */
+    
+    /* Tầng Cuộn (Scrollbar) */
+    --scrollbar-thumb: 148, 163, 184; /* slate-400 */
+  }
+
+  .dark {
+    /* Tầng Nền (Background Layer) - Chuẩn Deep Navy bảo vệ mắt */
+    --bg-main: 9, 13, 20;           /* Sâu hơn nền thẻ để tạo chiều sâu 3D chân thực */
+    --bg-surface: 15, 23, 42;       /* slate-900 - Nổi bật nhẹ so với nền chính */
+    --bg-input: 15, 23, 42;         /* slate-900 - Nền form nhập liệu */
+    
+    /* Tầng Chữ (Text Layer) */
+    --text-primary: 248, 250, 252;  /* slate-50 - Chữ sáng rõ nét */
+    --text-muted: 148, 163, 184;    /* slate-400 - Dịu nhẹ cho các dữ liệu thứ cấp */
+    
+    /* Tầng Tương tác (Interactive Layer) */
+    --border-base: 30, 41, 59;      /* slate-800 - Viền hòa quyện không bị gắt */
+    --accent-glow: 99, 102, 241;    /* indigo-500 - Xanh tín hiệu công nghệ cao */
+    
+    /* Tầng Cuộn (Scrollbar) */
+    --scrollbar-thumb: 71, 85, 105;   /* slate-600 */
+  }
+
+  /* ÁP DỤNG QUY TẮC HIỂN THỊ CỐT LÕI */
   html {
-    /* Công nghệ mới: Luôn giữ chỗ cho thanh cuộn dọc (dù có nội dung tràn hay không) */
-    /* Điều này triệt tiêu hoàn toàn sự co kéo layout khi trang dài ra/ngắn lại đột ngột */
+    /* Trị tận gốc lỗi Flickering Scrollbar (Chống co kéo Layout khi modal mở) */
     scrollbar-gutter: stable;
+    /* Báo cho trình duyệt biết web hỗ trợ cả 2 theme để chống lỗi chớp trắng ban đầu */
+    color-scheme: light dark;
   }
 
   body {
-    color: rgb(var(--foreground-rgb));
-    background: rgb(var(--background-start-rgb));
+    /* Kích hoạt hệ thống màu bằng biến CSS */
+    background-color: rgb(var(--bg-main));
+    color: rgb(var(--text-primary));
+    
+    /* CHUYỂN ĐỔI MƯỢT MÀ TỔNG THỂ (THE MAGIC) */
+    @apply transition-colors duration-500 ease-in-out;
+    
     /* Khóa tuyệt đối scroll ngang (chống vỡ layout trên mobile) */
     overflow-x: hidden;
     width: 100%;
@@ -36,16 +66,20 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+
+  /* Hiệu ứng bôi đen văn bản (Selection) sang trọng */
+  ::selection {
+    background-color: rgba(var(--accent-glow), 0.3);
+    color: inherit;
+  }
 }
 
 /* ==========================================
-   VŨ KHÍ 2: ĐÈ THANH CUỘN GỐC BẰNG CUSTOM SCROLLBAR CHUẨN MACOS
+   CUSTOM SCROLLBAR CHUẨN MACOS (ĐÃ TỐI ƯU HÓA)
    ========================================== */
-
-/* Trình duyệt Webkit (Chrome, Safari, Edge, Cốc Cốc) */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 14px; /* Mở rộng không gian để làm kỹ thuật viền (border trick) */
+  height: 14px;
 }
 
 ::-webkit-scrollbar-track {
@@ -53,45 +87,137 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: rgba(148, 163, 184, 0.4); /* slate-400 mờ */
-  border-radius: 10px;
+  background-color: rgba(var(--scrollbar-thumb), 0.3);
+  border-radius: 99px;
+  /* Kỹ thuật giả lập macOS: Dùng viền tàng hình đồng màu với nền để thu nhỏ thanh cuộn vào giữa */
+  border: 4px solid rgb(var(--bg-main)); 
+  /* Chuyển màu thanh cuộn mượt mà theo Theme */
+  transition: background-color 0.5s ease-in-out, border-color 0.5s ease-in-out;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(148, 163, 184, 0.8);
+  background-color: rgba(var(--scrollbar-thumb), 0.7);
 }
 
-/* Tương thích chế độ Dark Mode */
-.dark ::-webkit-scrollbar-thumb {
-  background-color: rgba(71, 85, 105, 0.5); /* slate-600 mờ */
-}
-
-.dark ::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(71, 85, 105, 0.9);
-}
-
-/* Trình duyệt Firefox */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+  scrollbar-color: rgba(var(--scrollbar-thumb), 0.4) transparent;
 }
 
 @layer utilities {
-  /* Class tiện ích ẩn scrollbar cho các danh sách cuộn ngang nhỏ (vd: Tabs) */
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
   .scrollbar-hide {
-    -ms-overflow-style: none; /* IE & Edge */
-    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
   
-  /* Các class UI Core chung toàn dự án */
+  /* ==========================================
+     GLASSMORPHISM UI (LỚP KÍNH) CHUẨN XÁC THEO BIẾN MÀU
+     ========================================== */
   .glass {
-    @apply bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border border-slate-200/50 dark:border-slate-700/50 shadow-sm;
+    background-color: rgba(var(--bg-surface), 0.75);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(var(--border-base), 0.6);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    @apply transition-colors duration-500 ease-in-out;
   }
   
   .glass-panel {
-    @apply bg-white dark:bg-[#0B0F19] border border-slate-200 dark:border-slate-800 shadow-sm;
+    background-color: rgba(var(--bg-surface), 1);
+    border: 1px solid rgba(var(--border-base), 0.8);
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+    @apply transition-colors duration-500 ease-in-out;
+  }
+
+  /* ==========================================
+     🚀 SMART POLYFILL (BỘ CỨU TRỢ COMPONENT THÔNG MINH)
+     Sử dụng :not([class*="dark:"]) để bảo toàn 100% các class Dark mode lập trình viên đã viết.
+     Chỉ tự động sửa màu cho những Element BỊ QUÊN (Lỗi chữ đen trên nền đen).
+     Đồng thời bổ sung Transition để mượt mà cùng hệ thống.
+     ========================================== */
+  
+  /* --- 1. CỨU MÀU CHỮ CHÍNH --- */
+  .dark .text-slate-900:not([class*="dark:text-"]), 
+  .dark .text-slate-800:not([class*="dark:text-"]), 
+  .dark .text-gray-900:not([class*="dark:text-"]), 
+  .dark .text-gray-800:not([class*="dark:text-"]), 
+  .dark .text-black:not([class*="dark:text-"]) {
+    color: rgba(var(--text-primary), var(--tw-text-opacity, 1)) !important;
+    transition: color 0.5s ease-in-out !important;
+  }
+
+  /* --- 2. CỨU MÀU CHỮ PHỤ --- */
+  .dark .text-slate-700:not([class*="dark:text-"]), 
+  .dark .text-slate-600:not([class*="dark:text-"]), 
+  .dark .text-gray-700:not([class*="dark:text-"]), 
+  .dark .text-gray-600:not([class*="dark:text-"]) {
+    color: rgba(var(--text-muted), var(--tw-text-opacity, 1)) !important;
+    transition: color 0.5s ease-in-out !important;
+  }
+  
+  .dark .text-slate-500:not([class*="dark:text-"]), 
+  .dark .text-gray-500:not([class*="dark:text-"]) {
+    color: rgba(148, 163, 184, var(--tw-text-opacity, 1)) !important; /* Chuẩn slate-400 */
+    transition: color 0.5s ease-in-out !important;
+  }
+
+  /* --- 3. CỨU MÀU NỀN CƠ BẢN (BACKGROUNDS) --- */
+  .dark .bg-white:not([class*="dark:bg-"]) {
+    background-color: rgba(var(--bg-surface), var(--tw-bg-opacity, 1)) !important;
+    transition: background-color 0.5s ease-in-out !important;
+  }
+  
+  /* Nền nhẹ: Đổi thành Slate-800/900 mờ để chống lòi nội dung khi cuộn (VD: Header trong DataTable) */
+  .dark .bg-slate-50:not([class*="dark:bg-"]), 
+  .dark .bg-gray-50:not([class*="dark:bg-"]) {
+    background-color: rgba(15, 23, 42, var(--tw-bg-opacity, 0.6)) !important; 
+    transition: background-color 0.5s ease-in-out !important;
+  }
+  
+  .dark .bg-slate-100:not([class*="dark:bg-"]), 
+  .dark .bg-gray-100:not([class*="dark:bg-"]) {
+    background-color: rgba(30, 41, 59, var(--tw-bg-opacity, 0.7)) !important; 
+    transition: background-color 0.5s ease-in-out !important;
+  }
+  
+  .dark .bg-slate-200:not([class*="dark:bg-"]), 
+  .dark .bg-gray-200:not([class*="dark:bg-"]) {
+    background-color: rgba(51, 65, 85, var(--tw-bg-opacity, 0.8)) !important; 
+    transition: background-color 0.5s ease-in-out !important;
+  }
+
+  /* --- 4. CỨU MÀU VIỀN (BORDERS & DIVIDES) --- */
+  .dark .border-slate-100:not([class*="dark:border-"]), 
+  .dark .border-gray-100:not([class*="dark:border-"]),
+  .dark .border-slate-200:not([class*="dark:border-"]), 
+  .dark .border-gray-200:not([class*="dark:border-"]),
+  .dark .border-slate-300:not([class*="dark:border-"]), 
+  .dark .border-gray-300:not([class*="dark:border-"]) {
+    border-color: rgba(var(--border-base), var(--tw-border-opacity, 1)) !important;
+    transition: border-color 0.5s ease-in-out !important;
+  }
+
+  /* Lớp lưới phân tách dòng trong DataTable */
+  .dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]):not([class*="dark:divide-"]),
+  .dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]):not([class*="dark:divide-"]) {
+    border-color: rgba(var(--border-base), var(--tw-divide-opacity, 1)) !important;
+    transition: border-color 0.5s ease-in-out !important;
+  }
+
+  /* --- 5. CỨU FORM & Ô NHẬP LIỆU (CHỐNG MÙ MÀU INPUT) --- */
+  .dark input:not([type="checkbox"]):not([type="radio"]):not([class*="dark:bg-"]), 
+  .dark textarea:not([class*="dark:bg-"]), 
+  .dark select:not([class*="dark:bg-"]) {
+    background-color: rgba(var(--bg-input), 1) !important;
+    color: rgba(var(--text-primary), 1) !important;
+    border-color: rgba(var(--border-base), 1) !important;
+    transition: all 0.5s ease-in-out !important;
+  }
+  
+  .dark input::placeholder, .dark textarea::placeholder {
+    color: rgba(var(--text-muted), 0.5) !important;
   }
 }

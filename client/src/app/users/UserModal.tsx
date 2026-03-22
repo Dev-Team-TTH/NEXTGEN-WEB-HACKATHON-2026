@@ -67,13 +67,12 @@ export default function UserModal({ isOpen, onClose, editingUser, rolesList }: U
       setRevealedPassword(null);
 
       if (editingUser) {
-        // 💡 FIX LỖI TYPESCRIPT: Ép kiểu as any để lấy các thuộc tính lồng nhau an toàn
+        // 🚀 FIX LOGIC: Bóc tách roleId chuẩn theo Backend mới (Quan hệ 1-1)
         let currentRoleId = "";
         const userAny = editingUser as any;
         
         if (typeof userAny.roleId === "string" && userAny.roleId) currentRoleId = userAny.roleId;
-        else if (Array.isArray(userAny.roles) && userAny.roles.length > 0) currentRoleId = userAny.roles[0].id || userAny.roles[0].roleId;
-        else if (Array.isArray(userAny.userRoles) && userAny.userRoles.length > 0) currentRoleId = userAny.userRoles[0].roleId;
+        else if (userAny.role && userAny.role.roleId) currentRoleId = userAny.role.roleId;
 
         setUserForm({ 
           fullName: userAny.fullName || "", 
@@ -112,6 +111,7 @@ export default function UserModal({ isOpen, onClose, editingUser, rolesList }: U
     }
     
     try {
+      // 🚀 FIX LỖI CRASH API: Gửi roleId dưới dạng string, KHÔNG DÙNG roleIds: [] nữa
       const payloadData = { 
         fullName: userForm.fullName, 
         email: userForm.email, 
@@ -119,7 +119,7 @@ export default function UserModal({ isOpen, onClose, editingUser, rolesList }: U
         address: userForm.address, 
         departmentId: userForm.departmentId || null,
         status: userForm.status, 
-        roleIds: [userForm.roleId] 
+        roleId: userForm.roleId 
       };
       
       if (editingUser) {
@@ -272,7 +272,6 @@ export default function UserModal({ isOpen, onClose, editingUser, rolesList }: U
                         {isResettingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : "Xác nhận"}
                       </button>
                     </div>
-                    {/* 💡 GIẢI THÍCH MÃ PIN CHUẨN ENTERPRISE (XÓA HARDCODE) */}
                     <div className="px-2 mt-1">
                       <p className="text-[10px] text-slate-500 font-medium leading-tight">Mã PIN Quản trị cao cấp được thiết lập riêng tại phân hệ <strong className="text-slate-700 dark:text-slate-300">Cài đặt chung</strong>.</p>
                       <p className="text-[10px] text-rose-500 font-bold mt-1">⚠️ Cảnh báo: Nhập sai nhiều lần sẽ kích hoạt giao thức khóa bảo mật.</p>

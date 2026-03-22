@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import { 
   X, ArrowRightLeft, AlertTriangle, ShieldAlert, 
-  CheckCircle2, Loader2, FileText, History, Info
+  Loader2, FileText, History, Info
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -74,9 +74,10 @@ export default function ReverseEntryModal({ isOpen, onClose, journalId }: Revers
     }
 
     try {
+      // 🚀 FIX: Sửa lại tên field thành 'description' cho khớp với Backend
       await reverseEntry({
         id: journalId,
-        data: { reason: reason.trim() }
+        data: { description: reason.trim() }
       }).unwrap();
       
       toast.success("Đảo bút toán thành công! Sổ cái đã được cân bằng lại.");

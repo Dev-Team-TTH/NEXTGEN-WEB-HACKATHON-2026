@@ -68,19 +68,18 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
       return;
     }
     
-    if (window.confirm(`Bạn chắc chắn muốn ${action === "APPROVE" ? "PHÊ DUYỆT" : "TỪ CHỐI"} tờ trình này?`)) {
-      try {
-        await processApproval({
-          id: requestId!,
-          action,
-          comment: actionComment
-        }).unwrap();
-        
-        toast.success(action === "APPROVE" ? "Đã phê duyệt tờ trình!" : "Đã từ chối tờ trình!");
-        onClose();
-      } catch (error: any) {
-        toast.error(error?.data?.message || "Lỗi xử lý hệ thống!");
-      }
+    // 🚀 FIX: Loại bỏ popup alert xấu xí của Chrome. Giao diện mượt mà và liền mạch hơn.
+    try {
+      await processApproval({
+        id: requestId!,
+        action,
+        comment: actionComment
+      }).unwrap();
+      
+      toast.success(action === "APPROVE" ? "Đã phê duyệt tờ trình!" : "Đã từ chối tờ trình!");
+      onClose();
+    } catch (error: any) {
+      toast.error(error?.data?.message || "Lỗi xử lý hệ thống!");
     }
   };
 
@@ -117,7 +116,7 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
           </div>
         )}
 
-        {/* Row 3 */}
+        {/* Row 3: Bảng chi tiết hạng mục */}
         {items.length > 0 && (
           <div className="border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm">
             <div className="bg-slate-100 dark:bg-slate-800/80 px-4 py-3 border-b border-slate-200 dark:border-white/10 flex items-center gap-2">
@@ -132,11 +131,11 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
                       {item.product?.name || item.account?.name || item.description || `Hạng mục ${idx + 1}`}
                     </span>
                     <span className="text-xs text-slate-500">
-                      SL: {item.quantity || 1} x {formatVND(item.unitPrice || item.debit || item.credit || 0)}
+                      SL: {item.quantity || 1} x {formatVND(item.unitPrice || item.unitCost || item.debit || item.credit || 0)}
                     </span>
                   </div>
                   <div className="font-bold text-slate-900 dark:text-white">
-                    {formatVND(item.totalPrice || item.debit || item.credit || 0)}
+                    {formatVND(item.totalPrice || item.totalCost || item.debit || item.credit || 0)}
                   </div>
                 </div>
               ))}
@@ -244,7 +243,7 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
             </h3>
             
             <div className="relative pl-4 space-y-6 before:absolute before:inset-y-0 before:left-[27px] before:w-0.5 before:bg-slate-200 dark:before:bg-slate-700">
-              {logs.map((log) => {
+              {logs.map((log: any) => {
                 const ui = getActionUI(log.action);
                 const LogIcon = ui.icon;
                 
@@ -257,7 +256,7 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
                     <div className="flex-1 bg-white dark:bg-slate-800 border border-slate-100 dark:border-white/5 rounded-2xl p-4 shadow-sm">
                       <div className="flex justify-between items-start mb-1">
                         <span className="font-bold text-sm text-slate-900 dark:text-white">
-                          Bước {log.step}: {log.processor?.fullName || "Hệ thống"}
+                          Bước {log.stepOrder || 1}: {log.actioner?.fullName || "Hệ thống"}
                         </span>
                         <span className="text-[10px] font-medium text-slate-400">
                           {formatDateTime(log.createdAt)}

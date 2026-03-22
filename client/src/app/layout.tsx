@@ -36,7 +36,7 @@ export const metadata: Metadata = {
 };
 
 // ==========================================
-// 2. CẤU HÌNH VIEWPORT (CHỐNG PHÓNG TO RÁC)
+// 2. CẤU HÌNH VIEWPORT (CHỐNG PHÓNG TO RÁC & ĐỒNG BỘ MÀU)
 // ==========================================
 export const viewport: Viewport = {
   width: "device-width",
@@ -45,7 +45,8 @@ export const viewport: Viewport = {
   userScalable: false, 
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#f8fafc" }, 
-    { media: "(prefers-color-scheme: dark)", color: "#0B0F19" },  
+    // Đã khớp chuẩn tuyệt đối với mã màu --bg-main của Darkmode
+    { media: "(prefers-color-scheme: dark)", color: "#090D14" },  
   ],
 };
 
@@ -60,8 +61,7 @@ export default function RootLayout({
   return (
     <html lang="vi" suppressHydrationWarning data-scroll-behavior="smooth" className={`${inter.variable}`}>
       <body 
-        /* ĐÃ LÀM SẠCH: Xóa bỏ các class overflow thừa thãi vì đã được quản lý tập trung ở globals.css */
-        className={`${inter.className} min-h-screen text-slate-900 dark:text-slate-50 selection:bg-blue-500/30 selection:text-blue-900 dark:selection:text-blue-100`}
+        className={`${inter.className} min-h-screen`}
       >
         
         {/* THANH TIẾN TRÌNH CHUYỂN TRANG */}

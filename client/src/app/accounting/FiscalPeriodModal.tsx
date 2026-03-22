@@ -49,6 +49,7 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
 
   const isProcessing = isCreatingYear || isClosingYear || isClosingPeriod || isReopeningPeriod;
 
+  // --- EFFECT: Tự động chọn năm hiện hành ---
   useEffect(() => {
     if (isOpen && years.length > 0 && !selectedYearId) {
       const activeYear = years.find((y: any) => y.status === "ACTIVE" || !y.isClosed);
@@ -215,6 +216,8 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
 
             {/* === CỘT PHẢI: QUẢN LÝ KỲ (THÁNG) === */}
             <div className="flex-1 flex flex-col min-w-0 bg-slate-50/50 dark:bg-transparent relative overflow-hidden">
+              
+              {/* Nút tắt Modal cho Mobile */}
               <div className="hidden md:flex items-center justify-end p-4 absolute top-0 right-0 z-30">
                  <button onClick={onClose} disabled={isProcessing} className="p-2 text-slate-400 hover:text-rose-500 bg-white/80 hover:bg-rose-50 dark:bg-slate-800/80 dark:hover:bg-rose-900/30 backdrop-blur-sm rounded-xl transition-colors shadow-sm">
                   <X className="w-5 h-5" />
@@ -232,6 +235,7 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
                   {/* WIDGET TỔNG QUAN NĂM */}
                   <div className="mb-8 bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none"><ShieldAlert className="w-32 h-32"/></div>
+                    
                     <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-4 relative z-10">
                       <div>
                         <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-1">
@@ -256,6 +260,7 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
                       </button>
                     </div>
 
+                    {/* Progress Bar */}
                     <div className="relative z-10">
                       <div className="flex justify-between text-xs font-bold uppercase tracking-wider mb-2">
                         <span className="text-slate-500">Tiến trình Khóa sổ</span>
@@ -337,7 +342,6 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
                       })}
                     </motion.div>
                   )}
-
                 </div>
               )}
             </div>

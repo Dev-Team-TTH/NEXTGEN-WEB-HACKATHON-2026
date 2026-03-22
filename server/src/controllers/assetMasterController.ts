@@ -1,12 +1,15 @@
-import { Request, Response } from "express";
+import { Response } from "express";
 import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
+import { AuthRequest } from "../middleware/authMiddleware";
 
+// Hàm Helper trích xuất userId an toàn
+const getUserId = (req: AuthRequest) => req.user?.userId || req.body.userId;
 
 // ==========================================
 // 1. LẤY DANH SÁCH DANH MỤC TÀI SẢN (GET)
 // ==========================================
-export const getAssetCategories = async (req: Request, res: Response): Promise<void> => {
+export const getAssetCategories = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const categories = await prisma.assetCategory.findMany({
       where: { isDeleted: false },
@@ -27,10 +30,9 @@ export const getAssetCategories = async (req: Request, res: Response): Promise<v
 // ==========================================
 // 2. TẠO MỚI DANH MỤC TÀI SẢN (CREATE)
 // ==========================================
-export const createAssetCategory = async (req: Request, res: Response): Promise<void> => {
+export const createAssetCategory = async (req: AuthRequest, res: Response): Promise<void> => {
   const { code, name, depreciationRate, fixedAssetAccountId, depreciationAccountId, accumDepreciationAccountId } = req.body;
-  // Lấy userId từ Middleware Auth, nếu không có thì fallback lấy từ body
-  const userId = (req as any).user?.userId || req.body.userId;
+  const userId = getUserId(req);
 
   try {
     const category = await prisma.assetCategory.create({
@@ -53,10 +55,10 @@ export const createAssetCategory = async (req: Request, res: Response): Promise<
 // ==========================================
 // 3. CẬP NHẬT DANH MỤC TÀI SẢN (UPDATE)
 // ==========================================
-export const updateAssetCategory = async (req: Request, res: Response): Promise<void> => {
+export const updateAssetCategory = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const { name, depreciationRate, fixedAssetAccountId, depreciationAccountId, accumDepreciationAccountId } = req.body;
-  const userId = (req as any).user?.userId || req.body.userId;
+  const userId = getUserId(req);
 
   try {
     const oldCategory = await prisma.assetCategory.findUnique({ where: { categoryId: id } });
@@ -87,9 +89,9 @@ export const updateAssetCategory = async (req: Request, res: Response): Promise<
 // ==========================================
 // 4. XÓA DANH MỤC TÀI SẢN (SOFT DELETE VỚI RÀNG BUỘC)
 // ==========================================
-export const deleteAssetCategory = async (req: Request, res: Response): Promise<void> => {
+export const deleteAssetCategory = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const userId = (req as any).user?.userId || req.body.userId;
+  const userId = getUserId(req);
 
   try {
     // RÀNG BUỘC (VALIDATION): Kiểm tra xem có Tài sản nào đang sử dụng Danh mục này không

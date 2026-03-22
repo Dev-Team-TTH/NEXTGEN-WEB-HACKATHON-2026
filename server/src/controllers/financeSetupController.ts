@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
-import { ActionType } from "@prisma/client";
+import { ActionType, AccountType } from "@prisma/client";
 
 // Hàm hỗ trợ lấy userId an toàn
 const getUserId = (req: Request) => (req as any).user?.userId || req.body?.userId;
@@ -14,8 +14,12 @@ export const getAccounts = async (req: Request, res: Response): Promise<void> =>
     const { type, isActive } = req.query;
     const accounts = await prisma.account.findMany({
       where: {
-        ...(type && { type: String(type) }),
+        ...(type && { type: String(type).toUpperCase() as AccountType }),
         ...(isActive !== undefined && { isActive: isActive === 'true' })
+      },
+      // Include parentAccount để giao diện (UI) vẽ được Sơ đồ Cây
+      include: {
+        parentAccount: { select: { accountCode: true, name: true } }
       },
       orderBy: { accountCode: 'asc' }
     });
@@ -26,15 +30,28 @@ export const getAccounts = async (req: Request, res: Response): Promise<void> =>
 };
 
 export const createAccount = async (req: Request, res: Response): Promise<void> => {
-  const { accountCode, name, type } = req.body;
+  const { accountCode, name, type, parentAccountId } = req.body; 
   const userId = getUserId(req);
   
   try {
+    // Bắt lỗi an toàn: Đảm bảo type là Enum viết hoa
+    const safeType = type ? type.toUpperCase() as AccountType : AccountType.EXPENSE;
+
+    // Nếu có parentAccountId, kiểm tra xem TK cha có tồn tại không
+    if (parentAccountId) {
+      const parent = await prisma.account.findUnique({ where: { accountId: parentAccountId } });
+      if (!parent) {
+        res.status(400).json({ message: "Tài khoản cấp trên (Cha) không tồn tại trong hệ thống!" });
+        return;
+      }
+    }
+
     const account = await prisma.account.create({
       data: {
         accountCode,
         name,
-        type, // ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE
+        type: safeType, 
+        parentAccountId: parentAccountId || null, // Lưu cấu trúc cây
         isActive: true
       }
     });
@@ -46,17 +63,29 @@ export const createAccount = async (req: Request, res: Response): Promise<void> 
 };
 
 export const updateAccount = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params; // accountId
-  const { name, type, isActive } = req.body;
+  const { id } = req.params; 
+  const { name, type, isActive, parentAccountId } = req.body; 
   const userId = getUserId(req);
   
   try {
     const oldAccount = await prisma.account.findUnique({ where: { accountId: id } });
     if (!oldAccount) throw new Error("Tài khoản không tồn tại");
 
+    // Chống vòng lặp vô hạn (Tài khoản cha là chính nó)
+    if (parentAccountId === id) {
+      throw new Error("Một tài khoản không thể chọn chính nó làm Tài khoản cấp trên!");
+    }
+
+    const safeType = type ? type.toUpperCase() as AccountType : oldAccount.type;
+
     const account = await prisma.account.update({
       where: { accountId: id },
-      data: { name, type, isActive }
+      data: { 
+        name, 
+        type: safeType, 
+        isActive,
+        parentAccountId: parentAccountId !== undefined ? parentAccountId : oldAccount.parentAccountId 
+      }
     });
     await logAudit("Account", id, ActionType.UPDATE, oldAccount, account, userId, req.ip);
     res.json({ message: "Cập nhật tài khoản thành công", account });
@@ -70,10 +99,16 @@ export const deleteAccount = async (req: Request, res: Response): Promise<void> 
   const userId = getUserId(req);
 
   try {
+    // Kiểm tra xem tài khoản có đang làm tài khoản cha cho tài khoản khác không
+    const hasSubAccounts = await prisma.account.findFirst({ where: { parentAccountId: id } });
+    if (hasSubAccounts) {
+      res.status(400).json({ message: "Không thể xóa! Tài khoản này đang có các Tài khoản cấp dưới trực thuộc." });
+      return;
+    }
+
     // Kiểm tra xem tài khoản đã phát sinh giao dịch chưa
     const usedInJournals = await prisma.journalLine.findFirst({ where: { accountId: id } });
     if (usedInJournals) {
-      // Nếu đã dùng thì chỉ cho phép Vô hiệu hóa (Deactivate)
       const account = await prisma.account.update({
         where: { accountId: id },
         data: { isActive: false }
@@ -117,7 +152,6 @@ export const createFiscalYear = async (req: Request, res: Response): Promise<voi
 
   try {
     const fiscalYear = await prisma.$transaction(async (tx) => {
-      // 1. Tạo Năm tài chính
       const newYear = await tx.fiscalYear.create({
         data: {
           year: Number(year),
@@ -127,12 +161,11 @@ export const createFiscalYear = async (req: Request, res: Response): Promise<voi
         }
       });
 
-      // 2. Tự động sinh ra 12 Kỳ kế toán (Tháng) cho năm đó
       const periodsToCreate = [];
       const yearNum = Number(year);
       for (let month = 1; month <= 12; month++) {
         const periodStart = new Date(yearNum, month - 1, 1);
-        const periodEnd = new Date(yearNum, month, 0); // Ngày cuối cùng của tháng
+        const periodEnd = new Date(yearNum, month, 0); 
 
         periodsToCreate.push({
           fiscalYearId: newYear.fiscalYearId,
@@ -159,7 +192,7 @@ export const createFiscalYear = async (req: Request, res: Response): Promise<voi
 
 export const toggleFiscalYearStatus = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { isClosed } = req.body; // true = Khóa sổ năm, false = Mở lại năm
+  const { isClosed } = req.body; 
   const userId = getUserId(req);
 
   try {
@@ -168,7 +201,6 @@ export const toggleFiscalYearStatus = async (req: Request, res: Response): Promi
       if (!oldYear) throw new Error("Năm tài chính không tồn tại!");
 
       if (isClosed) {
-        // KIỂM TRA TOÀN VẸN: Đảm bảo toàn bộ 12 tháng đã được khóa sổ
         const openPeriods = await tx.fiscalPeriod.count({
           where: { fiscalYearId: id, isClosed: false }
         });
@@ -177,13 +209,11 @@ export const toggleFiscalYearStatus = async (req: Request, res: Response): Promi
         }
       }
 
-      // Khóa/Mở năm
       const year = await tx.fiscalYear.update({
         where: { fiscalYearId: id },
         data: { isClosed: Boolean(isClosed) }
       });
 
-      // Bắt buộc Khóa/Mở toàn bộ 12 tháng bên trong
       await tx.fiscalPeriod.updateMany({
         where: { fiscalYearId: id },
         data: { isClosed: Boolean(isClosed) }
@@ -200,7 +230,7 @@ export const toggleFiscalYearStatus = async (req: Request, res: Response): Promi
 };
 
 // ==========================================
-// 3. QUẢN LÝ KỲ KẾ TOÁN (FISCAL PERIODS - MONTHS) VỚI LOGIC SNAPSHOT CẤP ENTERPRISE
+// 3. QUẢN LÝ KỲ KẾ TOÁN (FISCAL PERIODS)
 // ==========================================
 export const getFiscalPeriods = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -225,7 +255,7 @@ export const getFiscalPeriods = async (req: Request, res: Response): Promise<voi
 };
 
 export const toggleFiscalPeriodStatus = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params; // periodId
+  const { id } = req.params; 
   const { isClosed } = req.body;
   const userId = getUserId(req);
 
@@ -238,9 +268,6 @@ export const toggleFiscalPeriodStatus = async (req: Request, res: Response): Pro
       if (!oldPeriod) throw new Error("Kỳ kế toán không tồn tại!");
 
       if (isClosed) {
-        // --- 1. TIỀN KIỂM TRA (PRE-CLOSING VALIDATIONS) ---
-        
-        // A. Kiểm tra kỳ trước đó đã đóng chưa? (Ngoại trừ tháng 1)
         if (oldPeriod.periodNumber > 1) {
           const previousPeriod = await tx.fiscalPeriod.findFirst({
             where: {
@@ -253,7 +280,6 @@ export const toggleFiscalPeriodStatus = async (req: Request, res: Response): Pro
           }
         }
 
-        // B. Kiểm tra chứng từ còn treo (DRAFT, PENDING_APPROVAL)
         const pendingDocs = await tx.document.count({
           where: {
             fiscalPeriodId: id,
@@ -264,7 +290,6 @@ export const toggleFiscalPeriodStatus = async (req: Request, res: Response): Pro
           throw new Error(`Tồn tại ${pendingDocs} chứng từ chưa hoàn tất (Nháp/Chờ duyệt) trong kỳ này. Phải xử lý xong trước khi chốt sổ!`);
         }
 
-        // C. Kiểm tra sổ nhật ký chung còn DRAFT
         const draftJournals = await tx.journalEntry.count({
           where: {
             fiscalPeriodId: id,
@@ -275,8 +300,6 @@ export const toggleFiscalPeriodStatus = async (req: Request, res: Response): Pro
           throw new Error(`Tồn tại ${draftJournals} bút toán nháp chưa được ghi sổ. Vui lòng Ghi sổ (POST) tất cả!`);
         }
 
-        // --- 2. CHỤP SNAPSHOT TỒN KHO CUỐI KỲ (INVENTORY SNAPSHOT) ---
-        // Lấy toàn bộ tồn kho hiện tại và đẩy thẳng vào SystemAuditLog dưới dạng JSON
         const inventoryBalances = await tx.inventoryBalance.findMany({
           select: {
             warehouseId: true,
@@ -301,12 +324,10 @@ export const toggleFiscalPeriodStatus = async (req: Request, res: Response): Pro
         });
 
       } else {
-        // --- NẾU LÀ MỞ KHÓA (REOPEN) ---
         if (oldPeriod.fiscalYear.isClosed) {
           throw new Error("Không thể mở lại Kỳ này vì Năm tài chính chứa nó đang bị khóa cứng!");
         }
         
-        // Log lại hành động nguy hiểm này
         await tx.systemAuditLog.create({
           data: {
             tableName: "FiscalPeriod",
@@ -319,7 +340,6 @@ export const toggleFiscalPeriodStatus = async (req: Request, res: Response): Pro
         });
       }
 
-      // Cuối cùng: Cập nhật trạng thái
       return await tx.fiscalPeriod.update({
         where: { periodId: id },
         data: { isClosed: Boolean(isClosed) }

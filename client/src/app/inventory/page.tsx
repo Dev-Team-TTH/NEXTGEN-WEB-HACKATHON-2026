@@ -3,10 +3,11 @@
 import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import { useTranslation } from "react-i18next";
+import dynamic from "next/dynamic"; // 🚀 BỔ SUNG DYNAMIC IMPORT
 import { 
   Package, Map, ScanBarcode, ArrowRightLeft, 
   ClipboardEdit, AlertOctagon, RefreshCcw, Box, Lock, DollarSign, History, Layers,
-  AlertTriangle, Clock, Download
+  AlertTriangle, Clock, Download, Loader2
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -21,9 +22,7 @@ import {
 // --- COMPONENTS ---
 import Header from "@/app/(components)/Header";
 import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
-import Warehouse3DViewer from "@/app/(components)/Warehouse3DViewer";
-import UniversalScanner from "@/app/(components)/UniversalScanner";
-import RequirePermission from "@/app/(components)/RequirePermission"; // 🚀 TÍCH HỢP RBAC
+import RequirePermission from "@/app/(components)/RequirePermission";
 
 // --- SUB-PAGES & MODALS ---
 import ProductList from "./ProductList";
@@ -35,6 +34,21 @@ import TransferStockModal from "./TransferStockModal";
 import { formatVND } from "@/utils/formatters";
 import { exportToCSV } from "@/utils/exportUtils";
 import { cn } from "@/utils/helpers";
+
+// 🚀 TỐI ƯU HÓA BUNDLE SIZE: Lazy Load các component siêu nặng
+// Trình chiếu 3D (WebGL) sẽ chỉ được tải về máy khách khi bấm vào tab 3D
+const Warehouse3DViewer = dynamic(() => import("@/app/(components)/Warehouse3DViewer"), { 
+  ssr: false,
+  loading: () => (
+    <div className="flex flex-col items-center justify-center h-[500px] w-full bg-slate-100/50 dark:bg-slate-800/50 rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-700">
+      <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-4" />
+      <p className="text-sm font-bold text-slate-500">Đang tải Engine Đồ họa 3D...</p>
+    </div>
+  )
+});
+
+// Máy quét Barcode (liên quan đến API Camera) chỉ tải khi bật Modal
+const UniversalScanner = dynamic(() => import("@/app/(components)/UniversalScanner"), { ssr: false });
 
 // ==========================================
 // 1. SKELETON LOADING
@@ -146,7 +160,6 @@ export default function InventoryPage() {
     toast.success("Xuất báo cáo tồn kho thành công!");
   };
 
-  // 🚀 ĐƯỢC TỐI ƯU HÓA: GÓI BẰNG useMemo ĐỂ TRÁNH RE-RENDER DATATABLE
   const columns: ColumnDef<any>[] = useMemo(() => [
     {
       header: "Vật tư / Sản phẩm",
@@ -224,7 +237,6 @@ export default function InventoryPage() {
     }
   ], []);
 
-  // 🚀 ĐƯỢC TỐI ƯU HÓA: GÓI BẰNG useMemo ĐỂ CHỐNG RE-RENDER BỘ LỌC
   const inventoryFiltersNode = useMemo(() => (
     <div className="flex flex-wrap items-center gap-4 w-full">
       <div className="w-full sm:w-64">
@@ -286,7 +298,6 @@ export default function InventoryPage() {
         subtitle={t("Giám sát danh mục vật tư, tồn kho thời gian thực và lịch sử luân chuyển.")}
         rightNode={
           <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
-            {/* 🚀 BẢO VỆ NÚT XUẤT EXCEL BẰNG RBAC */}
             <RequirePermission permissions={["MANAGE_INVENTORY"]}>
               <button 
                 onClick={handleExportBalances}
@@ -305,7 +316,6 @@ export default function InventoryPage() {
               <span className="hidden sm:block text-sm font-bold">Quét mã Bulk</span>
             </button>
             
-            {/* 🚀 ĐÃ BỌC RBAC CHO CÁC THAO TÁC KHO NGUY HIỂM */}
             <RequirePermission permissions={["MANAGE_INVENTORY"]}>
               <button 
                 onClick={() => setIsTransferModalOpen(true)}
@@ -334,7 +344,6 @@ export default function InventoryPage() {
       ) : (
         <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-6 w-full">
           
-          {/* SMART ALERTS WIDGETS */}
           <AnimatePresence>
             {(lowStockAlerts.length > 0 || expiringBatches.length > 0) && (
               <motion.div 
@@ -343,7 +352,6 @@ export default function InventoryPage() {
                 exit={{ opacity: 0, height: 0, scale: 0.95 }}
                 className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6"
               >
-                {/* WIDGET CẢNH BÁO TỒN KHO THẤP */}
                 {lowStockAlerts.length > 0 && (
                   <motion.div 
                     animate={{ boxShadow: ["0px 0px 0px rgba(244,63,94,0)", "0px 0px 20px rgba(244,63,94,0.4)", "0px 0px 0px rgba(244,63,94,0)"] }}
@@ -363,7 +371,6 @@ export default function InventoryPage() {
                   </motion.div>
                 )}
 
-                {/* WIDGET CẢNH BÁO HẾT HẠN SỬ DỤNG (FEFO) */}
                 {expiringBatches.length > 0 && (
                   <motion.div 
                     animate={{ boxShadow: ["0px 0px 0px rgba(245,158,11,0)", "0px 0px 20px rgba(245,158,11,0.4)", "0px 0px 0px rgba(245,158,11,0)"] }}
@@ -386,13 +393,11 @@ export default function InventoryPage() {
             )}
           </AnimatePresence>
 
-          {/* KHỐI THỐNG KÊ (KPI CARDS) */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
             <motion.div variants={itemVariants} className="glass p-5 rounded-2xl border-l-4 border-l-emerald-500 group hover:-translate-y-1 transition-transform">
               <div className="flex justify-between items-start mb-2">
                 <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center">
                   Tổng Tồn Khả Dụng
-                  {/* 🚀 UX: Huy hiệu báo hiệu đang lọc */}
                   {isFiltering && <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400">Đã lọc</span>}
                 </p>
                 <div className="p-2 bg-emerald-100 dark:bg-emerald-500/20 rounded-lg"><Box className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /></div>
@@ -423,7 +428,6 @@ export default function InventoryPage() {
             </motion.div>
           </div>
 
-          {/* ĐIỀU HƯỚNG TAB TỔNG HỢP */}
           <div className="w-full overflow-x-auto scrollbar-hide">
             <div className="flex items-center gap-2 p-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-2xl w-fit border border-slate-200 dark:border-white/5">
               
@@ -450,7 +454,6 @@ export default function InventoryPage() {
             </div>
           </div>
 
-          {/* NỘI DUNG HIỂN THỊ TƯƠNG ỨNG VỚI TAB */}
           <div className="w-full relative">
             <AnimatePresence mode="wait">
               
@@ -463,7 +466,6 @@ export default function InventoryPage() {
                       searchKey="productSearchName" 
                       searchPlaceholder="Tìm mã SKU, tên vật tư..."
                       itemsPerPage={10}
-                      // 🚀 BƠM BỘ LỌC VÀO ĐÂY
                       advancedFilterNode={inventoryFiltersNode}
                     />
                   </div>

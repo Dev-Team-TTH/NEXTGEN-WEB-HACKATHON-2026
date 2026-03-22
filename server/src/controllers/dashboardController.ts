@@ -117,17 +117,19 @@ export const getDashboardMetrics = async (req: AuthRequest, res: Response): Prom
     // ==========================================
     let pendingApprovalsCount = 0;
     if (userId) {
-      const userRoles = await prisma.userRole.findMany({
+      // 🚀 ĐÃ FIX TS2339 & TS7006: Truy vấn trực tiếp từ bảng Users (Quan hệ 1-1)
+      const currentUser = await prisma.users.findUnique({
         where: { userId }, select: { roleId: true }
       });
-      const roleIds = userRoles.map(ur => ur.roleId);
-
-      pendingApprovalsCount = await prisma.approvalRequest.count({
-        where: {
-          status: "PENDING",
-          workflow: { steps: { some: { roleId: { in: roleIds } } } }
-        }
-      });
+      
+      if (currentUser && currentUser.roleId) {
+        pendingApprovalsCount = await prisma.approvalRequest.count({
+          where: {
+            status: "PENDING",
+            workflow: { steps: { some: { roleId: currentUser.roleId } } }
+          }
+        });
+      }
     }
 
     const recentActivities = await prisma.document.findMany({

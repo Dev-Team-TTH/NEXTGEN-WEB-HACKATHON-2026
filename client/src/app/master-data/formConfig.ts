@@ -85,7 +85,7 @@ export const getFormConfig = (
       fields: [
         { name: "code", label: "Mã Nhóm", type: "text", required: true }, 
         { name: "name", label: "Tên Nhóm Hàng", type: "text", required: true }, 
-        { name: "taxId", label: "Thuế suất mặc định (Áp dụng cho Hàng hóa)", type: "select", options: (ctx.taxes || []).map(t => ({ label: `[${t.taxCode}] ${t.name} (${t.rate}%)`, value: t.taxId || t.id })) },
+        { name: "taxId", label: "Thuế suất mặc định (Áp dụng cho Hàng hóa)", type: "select", options: (ctx.taxes || []).map(t => ({ label: `[${t.code || t.taxCode}] ${t.name} (${t.rate}%)`, value: t.taxId || t.id })) },
         { name: "description", label: "Mô tả Ngành hàng", type: "textarea" }
       ] 
     };
@@ -100,7 +100,7 @@ export const getFormConfig = (
     case "taxes": return { 
       title: "Biểu Thuế (Taxes)", subtitle: "Danh mục thuế suất phục vụ Bán hàng và Mua hàng", 
       fields: [
-        { name: "taxCode", label: "Mã Thuế (VD: VAT10)", type: "text", required: true }, 
+        { name: "code", label: "Mã Thuế (VD: VAT10)", type: "text", required: true }, 
         { name: "name", label: "Tên gọi/Nhóm Thuế", type: "text", required: true }, 
         { name: "rate", label: "Thuế suất (%)", type: "number", required: true },
         { name: "description", label: "Diễn giải chi tiết", type: "textarea" }
@@ -121,7 +121,7 @@ export const getFormConfig = (
         { name: "accountCode", label: "Số hiệu TK (VD: 111, 1111)", type: "text", required: true }, 
         { name: "name", label: "Tên Tài khoản", type: "text", required: true }, 
         { 
-          name: "accountType", 
+          name: "type", 
           label: "Nhóm Tài khoản (Type)", 
           type: "select", 
           options: [
@@ -142,8 +142,7 @@ export const getFormConfig = (
           label: "Trực thuộc Tài khoản Cấp trên (Tài khoản Cha)", 
           type: "select", 
           options: (ctx.accounts || []).map(a => ({ label: `[${a.accountCode}] ${a.name}`, value: a.accountId || a.id })) 
-        },
-        { name: "description", label: "Giải trình Tài khoản", type: "textarea" }
+        }
       ] 
     };
     default: return { title: "Dữ liệu", subtitle: "", fields: [] };

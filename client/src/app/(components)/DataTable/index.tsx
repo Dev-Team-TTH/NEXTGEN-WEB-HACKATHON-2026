@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
-import { Search, ChevronDown, ChevronUp, SlidersHorizontal, Inbox } from "lucide-react";
+import { Search, ChevronDown, ChevronUp, SlidersHorizontal, Inbox, Loader2 } from "lucide-react";
 
 // ==========================================
 // 1. ĐỊNH NGHĨA KIỂU DỮ LIỆU (GENERIC TYPES)
@@ -24,10 +24,8 @@ interface DataTableProps<T> {
   searchKey?: keyof T; 
   onRowClick?: (row: T) => void;
   
-  // 🚀 KIẾN TRÚC MỚI: Truyền Node Bộ lọc từ bên ngoài vào
   advancedFilterNode?: React.ReactNode;
   
-  // Tính năng Server-side Pagination & Filtering
   isServerSide?: boolean;
   serverPage?: number;
   serverTotalPages?: number;
@@ -49,7 +47,7 @@ export default function DataTable<T>({
   searchKey,
   onRowClick,
   itemsPerPage = 10,
-  advancedFilterNode, // Nhận node bộ lọc
+  advancedFilterNode, 
   isServerSide = false,
   serverPage = 1,
   serverTotalPages = 1,
@@ -62,11 +60,9 @@ export default function DataTable<T>({
   const [localSearchTerm, setLocalSearchTerm] = useState("");
   const [sortConfig, setSortConfig] = useState<{ key: keyof T | string; direction: "asc" | "desc" } | null>(null);
   const [clientPage, setClientPage] = useState(1);
-  
-  // STATE MỚI: Quản lý ẩn hiện khung lọc nâng cao
   const [showFilters, setShowFilters] = useState(false);
 
-  // --- KỸ THUẬT DEBOUNCE TÌM KIẾM ---
+  // --- DEBOUNCE TÌM KIẾM ---
   useEffect(() => {
     const handler = setTimeout(() => {
       if (isServerSide && onSearchChange) {
@@ -130,18 +126,18 @@ export default function DataTable<T>({
     }
   };
 
-  // --- ANIMATION CONFIG ---
   const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.05 } } };
   const rowVariants: Variants = { hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 300, damping: 24 } } };
 
   return (
-    <div className="w-full bg-white dark:bg-gray-900/50 rounded-2xl shadow-sm border border-gray-100 dark:border-white/5 overflow-hidden flex flex-col">
+    /* 🚀 SỬ DỤNG CLASS .glass-panel TỪ globals.css ĐỂ ĐỒNG BỘ 100% MÀU THEME */
+    <div className="w-full glass-panel rounded-2xl overflow-hidden flex flex-col relative z-0">
       
-      {/* HEADER BẢNG: THANH CÔNG CỤ TÌM KIẾM & NÚT FILTER */}
-      <div className="p-4 sm:p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-transparent relative z-20">
+      {/* HEADER BẢNG */}
+      <div className="p-4 sm:p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 dark:border-slate-700/50 bg-slate-50/50 dark:bg-transparent relative z-20">
         {searchKey && (
           <div className="relative w-full sm:max-w-md group">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
             <input
               type="text"
               placeholder={searchPlaceholder}
@@ -150,19 +146,18 @@ export default function DataTable<T>({
                 setLocalSearchTerm(e.target.value);
                 if (!isServerSide) setClientPage(1); 
               }}
-              className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all text-gray-900 dark:text-gray-100 placeholder-gray-400 shadow-sm"
+              className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all text-slate-900 dark:text-slate-100 placeholder-slate-400 shadow-sm"
             />
           </div>
         )}
         
-        {/* NÚT BẬT TẮT BỘ LỌC ĐỘNG TỪ BÊN NGOÀI */}
         {advancedFilterNode && (
           <button 
             onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-bold rounded-xl transition-all active:scale-95 shadow-sm whitespace-nowrap
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-bold rounded-xl transition-all active:scale-95 shadow-sm whitespace-nowrap w-full sm:w-auto justify-center
               ${showFilters 
                 ? "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-500/20 dark:text-blue-400 dark:border-blue-500/30" 
-                : "text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
+                : "text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
               }`}
           >
             <SlidersHorizontal className="w-4 h-4" />
@@ -172,14 +167,14 @@ export default function DataTable<T>({
         )}
       </div>
 
-      {/* KHUNG XỔ XUỐNG CHỨA BỘ LỌC BÊN NGOÀI BƠM VÀO */}
+      {/* BỘ LỌC MỞ RỘNG */}
       <AnimatePresence>
         {advancedFilterNode && showFilters && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="border-b border-gray-100 dark:border-white/5 bg-gray-50/30 dark:bg-gray-800/30 overflow-hidden"
+            className="border-b border-slate-200 dark:border-slate-700/50 bg-slate-50/30 dark:bg-slate-800/30 overflow-hidden"
           >
             <div className="p-4 sm:px-5 sm:py-4">
               {advancedFilterNode}
@@ -188,24 +183,28 @@ export default function DataTable<T>({
         )}
       </AnimatePresence>
 
-      {/* VÙNG CHỨA BẢNG */}
-      <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700 relative min-h-[200px] z-10">
-        {isServerSide && isLoading && (
-           <div className="absolute inset-0 bg-white/50 dark:bg-gray-900/50 backdrop-blur-[2px] z-10 flex items-center justify-center">
-             <div className="px-5 py-2.5 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 text-sm font-bold text-gray-700 dark:text-gray-200 flex items-center gap-3">
-               <span className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></span> Đang tải dữ liệu...
-             </div>
-           </div>
-        )}
+      {/* VÙNG BẢNG DỮ LIỆU (Bọc Scroll ngang an toàn trên Mobile) */}
+      <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600 relative min-h-[250px] z-10">
+        
+        {/* OVERLAY LOADING CHO SERVER-SIDE */}
+        <AnimatePresence>
+          {isServerSide && isLoading && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-white/50 dark:bg-slate-900/50 backdrop-blur-[2px] z-20 flex items-center justify-center">
+              <div className="px-5 py-2.5 bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-700 dark:text-slate-200 flex items-center gap-3">
+                <Loader2 className="w-5 h-5 text-blue-500 animate-spin" /> Đang đồng bộ dữ liệu...
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        <table className="w-full text-left border-collapse min-w-[600px]">
+        <table className="w-full text-left border-collapse min-w-[700px]">
           <thead>
-            <tr className="bg-gray-50/80 dark:bg-gray-800/50 text-gray-500 dark:text-gray-400 text-[11px] uppercase tracking-wider font-bold">
+            <tr className="bg-slate-50/80 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-[11px] uppercase tracking-wider font-bold">
               {columns.map((col, index) => (
                 <th
                   key={index}
                   onClick={() => col.sortable && handleSort(col.accessorKey)}
-                  className={`p-4 first:pl-6 last:pr-6 border-b border-gray-100 dark:border-white/5 ${col.sortable ? "cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors select-none" : ""} ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
+                  className={`p-4 first:pl-6 last:pr-6 border-b border-slate-200 dark:border-slate-700/50 ${col.sortable ? "cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors select-none" : ""} ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
                   style={{ width: col.width }}
                 >
                   <div className={`flex items-center gap-1.5 ${col.align === 'right' ? 'justify-end' : col.align === 'center' ? 'justify-center' : 'justify-start'}`}>
@@ -225,9 +224,9 @@ export default function DataTable<T>({
             {!isServerSide && isLoading ? (
               <motion.tbody key="skeleton" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 {Array.from({ length: 5 }).map((_, rowIndex) => (
-                  <tr key={rowIndex} className="border-b border-gray-50 dark:border-white/5">
+                  <tr key={rowIndex} className="border-b border-slate-100 dark:border-slate-800/50">
                     {columns.map((_, colIndex) => (
-                      <td key={colIndex} className="p-4 first:pl-6 last:pr-6"><div className="h-5 bg-gray-200 dark:bg-gray-700 rounded-md animate-pulse w-3/4"></div></td>
+                      <td key={colIndex} className="p-4 first:pl-6 last:pr-6"><div className="h-5 bg-slate-200 dark:bg-slate-700 rounded-md animate-pulse w-3/4"></div></td>
                     ))}
                   </tr>
                 ))}
@@ -235,9 +234,9 @@ export default function DataTable<T>({
             ) : displayData.length === 0 ? (
               <motion.tbody key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <tr>
-                  <td colSpan={columns.length} className="p-16 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={columns.length} className="p-16 text-center text-slate-500 dark:text-slate-400">
                     <div className="flex flex-col items-center justify-center gap-3">
-                      <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-full border border-gray-100 dark:border-gray-700"><Inbox className="w-8 h-8 text-gray-400" /></div>
+                      <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700"><Inbox className="w-8 h-8 text-slate-400" /></div>
                       <p className="text-sm font-semibold">Không tìm thấy dữ liệu phù hợp</p>
                     </div>
                   </td>
@@ -250,10 +249,10 @@ export default function DataTable<T>({
                     key={rowIndex}
                     variants={rowVariants}
                     onClick={() => onRowClick && onRowClick(row)}
-                    className={`border-b border-gray-50 dark:border-white/5 group transition-colors ${onRowClick ? "cursor-pointer hover:bg-blue-50/50 dark:hover:bg-blue-900/10" : ""}`}
+                    className={`border-b border-slate-100 dark:border-slate-800/50 group transition-colors ${onRowClick ? "cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/80" : ""}`}
                   >
                     {columns.map((col, colIndex) => (
-                      <td key={colIndex} className={`p-4 text-sm text-gray-700 dark:text-gray-300 first:pl-6 last:pr-6 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
+                      <td key={colIndex} className={`p-4 text-sm text-slate-700 dark:text-slate-300 first:pl-6 last:pr-6 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
                         {col.cell ? col.cell(row) : (row[col.accessorKey as keyof T] as React.ReactNode)}
                       </td>
                     ))}
@@ -267,25 +266,25 @@ export default function DataTable<T>({
 
       {/* FOOTER: PHÂN TRANG */}
       {totalPages > 0 && (
-        <div className="p-4 border-t border-gray-100 dark:border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500 dark:text-gray-400 bg-gray-50/30 dark:bg-transparent">
+        <div className="p-4 border-t border-slate-200 dark:border-slate-700/50 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-500 dark:text-slate-400 bg-slate-50/30 dark:bg-transparent">
           <span>
-            Hiển thị <span className="font-bold text-gray-900 dark:text-white">{(currentPage - 1) * itemsPerPage + 1}</span> - <span className="font-bold text-gray-900 dark:text-white">{Math.min(currentPage * itemsPerPage, totalItems)}</span> trong tổng số <span className="font-bold text-gray-900 dark:text-white">{totalItems}</span>
+            Hiển thị <span className="font-bold text-slate-900 dark:text-white">{(currentPage - 1) * itemsPerPage + 1}</span> - <span className="font-bold text-slate-900 dark:text-white">{Math.min(currentPage * itemsPerPage, totalItems)}</span> / <span className="font-bold text-slate-900 dark:text-white">{totalItems}</span>
           </span>
-          <div className="flex gap-1">
+          <div className="flex items-center gap-1.5 w-full sm:w-auto justify-between sm:justify-end">
             <button
               onClick={() => handlePageChange(Math.max(currentPage - 1, 1))}
               disabled={currentPage === 1 || (isServerSide && isLoading)}
-              className="px-3 py-1.5 font-semibold rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-2 sm:py-1.5 font-semibold rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto text-center"
             >
               Trang trước
             </button>
-            <span className="px-4 py-1.5 font-bold text-gray-700 dark:text-gray-300">
+            <span className="px-3 sm:px-4 py-1.5 font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
               {currentPage} / {totalPages}
             </span>
             <button
               onClick={() => handlePageChange(Math.min(currentPage + 1, totalPages))}
               disabled={currentPage === totalPages || (isServerSide && isLoading)}
-              className="px-3 py-1.5 font-semibold rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-2 sm:py-1.5 font-semibold rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto text-center"
             >
               Trang sau
             </button>

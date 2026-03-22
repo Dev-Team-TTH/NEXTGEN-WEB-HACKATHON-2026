@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { 
   getUsers, getUserById, createUser, updateUser, deleteUser, resetUserPassword,
-  getPermissions, seedSystemPermissions, // <-- Đã import hàm Seed
+  getPermissions, seedSystemPermissions, 
   getRoles, createRole, updateRole, deleteRole,
   getOrganizationStructure, createCostCenter, getSystemAuditLogs, getAuditLogsByRecord
 } from "../controllers/orgAndRbacController";

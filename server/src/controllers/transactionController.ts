@@ -1,14 +1,16 @@
-import { Request, Response } from "express";
+import { Response } from "express";
 import { TransactionType, MovementDirection, TransactionStatus, ActionType } from "@prisma/client";
 import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
+import { AuthRequest } from "../middleware/authMiddleware"; // 🚀 IMPORT CHUẨN KIẾN TRÚC
 
-const getUserId = (req: Request) => (req as any).user?.userId || req.body.userId;
+// Hàm Helper trích xuất userId an toàn, không dùng (req as any)
+const getUserId = (req: AuthRequest) => req.user?.userId || req.body.userId;
 
 // ==========================================
 // 1. LẤY DANH SÁCH CHỨNG TỪ
 // ==========================================
-export const getDocuments = async (req: Request, res: Response): Promise<void> => {
+export const getDocuments = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { branchId, type, status, paymentStatus, startDate, endDate } = req.query;
 
@@ -41,7 +43,7 @@ export const getDocuments = async (req: Request, res: Response): Promise<void> =
   }
 };
 
-export const getDocumentById = async (req: Request, res: Response): Promise<void> => {
+export const getDocumentById = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const document = await prisma.document.findUnique({
@@ -79,7 +81,7 @@ export const getDocumentById = async (req: Request, res: Response): Promise<void
 // ==========================================
 // 2. TẠO PHIẾU GIAO DỊCH (CREATE DRAFT & UOM CONVERSION)
 // ==========================================
-export const createDocument = async (req: Request, res: Response): Promise<void> => {
+export const createDocument = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const {
       documentNumber, branchId, type, note, supplierId, customerId, referenceDoc,
@@ -192,7 +194,7 @@ export const createDocument = async (req: Request, res: Response): Promise<void>
 // ==========================================
 // 3. CẬP NHẬT CHỨNG TỪ (UPDATE DRAFT & UOM)
 // ==========================================
-export const updateDocument = async (req: Request, res: Response): Promise<void> => {
+export const updateDocument = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const { note, supplierId, customerId, referenceDoc, currencyCode, exchangeRate, transactions, taxes, landedCosts } = req.body;
   const userId = getUserId(req);
@@ -293,7 +295,7 @@ export const updateDocument = async (req: Request, res: Response): Promise<void>
 // ==========================================
 // 4. HỦY CHỨNG TỪ (CANCEL)
 // ==========================================
-export const deleteDocument = async (req: Request, res: Response): Promise<void> => {
+export const deleteDocument = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const userId = getUserId(req);
 
@@ -327,7 +329,7 @@ export const deleteDocument = async (req: Request, res: Response): Promise<void>
 // ==========================================
 // 5. PHÊ DUYỆT PHIẾU KHO & GHI SỔ (APPROVE, ALLOCATE & POSTING)
 // ==========================================
-export const approveDocument = async (req: Request, res: Response): Promise<void> => {
+export const approveDocument = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const { fiscalPeriodId } = req.body;
   const userId = getUserId(req);

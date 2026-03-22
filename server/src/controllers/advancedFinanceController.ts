@@ -1,12 +1,15 @@
-import { Request, Response } from "express";
+import { Response } from "express";
 import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
+import { AuthRequest } from "../middleware/authMiddleware";
 
+// Hàm Helper trích xuất userId an toàn
+const getUserId = (req: AuthRequest) => req.user?.userId || req.body.userId;
 
 // ==========================================
 // 1. QUẢN LÝ THUẾ (TAX CODES)
 // ==========================================
-export const getTaxes = async (req: Request, res: Response): Promise<void> => {
+export const getTaxes = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const taxes = await prisma.taxCode.findMany({ orderBy: { code: 'asc' } });
     res.json(taxes);
@@ -15,8 +18,10 @@ export const getTaxes = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
-export const createTax = async (req: Request, res: Response): Promise<void> => {
-  const { code, name, rate, description, userId } = req.body;
+export const createTax = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { code, name, rate, description } = req.body;
+  const userId = getUserId(req);
+
   try {
     const tax = await prisma.taxCode.create({ data: { code, name, rate: Number(rate), description } });
     await logAudit("TaxCode", tax.taxId, "CREATE", null, tax, userId, req.ip);
@@ -26,9 +31,11 @@ export const createTax = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
-export const updateTax = async (req: Request, res: Response): Promise<void> => {
+export const updateTax = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { name, rate, description, userId } = req.body;
+  const { name, rate, description } = req.body;
+  const userId = getUserId(req);
+
   try {
     const oldTax = await prisma.taxCode.findUnique({ where: { taxId: id } });
     const tax = await prisma.taxCode.update({
@@ -42,11 +49,11 @@ export const updateTax = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
-export const deleteTax = async (req: Request, res: Response): Promise<void> => {
+export const deleteTax = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { userId } = req.body;
+  const userId = getUserId(req);
+
   try {
-    // Prisma sẽ ném lỗi nếu Tax này đang được dùng trong DocumentTax (do onDelete: Restrict)
     await prisma.taxCode.delete({ where: { taxId: id } });
     await logAudit("TaxCode", id, "DELETE", null, { deleted: true }, userId, req.ip);
     res.json({ message: "Đã xóa Mã thuế thành công!" });
@@ -58,7 +65,7 @@ export const deleteTax = async (req: Request, res: Response): Promise<void> => {
 // ==========================================
 // 2. QUẢN LÝ TIỀN TỆ & TỶ GIÁ (CURRENCY & EXCHANGE RATES)
 // ==========================================
-export const getCurrencies = async (req: Request, res: Response): Promise<void> => {
+export const getCurrencies = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const currencies = await prisma.currency.findMany({
       include: { exchangeRates: { orderBy: { validFrom: 'desc' } } }
@@ -69,8 +76,10 @@ export const getCurrencies = async (req: Request, res: Response): Promise<void> 
   }
 };
 
-export const createCurrency = async (req: Request, res: Response): Promise<void> => {
-  const { currencyCode, name, symbol, userId } = req.body;
+export const createCurrency = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { currencyCode, name, symbol } = req.body;
+  const userId = getUserId(req);
+
   try {
     const currency = await prisma.currency.create({
       data: { currencyCode, name, symbol }
@@ -82,9 +91,11 @@ export const createCurrency = async (req: Request, res: Response): Promise<void>
   }
 };
 
-export const updateCurrency = async (req: Request, res: Response): Promise<void> => {
+export const updateCurrency = async (req: AuthRequest, res: Response): Promise<void> => {
   const { currencyCode } = req.params;
-  const { name, symbol, userId } = req.body;
+  const { name, symbol } = req.body;
+  const userId = getUserId(req);
+
   try {
     const oldCurrency = await prisma.currency.findUnique({ where: { currencyCode } });
     const currency = await prisma.currency.update({
@@ -98,9 +109,10 @@ export const updateCurrency = async (req: Request, res: Response): Promise<void>
   }
 };
 
-export const deleteCurrency = async (req: Request, res: Response): Promise<void> => {
+export const deleteCurrency = async (req: AuthRequest, res: Response): Promise<void> => {
   const { currencyCode } = req.params;
-  const { userId } = req.body;
+  const userId = getUserId(req);
+
   try {
     await prisma.currency.delete({ where: { currencyCode } });
     await logAudit("Currency", currencyCode, "DELETE", null, { deleted: true }, userId, req.ip);
@@ -110,8 +122,10 @@ export const deleteCurrency = async (req: Request, res: Response): Promise<void>
   }
 };
 
-export const addExchangeRate = async (req: Request, res: Response): Promise<void> => {
-  const { currencyCode, rate, validFrom, validTo, userId } = req.body;
+export const addExchangeRate = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { currencyCode, rate, validFrom, validTo } = req.body;
+  const userId = getUserId(req);
+
   try {
     const exchangeRate = await prisma.exchangeRate.create({
       data: {
@@ -128,9 +142,10 @@ export const addExchangeRate = async (req: Request, res: Response): Promise<void
   }
 };
 
-export const deleteExchangeRate = async (req: Request, res: Response): Promise<void> => {
+export const deleteExchangeRate = async (req: AuthRequest, res: Response): Promise<void> => {
   const { rateId } = req.params;
-  const { userId } = req.body;
+  const userId = getUserId(req);
+
   try {
     await prisma.exchangeRate.delete({ where: { rateId } });
     await logAudit("ExchangeRate", rateId, "DELETE", null, { deleted: true }, userId, req.ip);
@@ -143,7 +158,7 @@ export const deleteExchangeRate = async (req: Request, res: Response): Promise<v
 // ==========================================
 // 3. QUẢN LÝ BẢNG GIÁ (PRICE LISTS)
 // ==========================================
-export const getPriceLists = async (req: Request, res: Response): Promise<void> => {
+export const getPriceLists = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const priceLists = await prisma.priceList.findMany({
       where: { isDeleted: false },
@@ -155,8 +170,10 @@ export const getPriceLists = async (req: Request, res: Response): Promise<void> 
   }
 };
 
-export const createPriceList = async (req: Request, res: Response): Promise<void> => {
-  const { code, name, currencyCode, items, userId } = req.body;
+export const createPriceList = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { code, name, currencyCode, items } = req.body;
+  const userId = getUserId(req);
+
   try {
     const priceList = await prisma.$transaction(async (tx) => {
       const pl = await tx.priceList.create({ data: { code, name, currencyCode } });
@@ -182,21 +199,21 @@ export const createPriceList = async (req: Request, res: Response): Promise<void
   }
 };
 
-export const updatePriceList = async (req: Request, res: Response): Promise<void> => {
+export const updatePriceList = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { name, currencyCode, isActive, items, userId } = req.body;
+  const { name, currencyCode, isActive, items } = req.body;
+  const userId = getUserId(req);
+
   try {
     const updatedPriceList = await prisma.$transaction(async (tx) => {
       const oldPl = await tx.priceList.findUnique({ where: { priceListId: id } });
       if (!oldPl || oldPl.isDeleted) throw new Error("Bảng giá không tồn tại!");
 
-      // 1. Cập nhật header bảng giá
       const pl = await tx.priceList.update({
         where: { priceListId: id },
         data: { name, currencyCode, isActive }
       });
 
-      // 2. Nếu có truyền list items lên, tiến hành ghi đè (xóa cũ thêm mới)
       if (items) {
         await tx.priceListItem.deleteMany({ where: { priceListId: id } });
         if (items.length > 0) {
@@ -223,9 +240,10 @@ export const updatePriceList = async (req: Request, res: Response): Promise<void
   }
 };
 
-export const deletePriceList = async (req: Request, res: Response): Promise<void> => {
+export const deletePriceList = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { userId } = req.body;
+  const userId = getUserId(req);
+
   try {
     await prisma.priceList.update({
       where: { priceListId: id },
@@ -241,7 +259,7 @@ export const deletePriceList = async (req: Request, res: Response): Promise<void
 // ==========================================
 // 4. QUẢN LÝ NGÂN SÁCH (BUDGET CONTROL)
 // ==========================================
-export const getBudgets = async (req: Request, res: Response): Promise<void> => {
+export const getBudgets = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { year, costCenterId } = req.query;
     const budgets = await prisma.budget.findMany({
@@ -258,8 +276,10 @@ export const getBudgets = async (req: Request, res: Response): Promise<void> => 
   }
 };
 
-export const createBudget = async (req: Request, res: Response): Promise<void> => {
-  const { costCenterId, year, totalAmount, userId } = req.body;
+export const createBudget = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { costCenterId, year, totalAmount } = req.body;
+  const userId = getUserId(req);
+
   try {
     const budget = await prisma.budget.create({
       data: { costCenterId, year: Number(year), totalAmount: Number(totalAmount) }
@@ -271,9 +291,11 @@ export const createBudget = async (req: Request, res: Response): Promise<void> =
   }
 };
 
-export const updateBudget = async (req: Request, res: Response): Promise<void> => {
+export const updateBudget = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { totalAmount, version, userId } = req.body;
+  const { totalAmount, version } = req.body;
+  const userId = getUserId(req);
+
   try {
     const oldBudget = await prisma.budget.findUnique({ where: { budgetId: id } });
     const budget = await prisma.budget.update({
@@ -290,9 +312,10 @@ export const updateBudget = async (req: Request, res: Response): Promise<void> =
   }
 };
 
-export const deleteBudget = async (req: Request, res: Response): Promise<void> => {
+export const deleteBudget = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { userId } = req.body;
+  const userId = getUserId(req);
+
   try {
     await prisma.budget.delete({ where: { budgetId: id } });
     await logAudit("Budget", id, "DELETE", null, { deleted: true }, userId, req.ip);
@@ -305,17 +328,15 @@ export const deleteBudget = async (req: Request, res: Response): Promise<void> =
 // ==========================================
 // ĐỘNG CƠ TÍNH GIÁ ĐỘNG (DYNAMIC PRICING ENGINE)
 // ==========================================
-export const calculateDynamicPrice = async (req: Request, res: Response): Promise<void> => {
+export const calculateDynamicPrice = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { partnerId, partnerType, productId, variantId, quantity } = req.body;
     
-    // 1. Lấy thông tin Sản phẩm (Giá gốc)
     const product = await prisma.products.findUnique({ where: { productId } });
     if (!product) throw new Error("Sản phẩm không tồn tại");
 
     let basePrice = partnerType === "SUPPLIER" ? Number(product.purchasePrice || 0) : Number(product.price || 0);
     
-    // Nếu có biến thể, cộng thêm giá trị của biến thể
     if (variantId) {
       const variant = await prisma.productVariant.findUnique({ where: { variantId } });
       if (variant) basePrice += Number(variant.additionalPrice || 0);
@@ -326,7 +347,6 @@ export const calculateDynamicPrice = async (req: Request, res: Response): Promis
       return;
     }
 
-    // 2. Lấy thông tin Đối tác để tìm Bảng giá (PriceList) được áp dụng
     let priceListId = null;
     if (partnerType === "SUPPLIER") {
       const supplier = await prisma.supplier.findUnique({ where: { supplierId: partnerId } });
@@ -336,7 +356,6 @@ export const calculateDynamicPrice = async (req: Request, res: Response): Promis
       priceListId = customer?.priceListId;
     }
 
-    // Nếu đối tác không áp dụng Bảng giá riêng -> Trả về giá gốc
     if (!priceListId) {
       res.json({ finalPrice: basePrice, appliedPriceList: null });
       return;
@@ -344,13 +363,12 @@ export const calculateDynamicPrice = async (req: Request, res: Response): Promis
 
     const today = new Date();
 
-    // 3. Quét Bảng giá để tìm mức chiết khấu/giá tốt nhất theo số lượng (Tiered Pricing)
     const priceListItems = await prisma.priceListItem.findMany({
       where: {
         priceListId,
         productId,
         ...(variantId ? { variantId } : {}),
-        minQuantity: { lte: Number(quantity) }, // Chỉ lấy các mốc số lượng <= số lượng mua
+        minQuantity: { lte: Number(quantity) }, 
         OR: [
           { validFrom: null, validTo: null },
           { validFrom: { lte: today }, validTo: { gte: today } },
@@ -358,14 +376,12 @@ export const calculateDynamicPrice = async (req: Request, res: Response): Promis
           { validFrom: { lte: today }, validTo: null }
         ]
       },
-      orderBy: { minQuantity: 'desc' } // Ưu tiên mốc số lượng lớn nhất thỏa mãn
+      orderBy: { minQuantity: 'desc' } 
     });
 
     if (priceListItems.length > 0) {
-      // Đã tìm thấy giá ưu đãi!
       res.json({ finalPrice: Number(priceListItems[0].price), appliedPriceList: priceListId });
     } else {
-      // Bảng giá có tồn tại nhưng không chứa sản phẩm này hoặc chưa đủ điều kiện -> Trả giá gốc
       res.json({ finalPrice: basePrice, appliedPriceList: null });
     }
 

@@ -3,7 +3,6 @@ import { ApprovalStatus, TransactionStatus, ActionType } from "@prisma/client";
 import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
 
-
 // Hàm Helper trích xuất userId an toàn
 const getUserId = (req: Request) => (req as any).user?.userId || req.body.userId;
 
@@ -82,21 +81,20 @@ export const getPendingApprovals = async (req: Request, res: Response): Promise<
   try {
     const userId = getUserId(req);
 
-    // 1. Lấy danh sách các Role của User hiện tại
-    const userRoles = await prisma.userRole.findMany({
+    // 🚀 NÂNG CẤP: Lấy roleId trực tiếp từ bảng Users (Quan hệ 1-1 mới)
+    const currentUser = await prisma.users.findUnique({
       where: { userId },
       select: { roleId: true }
     });
-    const roleIds = userRoles.map(ur => ur.roleId);
 
-    if (roleIds.length === 0) {
-      res.json([]);
+    if (!currentUser || !currentUser.roleId) {
+      res.json([]); // Nhân viên không có Role thì không có quyền duyệt gì cả
       return;
     }
 
-    // 2. Tìm tất cả các cấu hình Bước duyệt mà User có quyền xử lý
+    // 2. Tìm tất cả các cấu hình Bước duyệt mà Role này được gán
     const validSteps = await prisma.approvalStep.findMany({
-      where: { roleId: { in: roleIds } },
+      where: { roleId: currentUser.roleId },
       select: { workflowId: true, stepOrder: true }
     });
 
@@ -111,7 +109,7 @@ export const getPendingApprovals = async (req: Request, res: Response): Promise<
       currentStep: step.stepOrder
     }));
 
-    // 4. Khai thác sức mạnh chuẩn của Schema: gọi thẳng "requester"
+    // 4. Lấy danh sách cần duyệt
     const pendingRequests = await prisma.approvalRequest.findMany({
       where: {
         status: ApprovalStatus.PENDING,
@@ -146,7 +144,7 @@ export const getMyRequests = async (req: Request, res: Response): Promise<void> 
         logs: { 
           orderBy: { createdAt: 'desc' }, 
           take: 1, // Lấy hành động mới nhất
-          include: { actioner: { select: { fullName: true } } } // Ánh xạ chuẩn từ schema
+          include: { actioner: { select: { fullName: true } } } 
         }
       },
       orderBy: { createdAt: 'desc' }
@@ -209,10 +207,15 @@ export const processApproval = async (req: Request, res: Response): Promise<void
       const currentStepDef = request.workflow?.steps.find(s => s.stepOrder === request.currentStep);
       if (!currentStepDef) throw new Error("Cấu hình bước duyệt bị lỗi hoặc không tồn tại!");
 
-      const hasRole = await tx.userRole.findFirst({
-        where: { userId: actionerId, roleId: currentStepDef.roleId }
+      // 🚀 NÂNG CẤP: Kiểm tra quyền trực tiếp qua roleId của Users
+      const currentUser = await tx.users.findUnique({
+        where: { userId: actionerId },
+        select: { roleId: true }
       });
-      if (!hasRole) throw new Error("Truy cập bị từ chối: Bạn không mang Vai trò (Role) được phép duyệt ở bước này!");
+
+      if (!currentUser || currentUser.roleId !== currentStepDef.roleId) {
+         throw new Error("Truy cập bị từ chối: Bạn không mang Vai trò (Role) được phép duyệt ở bước này!");
+      }
 
       // ------------------------------------
       // LUỒNG 1: TỪ CHỐI (REJECT)

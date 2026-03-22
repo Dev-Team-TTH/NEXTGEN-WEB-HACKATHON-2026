@@ -126,12 +126,9 @@ export default function ActionModal({ config, isOpen, onClose }: ActionModalProp
           toast.success("Đã trình ký thành công!");
           break;
         case "CANCEL":
-          if (window.confirm("Bạn chắc chắn muốn rút lại tờ trình này?")) {
-            await cancelApproval(config.targetId).unwrap();
-            toast.success("Đã thu hồi tờ trình!");
-          } else {
-            return;
-          }
+          // 🚀 FIX: Xóa window.confirm. Nút bấm trong Modal này đã là bằng chứng xác nhận.
+          await cancelApproval(config.targetId).unwrap();
+          toast.success("Đã thu hồi tờ trình!");
           break;
       }
       onClose();

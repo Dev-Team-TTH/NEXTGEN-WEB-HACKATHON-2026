@@ -3,6 +3,7 @@ import { ActionType, UserStatus } from "@prisma/client";
 import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
 
+// Hàm Helper trích xuất userId
 const getUserId = (req: Request) => (req as any).user?.userId || req.body?.userId;
 
 // ==========================================
@@ -38,14 +39,19 @@ export const getProducts = async (req: Request, res: Response): Promise<void> =>
         skip: skip,
         take: limitNum,
         include: {
-          category: { select: { name: true, code: true } },
-          uom: { select: { name: true, code: true } },
+          category: { 
+            // Lấy kèm Thuế (Tax) để phục vụ tính toán hóa đơn sau này
+            select: { name: true, code: true, tax: { select: { rate: true, code: true } } } 
+          },
+          uom: { 
+            select: { name: true, code: true, uomType: true } // Lấy kèm uomType
+          },
           supplier: { select: { name: true } },
           variants: { where: { isDeleted: false } },
           uomConversions: {
             include: { fromUom: { select: { name: true } }, toUom: { select: { name: true } } }
           },
-          balances: { select: { quantity: true } } // Lấy balance để tính Tồn kho
+          balances: { select: { quantity: true } } 
         },
         orderBy: { createdAt: 'desc' }
       }),
@@ -56,7 +62,7 @@ export const getProducts = async (req: Request, res: Response): Promise<void> =>
           purchasePrice: true,
           reorderPoint: true,
           status: true,
-          balances: { select: { quantity: true } } // Truy vấn nhẹ lấy balance để tính KPI
+          balances: { select: { quantity: true } } 
         }
       })
     ]);
@@ -102,7 +108,7 @@ export const getProductById = async (req: Request, res: Response): Promise<void>
     const product = await prisma.products.findUnique({
       where: { productId: id },
       include: {
-        category: true,
+        category: { include: { tax: true } },
         uom: true,
         supplier: true,
         variants: { where: { isDeleted: false } },
@@ -155,7 +161,6 @@ export const createProduct = async (req: Request, res: Response): Promise<void> 
   }
 };
 
-// ĐÃ KHÔI PHỤC LẠI API NHẬP EXCEL
 export const importProducts = async (req: Request, res: Response): Promise<void> => {
   try {
     const products = req.body; 
@@ -248,7 +253,7 @@ export const deleteProduct = async (req: Request, res: Response): Promise<void> 
 // ==========================================
 export const getProductVariants = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { id } = req.params; // ID của sản phẩm cha
+    const { id } = req.params; 
     const variants = await prisma.productVariant.findMany({
       where: { productId: id, isDeleted: false },
       orderBy: { sku: 'asc' }

@@ -24,7 +24,8 @@ export const getUsers = async (req: Request, res: Response): Promise<void> => {
       },
       include: {
         department: { include: { branch: true } },
-        roles: { include: { role: { select: { roleId: true, roleName: true } } } }
+        // 🚀 ĐÃ SỬA: Lấy trực tiếp role (1-1)
+        role: { select: { roleId: true, roleName: true } } 
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -46,7 +47,8 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
       where: { userId: id },
       include: {
         department: { include: { branch: { include: { company: true } } } },
-        roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } }
+        // 🚀 ĐÃ SỬA: Lấy trực tiếp role và permissions
+        role: { include: { permissions: { include: { permission: true } } } }
       }
     });
 
@@ -63,7 +65,8 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
 };
 
 export const createUser = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { fullName, email, password, phone, address, departmentId, status, roleIds } = req.body;
+  // 🚀 ĐÃ SỬA: Nhận roleId thay vì roleIds
+  const { fullName, email, password, phone, address, departmentId, status, roleId } = req.body;
   const actionerId = getUserId(req);
 
   try {
@@ -76,25 +79,18 @@ export const createUser = async (req: AuthRequest, res: Response): Promise<void>
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(password || "Password@123", saltRounds);
 
-    const newUser = await prisma.$transaction(async (tx) => {
-      const user = await tx.users.create({
-        data: {
-          email,
-          passwordHash,
-          fullName,
-          phone,
-          address,
-          departmentId,
-          status: status || "ACTIVE"
-        }
-      });
-
-      if (roleIds && Array.isArray(roleIds) && roleIds.length > 0) {
-        await tx.userRole.createMany({
-          data: roleIds.map((rId: string) => ({ userId: user.userId, roleId: rId }))
-        });
+    // 🚀 ĐÃ SỬA: Tạo user trực tiếp kèm roleId, không cần bảng trung gian
+    const newUser = await prisma.users.create({
+      data: {
+        email,
+        passwordHash,
+        fullName,
+        phone,
+        address,
+        departmentId,
+        roleId: roleId || null,
+        status: status || "ACTIVE"
       }
-      return user;
     });
 
     await logAudit("Users", newUser.userId, "CREATE", null, newUser, actionerId, req.ip);
@@ -108,25 +104,21 @@ export const createUser = async (req: AuthRequest, res: Response): Promise<void>
 
 export const updateUser = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { fullName, phone, address, departmentId, status, roleIds } = req.body;
+  // 🚀 ĐÃ SỬA: Nhận roleId
+  const { fullName, phone, address, departmentId, status, roleId } = req.body;
   const actionerId = getUserId(req);
 
   try {
-    const updatedUser = await prisma.$transaction(async (tx) => {
-      const user = await tx.users.update({
-        where: { userId: id },
-        data: { fullName, phone, address, departmentId, status } 
-      });
-
-      if (roleIds && Array.isArray(roleIds)) {
-        await tx.userRole.deleteMany({ where: { userId: id } });
-        if (roleIds.length > 0) {
-          await tx.userRole.createMany({
-            data: roleIds.map((rId: string) => ({ userId: id, roleId: rId }))
-          });
-        }
-      }
-      return user;
+    const updatedUser = await prisma.users.update({
+      where: { userId: id },
+      data: { 
+        fullName, 
+        phone, 
+        address, 
+        departmentId, 
+        status,
+        roleId: roleId !== undefined ? roleId : undefined // Cập nhật roleId trực tiếp
+      } 
     });
 
     await logAudit("Users", id, "UPDATE", null, updatedUser, actionerId, req.ip);
@@ -193,7 +185,6 @@ export const resetUserPassword = async (req: AuthRequest, res: Response): Promis
 // ==========================================
 export const getPermissions = async (req: Request, res: Response): Promise<void> => {
   try {
-    // Trả về toàn bộ danh sách Quyền đã cấu hình trong DB để Frontend tự vẽ
     const permissions = await prisma.permission.findMany({
       orderBy: [ { module: 'asc' }, { code: 'asc' } ]
     });
@@ -233,10 +224,8 @@ export const seedSystemPermissions = async (req: Request, res: Response): Promis
     let addedCount = 0;
     let updatedCount = 0;
 
-    // SỬ DỤNG TRANSACTION KÈM TIMEOUT MỞ RỘNG
     await prisma.$transaction(async (tx) => {
       for (const perm of standardPermissions) {
-        // Tối ưu tốc độ: Dùng findUnique thay vì findFirst
         const existing = await tx.permission.findUnique({ where: { code: perm.code } });
         
         if (existing) {
@@ -254,8 +243,8 @@ export const seedSystemPermissions = async (req: Request, res: Response): Promis
       }
     }, 
     {
-      maxWait: 5000, // Thời gian đợi DB rảnh
-      timeout: 15000 // 💡 QUAN TRỌNG NHẤT: Tăng thời gian chạy Transaction lên 15 giây
+      maxWait: 5000, 
+      timeout: 15000 
     });
 
     res.json({ 
@@ -269,6 +258,7 @@ export const seedSystemPermissions = async (req: Request, res: Response): Promis
     res.status(500).json({ message: "Lỗi đồng bộ Quyền", error: error.message });
   }
 };
+
 // ==========================================
 // 3. ROLES CRUD (KIẾN TRÚC MỚI - CHUẨN UUID)
 // ==========================================
@@ -277,27 +267,13 @@ export const getRoles = async (req: Request, res: Response): Promise<void> => {
     const roles = await prisma.role.findMany({
       where: { isDeleted: false },
       include: { 
-        permissions: { include: { permission: true } }
+        permissions: { include: { permission: true } },
+        _count: { select: { users: true } } // 🚀 ĐÃ SỬA: Đếm trực tiếp số User sở hữu Role này
       },
       orderBy: { roleName: 'asc' }
     });
 
-    const roleIds = roles.map(r => r.roleId);
-
-    let userRoles: any[] = [];
-    if (roleIds.length > 0) {
-      userRoles = await prisma.userRole.findMany({
-        where: { roleId: { in: roleIds } },
-        select: { roleId: true, userId: true }
-      });
-    }
-
-    const enrichedRoles = roles.map(role => {
-      const count = userRoles.filter(ur => ur.roleId === role.roleId).length;
-      return { ...role, _count: { users: count } };
-    });
-
-    res.json(enrichedRoles);
+    res.json(roles);
   } catch (error: any) {
     res.status(500).json({ message: "Lỗi lấy danh sách Roles", error: error.message });
   }
@@ -305,15 +281,12 @@ export const getRoles = async (req: Request, res: Response): Promise<void> => {
 
 export const createRole = async (req: AuthRequest, res: Response): Promise<void> => {
   const { roleName, description, permissionIds } = req.body; 
-  // 💡 ĐÃ SỬA LẠI: backend CẦN MẢNG permissionIds LÀ UUID CHUẨN (VD: ["uuid-1", "uuid-2"])
   const actionerId = getUserId(req);
 
   try {
     const newRole = await prisma.$transaction(async (tx) => {
-      // 1. Tạo Role
       const role = await tx.role.create({ data: { roleName, description } });
       
-      // 2. Gán quyền (Liên kết UUID) cực kỳ đơn giản
       if (permissionIds && Array.isArray(permissionIds) && permissionIds.length > 0) {
         await tx.rolePermission.createMany({
           data: permissionIds.map((pId: string) => ({ roleId: role.roleId, permissionId: pId }))
@@ -339,13 +312,11 @@ export const updateRole = async (req: AuthRequest, res: Response): Promise<void>
       const oldRole = await tx.role.findUnique({ where: { roleId: id } });
       if (!oldRole || oldRole.isDeleted) throw new Error("Vai trò không tồn tại!");
 
-      // 1. Cập nhật thông tin Role
       const role = await tx.role.update({
         where: { roleId: id },
         data: { roleName, description }
       });
 
-      // 2. Xóa toàn bộ quyền cũ & Cập nhật quyền mới (Bằng UUID)
       if (permissionIds && Array.isArray(permissionIds)) {
         await tx.rolePermission.deleteMany({ where: { roleId: id } });
         
@@ -372,7 +343,8 @@ export const deleteRole = async (req: AuthRequest, res: Response): Promise<void>
 
   try {
     await prisma.$transaction(async (tx) => {
-      const usersWithRole = await tx.userRole.findFirst({ where: { roleId: id } });
+      // 🚀 ĐÃ SỬA: Tìm trong bảng Users thay vì bảng UserRole
+      const usersWithRole = await tx.users.findFirst({ where: { roleId: id } });
       if (usersWithRole) throw new Error("Không thể xóa Vai trò này vì đang được gán cho nhân viên!");
 
       const stepWithRole = await tx.approvalStep.findFirst({ where: { roleId: id } });

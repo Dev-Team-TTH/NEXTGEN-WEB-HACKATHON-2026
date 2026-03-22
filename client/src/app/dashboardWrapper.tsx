@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ThemeProvider, useTheme } from "next-themes"; 
 import { motion, AnimatePresence, Variants } from "framer-motion";
+import dynamic from "next/dynamic"; 
 
 // --- i18n Tự động hóa Đa ngôn ngữ ---
 import "@/i18n"; 
@@ -12,7 +13,6 @@ import { useTranslation } from "react-i18next";
 // --- Components & Store ---
 import Navbar from "@/app/(components)/Navbar";
 import Sidebar from "@/app/(components)/Sidebar";
-import AIChatbot from "@/app/(components)/AiChatbot"; 
 import StoreProvider, { useAppSelector, useAppDispatch } from "@/app/redux";
 import SplashScreen from "@/app/(components)/SplashScreen";
 import { setIsDarkMode } from "@/state";
@@ -21,6 +21,11 @@ import SocketProvider from "@/app/(components)/SocketProvider";
 // --- UTILS ---
 import { cn } from "@/utils/helpers";
 import PageTransition from "./(components)/PageTransition";
+
+// 🚀 TỐI ƯU HÓA BUNDLE SIZE: Lazy Load AI Chatbot
+const AIChatbot = dynamic(() => import("@/app/(components)/AiChatbot"), { 
+  ssr: false, 
+});
 
 // ==========================================
 // COMPONENT 1: LÕI ĐIỀU HƯỚNG VÀ GIAO DIỆN
@@ -92,18 +97,18 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <div className={cn("transition-opacity duration-300", isMounted ? "opacity-100" : "opacity-0")}>
+    <div className={cn("transition-opacity duration-500 w-full min-h-screen flex", isMounted ? "opacity-100" : "opacity-0")}>
       {!isAuthenticated ? (
-        // LUỒNG 1: CHƯA ĐĂNG NHẬP
-        <div className="w-full min-h-screen flex bg-slate-50 dark:bg-[#0B0F19] text-gray-900 dark:text-white transition-colors duration-500">
+        // LUỒNG 1: CHƯA ĐĂNG NHẬP (Làm sạch class rác)
+        <div className="w-full flex bg-transparent">
           {children}
         </div>
       ) : (
-        // LUỒNG 2: ĐÃ ĐĂNG NHẬP (GIỮ NGUYÊN KIẾN TRÚC H-SCREEN)
-        <div className="flex h-screen w-full overflow-hidden bg-slate-50 dark:bg-[#0B0F19] text-gray-900 dark:text-white relative selection:bg-blue-500/30">
+        // LUỒNG 2: ĐÃ ĐĂNG NHẬP (Làm sạch class rác)
+        <div className="flex h-screen w-full overflow-hidden bg-transparent relative selection:bg-blue-500/30">
           
           {/* --- IMMERSIVE BACKGROUND --- */}
-          <div className="absolute inset-0 opacity-[0.015] dark:opacity-[0.03] pointer-events-none mix-blend-overlay bg-[url('/noise.png')] z-0"></div>
+          <div className="absolute inset-0 opacity-[0.015] dark:opacity-[0.04] pointer-events-none mix-blend-overlay bg-[url('/noise.png')] z-0"></div>
           <div className="absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-blue-500/5 dark:bg-blue-600/10 blur-[100px] pointer-events-none z-0"></div>
 
           {/* SPLASH SCREEN */}
@@ -115,7 +120,7 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
           <Sidebar />
 
           {/* KHU VỰC NỘI DUNG CHÍNH */}
-          <main className="flex-1 flex flex-col h-screen overflow-y-auto relative z-10 transition-all duration-300 pb-20 md:pb-0 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-800">
+          <main className="flex-1 flex flex-col h-screen overflow-y-auto relative z-10 transition-all duration-500 pb-20 md:pb-0 scrollbar-hide">
             <Navbar />
             
             <div className="w-full max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8 flex-grow flex flex-col">
@@ -138,7 +143,7 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
             </div>
           </main>
 
-          {/* TÍCH HỢP AI CHATBOT VÀO GÓC MÀN HÌNH (GLOBAL) */}
+          {/* TÍCH HỢP AI CHATBOT */}
           <AIChatbot />
 
         </div>

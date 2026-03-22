@@ -9,6 +9,7 @@ import {
   changePassword,
   generate2FASecret,
   enable2FA,
+  disable2FA, // 🚀 BỔ SUNG: Import hàm disable2FA
   createUser,
   getMyLoginHistory
 } from "../controllers/authController";
@@ -39,8 +40,9 @@ router.get("/login-history", getMyLoginHistory);
 // API cài đặt Bảo mật 2 lớp (2FA)
 router.post("/2fa/generate", generate2FASecret);
 router.post("/2fa/enable", enable2FA);
+router.post("/2fa/disable", disable2FA); // 🚀 BỔ SUNG: Route tắt 2FA
 
-// Tạo User (Đáng lẽ nằm ở User Management, nhưng tạm để ở đây)
+// Tạo User (Đáng lẽ nằm ở User Management, nhưng tạm để ở đây phục vụ Setup ban đầu)
 router.post("/users", createUser);
 
 export default router;

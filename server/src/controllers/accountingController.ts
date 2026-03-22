@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
-import { PaymentStatus, PostingStatus, ActionType } from "@prisma/client";
+import { PaymentStatus, PostingStatus, ActionType, AccountType } from "@prisma/client";
 import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
-import { enforceFiscalLock } from "../utils/fiscalLockHelper"; // DÙNG HELPER TẬP TRUNG
+import { enforceFiscalLock } from "../utils/fiscalLockHelper"; 
 
 // Hàm Helper trích xuất userId
 const getUserId = (req: Request) => (req as any).user?.userId || req.body.userId;
@@ -83,7 +83,6 @@ export const createJournalEntry = async (req: Request, res: Response): Promise<v
     const { branchId, fiscalPeriodId, entryDate, reference, description, lines, postingStatus } = req.body;
     const userId = getUserId(req);
 
-    // KIỂM TRA LOGIC KẾ TOÁN KÉP
     let totalDebit = 0;
     let totalCredit = 0;
 
@@ -103,10 +102,8 @@ export const createJournalEntry = async (req: Request, res: Response): Promise<v
     }
 
     const journal = await prisma.$transaction(async (tx) => {
-      // 1. KIỂM TRA KHÓA SỔ BẰNG HELPER (Sạch sẽ, tái sử dụng)
       await enforceFiscalLock(tx, fiscalPeriodId);
 
-      // 2. Tạo Sổ nhật ký chung
       const newJournal = await tx.journalEntry.create({
         data: {
           branchId,
@@ -119,14 +116,14 @@ export const createJournalEntry = async (req: Request, res: Response): Promise<v
         }
       });
 
-      // 2.1 KIỂM SOÁT NGÂN SÁCH (BUDGET CONTROL)
       const entryYear = new Date(entryDate).getFullYear();
 
       for (const line of lines) {
         if (line.costCenterId && Number(line.debit) > 0) {
           const account = await tx.account.findUnique({ where: { accountId: line.accountId } });
 
-          if (account && account.type === "EXPENSE") {
+          // 🚀 Đồng bộ chuẩn với Enum AccountType
+          if (account && account.type === AccountType.EXPENSE) {
             const budget = await tx.budget.findUnique({
               where: { costCenterId_year: { costCenterId: line.costCenterId, year: entryYear } }
             });
@@ -151,7 +148,6 @@ export const createJournalEntry = async (req: Request, res: Response): Promise<v
         }
       }
 
-      // 3. Tạo các dòng Nợ/Có
       await tx.journalLine.createMany({
         data: lines.map((line: any) => ({
           journalId: newJournal.journalId,
@@ -195,10 +191,9 @@ export const updateJournalEntry = async (req: Request, res: Response): Promise<v
       if (!existing) throw new Error("Không tìm thấy bút toán!");
       if (existing.postingStatus !== PostingStatus.DRAFT) throw new Error("Chỉ sửa được bút toán Nháp!");
 
-      // 1. KIỂM TRA KHÓA SỔ CỦA CẢ KỲ CŨ VÀ KỲ MỚI BẰNG HELPER
-      await enforceFiscalLock(tx, existing.fiscalPeriodId); // Cấm sửa nếu kỳ cũ đã khóa
+      await enforceFiscalLock(tx, existing.fiscalPeriodId); 
       if (fiscalPeriodId && fiscalPeriodId !== existing.fiscalPeriodId) {
-        await enforceFiscalLock(tx, fiscalPeriodId); // Cấm chuyển bút toán sang kỳ mới đã khóa
+        await enforceFiscalLock(tx, fiscalPeriodId); 
       }
 
       if (lines && lines.length > 0) {
@@ -231,7 +226,7 @@ export const updateJournalEntry = async (req: Request, res: Response): Promise<v
 };
 
 // ==========================================
-// 4. XÓA BÚT TOÁN (DELETE DRAFT)
+// 4. XÓA BÚT TOÁN
 // ==========================================
 export const deleteJournalEntry = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
@@ -243,7 +238,6 @@ export const deleteJournalEntry = async (req: Request, res: Response): Promise<v
       if (!existing) throw new Error("Không tìm thấy bút toán!");
       if (existing.postingStatus !== PostingStatus.DRAFT) throw new Error("Chỉ được xóa bút toán Nháp!");
 
-      // 1. KIỂM TRA KHÓA SỔ TRƯỚC KHI XÓA
       await enforceFiscalLock(tx, existing.fiscalPeriodId);
 
       await tx.journalLine.deleteMany({ where: { journalId: id } });
@@ -258,7 +252,7 @@ export const deleteJournalEntry = async (req: Request, res: Response): Promise<v
 };
 
 // ==========================================
-// 5. GHI SỔ BÚT TOÁN (POST JOURNAL ENTRY)
+// 5. GHI SỔ BÚT TOÁN
 // ==========================================
 export const postJournalEntry = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
@@ -270,7 +264,6 @@ export const postJournalEntry = async (req: Request, res: Response): Promise<voi
       if (!existing) throw new Error("Không tìm thấy bút toán!");
       if (existing.postingStatus !== PostingStatus.DRAFT) throw new Error("Chỉ Ghi sổ bút toán Nháp!");
 
-      // 1. KIỂM TRA KHÓA SỔ
       await enforceFiscalLock(tx, existing.fiscalPeriodId);
 
       return await tx.journalEntry.update({
@@ -287,7 +280,7 @@ export const postJournalEntry = async (req: Request, res: Response): Promise<voi
 };
 
 // ==========================================
-// 6. ĐẢO BÚT TOÁN (REVERSE JOURNAL ENTRY)
+// 6. ĐẢO SỔ BÚT TOÁN
 // ==========================================
 export const reverseJournalEntry = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
@@ -306,7 +299,6 @@ export const reverseJournalEntry = async (req: Request, res: Response): Promise<
 
       const periodToUse = fiscalPeriodId || original.fiscalPeriodId;
       
-      // 1. KIỂM TRA KHÓA SỔ CỦA KỲ CHỨA BÚT TOÁN ĐẢO
       await enforceFiscalLock(tx, periodToUse);
 
       const reversal = await tx.journalEntry.create({
@@ -372,7 +364,6 @@ export const processPayment = async (req: Request, res: Response): Promise<void>
       if (newPaidAmount - totalDocAmount > 0.001) throw new Error(`Vượt quá nợ còn lại!`);
       const newPaymentStatus = Math.abs(totalDocAmount - newPaidAmount) <= 0.001 ? "PAID" : "PARTIAL";
 
-      // TÍNH TOÁN CHÊNH LỆCH TỶ GIÁ
       const originalRate = Number(doc.exchangeRate || 1);
       const currentRate = Number(paymentExchangeRate || originalRate);
       let fxDifferenceBase = paymentAmount * Math.abs(currentRate - originalRate);
@@ -389,7 +380,6 @@ export const processPayment = async (req: Request, res: Response): Promise<void>
       let journalId = null;
       if (fiscalPeriodId && (cashAccountId || bankAccountId) && arApAccountId) {
         
-        // 1. KIỂM TRA KHÓA SỔ BẰNG HELPER
         await enforceFiscalLock(tx, fiscalPeriodId);
 
         const paymentAccount = paymentMethod === "CASH" ? cashAccountId : bankAccountId;
@@ -448,7 +438,6 @@ export const processPayment = async (req: Request, res: Response): Promise<void>
 // ==========================================
 // 8. BÁO CÁO TÀI CHÍNH (FINANCIAL REPORTS)
 // ==========================================
-
 export const getCashflowReport = async (req: Request, res: Response): Promise<void> => {
   try {
     const { branchId, startDate, endDate } = req.query;
@@ -545,7 +534,9 @@ export const getTrialBalanceReport = async (req: Request, res: Response): Promis
       const period = periodLines.find(l => l.accountId === acc.accountId) || { _sum: { debit: 0, credit: 0 } };
       
       let openingDebit = 0; let openingCredit = 0;
-      if (acc.type === "ASSET" || acc.type === "EXPENSE") { 
+      
+      // 🚀 AN TOÀN: Dùng phép so sánh chuỗi tương đương Enum của Prisma
+      if (acc.type === AccountType.ASSET || acc.type === AccountType.EXPENSE) { 
         const bal = opening.debit - opening.credit;
         if (bal > 0) openingDebit = bal; else openingCredit = Math.abs(bal);
       } else { 
@@ -557,7 +548,7 @@ export const getTrialBalanceReport = async (req: Request, res: Response): Promis
       const periodCredit = Number(period._sum.credit || 0);
 
       let closingDebit = 0; let closingCredit = 0;
-      if (acc.type === "ASSET" || acc.type === "EXPENSE") {
+      if (acc.type === AccountType.ASSET || acc.type === AccountType.EXPENSE) {
          const closingBal = openingDebit - openingCredit + periodDebit - periodCredit;
          if (closingBal > 0) closingDebit = closingBal; else closingCredit = Math.abs(closingBal);
       } else {
@@ -566,7 +557,7 @@ export const getTrialBalanceReport = async (req: Request, res: Response): Promis
       }
 
       return {
-        accountId: acc.accountId, accountCode: acc.accountCode, accountName: acc.name,
+        accountId: acc.accountId, accountCode: acc.accountCode, accountName: acc.name, type: acc.type,
         openingDebit, openingCredit, periodDebit, periodCredit, closingDebit, closingCredit
       };
     }).sort((a, b) => a.accountCode.localeCompare(b.accountCode));

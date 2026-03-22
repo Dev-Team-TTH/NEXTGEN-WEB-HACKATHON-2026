@@ -9,7 +9,7 @@ import { useChatLogic } from "./useChatLogic";
 import FloatingButton from "./FloatingButton";
 import MessageList from "./MessageList";
 import ChatInput from "./ChatInput";
-import { cn } from "@/utils/helpers"; // IMPORT SIÊU VŨ KHÍ
+import { cn } from "@/utils/helpers"; 
 
 export default function AIChatbot() {
   // --- TRẠNG THÁI GIAO DIỆN CHUNG ---

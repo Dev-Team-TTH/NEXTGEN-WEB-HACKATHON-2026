@@ -41,7 +41,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
   try {
     const user = await prisma.users.findUnique({
       where: { email: String(email) },
-      include: { roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } } }
+      include: { role: { include: { permissions: { include: { permission: true } } } } }
     });
 
     if (!user || user.isDeleted) {
@@ -105,7 +105,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     await logLoginHistory(user.userId, req.ip || "", req.headers["user-agent"] || "", "SUCCESS");
 
-    const permissions = user.roles.flatMap(ur => ur.role.permissions.map(rp => rp.permission.code));
+    // 🚀 Đã Fix TS7006: Khai báo rõ kiểu (rp: any)
+    const permissions = user.role?.permissions.map((rp: any) => rp.permission.code) || [];
     const uniquePermissions = Array.from(new Set(permissions));
 
     const accessToken = generateAccessToken(user.userId, user.email);
@@ -115,7 +116,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       message: "Đăng nhập thành công!",
       user: {
         userId: user.userId, email: user.email, fullName: user.fullName,
-        departmentId: user.departmentId, permissions: uniquePermissions
+        departmentId: user.departmentId, roleId: user.roleId, permissions: uniquePermissions
       },
       tokens: { accessToken, refreshToken }
     });
@@ -134,7 +135,7 @@ export const verify2FALogin = async (req: Request, res: Response): Promise<void>
   try {
     const user = await prisma.users.findUnique({
       where: { userId },
-      include: { roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } } }
+      include: { role: { include: { permissions: { include: { permission: true } } } } }
     });
 
     if (!user || !user.twoFactorEnabled || !user.twoFactorSecret) {
@@ -159,7 +160,8 @@ export const verify2FALogin = async (req: Request, res: Response): Promise<void>
 
     await logLoginHistory(user.userId, req.ip || "", req.headers["user-agent"] || "", "SUCCESS_2FA");
 
-    const permissions = user.roles.flatMap(ur => ur.role.permissions.map(rp => rp.permission.code));
+    // 🚀 Đã Fix TS7006
+    const permissions = user.role?.permissions.map((rp: any) => rp.permission.code) || [];
     const uniquePermissions = Array.from(new Set(permissions));
 
     const accessToken = generateAccessToken(user.userId, user.email);
@@ -169,7 +171,7 @@ export const verify2FALogin = async (req: Request, res: Response): Promise<void>
       message: "Xác thực 2FA thành công!",
       user: {
         userId: user.userId, email: user.email, fullName: user.fullName,
-        departmentId: user.departmentId, permissions: uniquePermissions
+        departmentId: user.departmentId, roleId: user.roleId, permissions: uniquePermissions
       },
       tokens: { accessToken, refreshToken }
     });
@@ -220,10 +222,9 @@ export const logoutAllDevices = async (req: AuthRequest, res: Response): Promise
 };
 
 // ==========================================
-// 5. CẤP LẠI TOKEN (REFRESH TOKEN) - ĐÃ NÂNG CẤP BẢO MẬT & TỐI ƯU 🚀
+// 5. CẤP LẠI TOKEN (REFRESH TOKEN)
 // ==========================================
 export const refreshToken = async (req: Request, res: Response): Promise<void> => {
-  // 1. Đọc linh hoạt (Chống lỗi vặt do lệch Frontend/Backend)
   const token = req.body.refreshToken || req.body.token;
 
   if (!token) {
@@ -232,7 +233,6 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
   }
 
   try {
-    // 2. Tra cứu Token trong cơ sở dữ liệu
     const savedToken = await prisma.refreshToken.findUnique({ where: { token } });
     
     if (!savedToken) {
@@ -250,7 +250,6 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // 3. Giải mã ĐỒNG BỘ để bắt lỗi bằng try/catch (Chống sập Server)
     let decoded: any;
     try {
       decoded = jwt.verify(token, JWT_REFRESH_SECRET);
@@ -259,7 +258,6 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // 4. Tối ưu hóa Database: Chỉ lấy các trường cần thiết thay vì toàn bộ Object User
     const user = await prisma.users.findUnique({ 
       where: { userId: decoded.userId },
       select: { userId: true, email: true, status: true, isDeleted: true }
@@ -270,7 +268,6 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // 5. Cấp phát Token mới
     const newAccessToken = generateAccessToken(user.userId, user.email);
     
     res.json({ 
@@ -304,7 +301,7 @@ export const getCurrentUser = async (req: AuthRequest, res: Response): Promise<v
             branch: { select: { branchId: true, name: true, company: { select: { companyId: true, name: true } } } } 
           } 
         },
-        roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } }
+        role: { include: { permissions: { include: { permission: true } } } }
       }
     });
 
@@ -313,7 +310,8 @@ export const getCurrentUser = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    const permissions = user.roles.flatMap(ur => ur.role.permissions.map(rp => rp.permission.code));
+    // 🚀 Đã Fix TS7006
+    const permissions = user.role?.permissions.map((rp: any) => rp.permission.code) || [];
     const uniquePermissions = Array.from(new Set(permissions));
     
     const { passwordHash, twoFactorSecret, ...safeUser } = user;
@@ -469,20 +467,12 @@ export const disable2FA = async (req: AuthRequest, res: Response): Promise<void>
 // ==========================================
 export const createUser = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, password, fullName, phone, departmentId, roleIds, actionerId } = req.body;
+    const { email, password, fullName, phone, departmentId, roleId, actionerId } = req.body;
     const hashedPassword = await hashPassword(password);
 
-    const newUser = await prisma.$transaction(async (tx) => {
-      const user = await tx.users.create({
-        data: { email, passwordHash: hashedPassword, fullName, phone, departmentId, status: UserStatus.ACTIVE }
-      });
-
-      if (roleIds && Array.isArray(roleIds) && roleIds.length > 0) {
-        await tx.userRole.createMany({
-          data: roleIds.map((rId: string) => ({ userId: user.userId, roleId: rId }))
-        });
-      }
-      return user;
+    // 🚀 NÂNG CẤP: Lưu trực tiếp roleId vào bảng Users (1-1/1-N) thay vì dùng bảng trung gian
+    const newUser = await prisma.users.create({
+      data: { email, passwordHash: hashedPassword, fullName, phone, departmentId, roleId, status: UserStatus.ACTIVE }
     });
 
     await logAudit("Users", newUser.userId, "CREATE", null, { email, fullName }, actionerId, req.ip);

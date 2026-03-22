@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { motion, Variants } from "framer-motion";
 import { 
   Scale, AlertOctagon, RefreshCcw, FileSpreadsheet, 
@@ -9,7 +9,11 @@ import {
 import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
-import { useGetTrialBalanceReportQuery, TrialBalanceData } from "@/state/api";
+import { 
+  useGetTrialBalanceReportQuery, 
+  useGetFiscalPeriodsQuery,
+  TrialBalanceData 
+} from "@/state/api";
 
 // --- COMPONENTS & UTILS ---
 import Header from "@/app/(components)/Header";
@@ -26,23 +30,13 @@ const formatVNDDisplay = (val: number) => {
   return formatVND(val);
 };
 
-// Lấy ngày đầu tháng hiện tại theo format YYYY-MM-DD để làm giá trị mặc định
-const getStartOfMonth = () => {
-  const d = new Date();
-  d.setDate(1);
-  return d.toISOString().split('T')[0];
-};
-
-const getToday = () => new Date().toISOString().split('T')[0];
-
 // ==========================================
 // 2. SKELETON LOADING
 // ==========================================
 const TrialBalanceSkeleton = () => (
   <div className="flex flex-col gap-6 w-full animate-pulse mt-6">
     <div className="flex gap-4">
-      <div className="h-12 w-48 bg-slate-200 dark:bg-slate-800/50 rounded-xl"></div>
-      <div className="h-12 w-48 bg-slate-200 dark:bg-slate-800/50 rounded-xl"></div>
+      <div className="h-12 w-64 bg-slate-200 dark:bg-slate-800/50 rounded-xl"></div>
     </div>
     <div className="h-[600px] w-full bg-slate-200 dark:bg-slate-800/50 rounded-3xl"></div>
   </div>
@@ -52,14 +46,13 @@ const TrialBalanceSkeleton = () => (
 // COMPONENT CHÍNH: BẢNG CÂN ĐỐI SỐ PHÁT SINH
 // ==========================================
 export default function TrialBalanceReport() {
-  // --- STATE LỌC THỜI GIAN ---
-  const [startDate, setStartDate] = useState(getStartOfMonth());
-  const [endDate, setEndDate] = useState(getToday());
+  // --- STATE KỲ KẾ TOÁN (CHUẨN HÓA) ---
+  const [fiscalPeriodId, setFiscalPeriodId] = useState<string>("");
 
   // 👉 FETCH DATA THẬT
+  const { data: periods = [] } = useGetFiscalPeriodsQuery({});
   const { data: trialBalance = [], isLoading, isError, refetch, isFetching } = useGetTrialBalanceReportQuery({
-    startDate,
-    endDate
+    fiscalPeriodId: fiscalPeriodId || undefined
   });
 
   // --- TÍNH TOÁN DÒNG TỔNG CỘNG (TOTALS) ---
@@ -102,7 +95,6 @@ export default function TrialBalanceReport() {
       "Dư Có CK (VND)": row.closingCredit || 0
     }));
 
-    // Thêm dòng Tổng Cộng vào file CSV
     exportData.push({
       "Số hiệu TK": "TỔNG CỘNG",
       "Tên Tài khoản": "",
@@ -114,11 +106,11 @@ export default function TrialBalanceReport() {
       "Dư Có CK (VND)": totals.closingCredit
     } as any);
 
-    exportToCSV(exportData, `Bang_Can_Doi_SPS_${startDate}_den_${endDate}`);
+    exportToCSV(exportData, `Bang_Can_Doi_SPS_Ky_${fiscalPeriodId || 'All'}`);
     toast.success("Xuất Bảng Cân đối thành công!");
   };
 
-  // --- ĐỊNH NGHĨA CỘT CHO DATATABLE (Chuẩn IFRS) ---
+  // --- ĐỊNH NGHĨA CỘT CHO DATATABLE ---
   const columns: ColumnDef<TrialBalanceData>[] = [
     {
       header: "Tài khoản (Account)",
@@ -132,7 +124,6 @@ export default function TrialBalanceReport() {
         </div>
       )
     },
-    // DƯ ĐẦU KỲ
     {
       header: "Dư Nợ ĐK",
       accessorKey: "openingDebit",
@@ -145,7 +136,6 @@ export default function TrialBalanceReport() {
       align: "right",
       cell: (row) => <span className="font-semibold text-orange-600 dark:text-orange-400">{formatVNDDisplay(row.openingCredit)}</span>
     },
-    // PHÁT SINH TRONG KỲ
     {
       header: "PS Nợ (Kỳ)",
       accessorKey: "periodDebit",
@@ -158,7 +148,6 @@ export default function TrialBalanceReport() {
       align: "right",
       cell: (row) => <span className="font-black text-orange-600 dark:text-orange-400">{formatVNDDisplay(row.periodCredit)}</span>
     },
-    // DƯ CUỐI KỲ
     {
       header: "Dư Nợ CK",
       accessorKey: "closingDebit",
@@ -173,15 +162,9 @@ export default function TrialBalanceReport() {
     }
   ];
 
-  // --- CẤU HÌNH MOTION (60fps Stagger) ---
-  const containerVariants: Variants = {
-    hidden: { opacity: 0 },
-    show: { opacity: 1, transition: { staggerChildren: 0.1 } }
-  };
-  const itemVariants: Variants = {
-    hidden: { opacity: 0, y: 20 },
-    show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 300, damping: 24 } }
-  };
+  // --- CẤU HÌNH MOTION ---
+  const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
+  const itemVariants: Variants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } };
 
   // --- RENDER LỖI MẠNG ---
   if (isError) {
@@ -200,7 +183,6 @@ export default function TrialBalanceReport() {
   return (
     <div className="w-full flex flex-col gap-6 pb-10">
       
-      {/* 1. HEADER & ACTIONS */}
       <Header 
         title="Bảng Cân đối Số phát sinh" 
         subtitle="Báo cáo Trial Balance tổng hợp số dư tài khoản chuẩn IFRS."
@@ -212,31 +194,29 @@ export default function TrialBalanceReport() {
         }
       />
 
-      {/* 2. KHU VỰC BỘ LỌC (DATA FILTER) */}
+      {/* 2. KHU VỰC BỘ LỌC (DATA FILTER - CHUẨN THEO KỲ KẾ TOÁN) */}
       <div className="flex flex-wrap items-center gap-4 p-4 glass-panel rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm">
         <div className="flex items-center gap-2">
           <CalendarDays className="w-5 h-5 text-slate-400" />
-          <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Kỳ báo cáo:</span>
+          <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Kỳ Kế Toán:</span>
         </div>
         
-        <div className="flex items-center gap-2">
-          <input 
-            type="date" 
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-lg text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white"
-          />
-          <span className="text-slate-400 font-medium">đến</span>
-          <input 
-            type="date" 
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-lg text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white"
-          />
+        <div className="flex items-center gap-2 w-full sm:w-72">
+          <select 
+            value={fiscalPeriodId}
+            onChange={(e) => setFiscalPeriodId(e.target.value)}
+            className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white"
+          >
+            <option value="">-- Tất cả các kỳ (Lũy kế) --</option>
+            {periods.map((p: any) => (
+              <option key={p.periodId} value={p.periodId}>
+                {p.periodName} ({formatDate(p.startDate, 'MM/YYYY')})
+              </option>
+            ))}
+          </select>
         </div>
 
-        <div className="ml-auto flex items-center gap-3">
-          {/* Badge Báo động Cân bằng */}
+        <div className="ml-auto flex items-center gap-3 mt-4 sm:mt-0">
           <div className={cn(
             "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider shadow-inner",
             isBalanced 
@@ -261,27 +241,20 @@ export default function TrialBalanceReport() {
               columns={columns} 
               searchKey="accountCode" 
               searchPlaceholder="Tìm kiếm Số hiệu Tài khoản (VD: 111, 131...)"
-              itemsPerPage={50} // Báo cáo nên để hiển thị dài
+              itemsPerPage={50} 
             />
             
-            {/* DÒNG TỔNG CỘNG CHUẨN KẾ TOÁN */}
             {trialBalance.length > 0 && (
               <div className="bg-slate-800 text-white dark:bg-[#0B0F19] dark:border-t dark:border-white/10 w-full overflow-x-auto">
                 <div className="min-w-max flex px-4 py-4 text-sm font-black uppercase tracking-wider">
-                  {/* Cột 1: Label */}
                   <div className="w-[200px] sm:w-[300px] shrink-0 pl-2">
                     <span className="flex items-center gap-2"><Scale className="w-4 h-4 text-blue-400" /> TỔNG CỘNG</span>
                   </div>
                   
-                  {/* Cột 2,3: Đầu kỳ */}
                   <div className="flex-1 flex justify-end pr-4 text-blue-300">{formatVNDDisplay(totals.openingDebit)}</div>
                   <div className="flex-1 flex justify-end pr-4 text-orange-300">{formatVNDDisplay(totals.openingCredit)}</div>
-                  
-                  {/* Cột 4,5: Trong kỳ */}
                   <div className="flex-1 flex justify-end pr-4 text-blue-400 text-base">{formatVNDDisplay(totals.periodDebit)}</div>
                   <div className="flex-1 flex justify-end pr-4 text-orange-400 text-base">{formatVNDDisplay(totals.periodCredit)}</div>
-                  
-                  {/* Cột 6,7: Cuối kỳ */}
                   <div className="flex-1 flex justify-end pr-4 text-emerald-400">{formatVNDDisplay(totals.closingDebit)}</div>
                   <div className="flex-1 flex justify-end pr-4 text-rose-400">{formatVNDDisplay(totals.closingCredit)}</div>
                 </div>

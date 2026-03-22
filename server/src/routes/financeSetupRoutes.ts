@@ -8,7 +8,7 @@ import { authenticateToken } from "../middleware/authMiddleware";
 
 const router = Router();
 
-// BẮT BUỘC BẢO MẬT: Chỉ user có token hợp lệ (và có phân quyền trên FE) mới được thao tác
+// BẮT BUỘC BẢO MẬT: Chỉ user có token hợp lệ mới được thao tác
 router.use(authenticateToken);
 
 // ------------------------------------------------------------------

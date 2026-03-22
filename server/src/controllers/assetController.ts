@@ -1,13 +1,15 @@
-import { Request, Response } from "express";
+import { Response } from "express";
 import { ActionType, AssetStatus } from "@prisma/client";
 import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
+import { AuthRequest } from "../middleware/authMiddleware";
 
+const getUserId = (req: AuthRequest) => req.user?.userId || req.body.userId;
 
 // ==========================================
 // 1. LẤY DANH SÁCH & CHI TIẾT TÀI SẢN (READ)
 // ==========================================
-export const getAssets = async (req: Request, res: Response): Promise<void> => {
+export const getAssets = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { status, categoryId, departmentId } = req.query;
     const assets = await prisma.assets.findMany({
@@ -31,7 +33,7 @@ export const getAssets = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
-export const getAssetById = async (req: Request, res: Response): Promise<void> => {
+export const getAssetById = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   try {
     const asset = await prisma.assets.findUnique({
@@ -58,13 +60,13 @@ export const getAssetById = async (req: Request, res: Response): Promise<void> =
 // ==========================================
 // 2. TẠO MỚI, CẬP NHẬT & XÓA TÀI SẢN (CRUD)
 // ==========================================
-export const createAsset = async (req: Request, res: Response): Promise<void> => {
+export const createAsset = async (req: AuthRequest, res: Response): Promise<void> => {
   const {
     assetCode, name, barcode, serialNumber, imageUrl, purchaseDate, purchasePrice,
     depreciationMethod, depreciationMonths, maintenanceCycleMonths,
     categoryId, uomId, departmentId, costCenterId, supplierId
   } = req.body;
-  const userId = (req as any).user?.userId || req.body.userId;
+  const userId = getUserId(req);
 
   try {
     const newAsset = await prisma.$transaction(async (tx) => {
@@ -104,11 +106,11 @@ export const createAsset = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
-export const updateAsset = async (req: Request, res: Response): Promise<void> => {
+export const updateAsset = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const updateData = { ...req.body };
-  const userId = (req as any).user?.userId || req.body.userId;
-  delete updateData.userId; // Loại bỏ userId khỏi data update
+  const userId = getUserId(req);
+  delete updateData.userId; 
 
   try {
     const updatedAsset = await prisma.$transaction(async (tx) => {
@@ -144,9 +146,9 @@ export const updateAsset = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
-export const deleteAsset = async (req: Request, res: Response): Promise<void> => {
+export const deleteAsset = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const userId = (req as any).user?.userId || req.body.userId;
+  const userId = getUserId(req);
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -175,10 +177,10 @@ export const deleteAsset = async (req: Request, res: Response): Promise<void> =>
 // ==========================================
 // 3. BÀN GIAO & TRẢ TÀI SẢN (ASSIGN / RETURN)
 // ==========================================
-export const assignAsset = async (req: Request, res: Response): Promise<void> => {
+export const assignAsset = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const { assignedToId, note, conditionOut } = req.body;
-  const userId = (req as any).user?.userId || req.body.userId;
+  const userId = getUserId(req);
 
   try {
     const assignment = await prisma.$transaction(async (tx) => {
@@ -209,10 +211,10 @@ export const assignAsset = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
-export const returnAsset = async (req: Request, res: Response): Promise<void> => {
+export const returnAsset = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const { conditionIn, note } = req.body;
-  const userId = (req as any).user?.userId || req.body.userId;
+  const userId = getUserId(req);
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -248,10 +250,10 @@ export const returnAsset = async (req: Request, res: Response): Promise<void> =>
 // ==========================================
 // 4. QUẢN LÝ BẢO TRÌ (MAINTENANCE)
 // ==========================================
-export const logMaintenance = async (req: Request, res: Response): Promise<void> => {
+export const logMaintenance = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const { type, description, vendorId, cost, startDate, nextDueDate } = req.body;
-  const userId = (req as any).user?.userId || req.body.userId;
+  const userId = getUserId(req);
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -283,10 +285,10 @@ export const logMaintenance = async (req: Request, res: Response): Promise<void>
   }
 };
 
-export const completeMaintenance = async (req: Request, res: Response): Promise<void> => {
+export const completeMaintenance = async (req: AuthRequest, res: Response): Promise<void> => {
   const { maintenanceId } = req.params;
   const { actualCost, note } = req.body;
-  const userId = (req as any).user?.userId || req.body.userId;
+  const userId = getUserId(req);
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -322,10 +324,10 @@ export const completeMaintenance = async (req: Request, res: Response): Promise<
 // ==========================================
 // 5. ĐÁNH GIÁ LẠI & THANH LÝ (REVALUATION & LIQUIDATION)
 // ==========================================
-export const revaluateAsset = async (req: Request, res: Response): Promise<void> => {
+export const revaluateAsset = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const { newValue, reason, date } = req.body;
-  const userId = (req as any).user?.userId || req.body.userId;
+  const userId = getUserId(req);
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -351,10 +353,10 @@ export const revaluateAsset = async (req: Request, res: Response): Promise<void>
   }
 };
 
-export const liquidateAsset = async (req: Request, res: Response): Promise<void> => {
+export const liquidateAsset = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const { liquidationDate, reason, salePrice, buyerName, branchId, fiscalPeriodId } = req.body;
-  const userId = (req as any).user?.userId || req.body.userId;
+  const userId = getUserId(req);
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -375,7 +377,6 @@ export const liquidateAsset = async (req: Request, res: Response): Promise<void>
         data: { assetId: id, actionType: "UPDATE", description: "Thanh lý tài sản", changedById: userId }
       });
 
-      // [ĐÃ FIX BUG]: Tạo bút toán hợp lệ bao gồm Header và các Lines
       if (fiscalPeriodId && asset.category.fixedAssetAccountId) {
         const journal = await tx.journalEntry.create({
           data: {
@@ -386,10 +387,7 @@ export const liquidateAsset = async (req: Request, res: Response): Promise<void>
         });
 
         const lines = [];
-        // Ghi giảm nguyên giá tài sản (Có TK Tài sản)
         lines.push({ journalId: journal.journalId, accountId: asset.category.fixedAssetAccountId, debit: 0, credit: remainingVal, description: "Ghi giảm tài sản do thanh lý" });
-        // Thu nhập khác / Lỗ khác (Ví dụ minh họa, thực tế sẽ map từ TK cấu hình)
-        // Ở đây giả định thu bằng tiền mặt và đẩy chênh lệch vào TK 711/811. Để đơn giản, ta chỉ log lại.
         await tx.journalLine.createMany({ data: lines });
       }
     });
@@ -400,22 +398,21 @@ export const liquidateAsset = async (req: Request, res: Response): Promise<void>
 };
 
 // ==========================================
-// [MÃ ĐÃ TỐI ƯU HÓA] 6. CHẠY KHẤU HAO (DEPRECIATION)
+// 6. CHẠY KHẤU HAO (DEPRECIATION)
 // ==========================================
-export const runDepreciation = async (req: Request, res: Response): Promise<void> => {
+export const runDepreciation = async (req: AuthRequest, res: Response): Promise<void> => {
   const { fiscalPeriodId, branchId, description } = req.body;
-  const userId = (req as any).user?.userId || req.body.userId;
+  const userId = getUserId(req);
 
   try {
     await prisma.$transaction(async (tx) => {
       const period = await tx.fiscalPeriod.findUnique({ where: { periodId: fiscalPeriodId } });
       if (!period || period.isClosed) throw new Error("Kỳ kế toán không hợp lệ hoặc đã đóng!");
 
-      // 1. Chỉ lấy các tài sản đang sử dụng, có giá trị, và có cài đặt số tháng khấu hao
       const assets = await tx.assets.findMany({
         where: { 
           isDeleted: false, 
-          status: "IN_USE", // Thường chỉ khấu hao tài sản đang sử dụng
+          status: "IN_USE", 
           currentValue: { gt: 0 }, 
           depreciationMonths: { gt: 0 } 
         },
@@ -423,25 +420,19 @@ export const runDepreciation = async (req: Request, res: Response): Promise<void
       });
 
       let totalDepreciation = 0;
-      
-      // Biến lưu trữ tổng tiền khấu hao theo từng Cặp Tài Khoản (GL Grouping)
       const glGrouped: Record<string, { deprAcc: string, accumAcc: string, amount: number }> = {};
       const historyRecordsToUpdate: string[] = [];
 
-      // 2. Vòng lặp tính toán cho từng tài sản (Không gọi Sổ cái ở đây)
       for (const asset of assets) {
-        // Kiểm tra tránh chạy khấu hao 2 lần trong 1 kỳ
         const existingRecord = await tx.assetDepreciationHistory.findUnique({
           where: { assetId_fiscalPeriodId: { assetId: asset.assetId, fiscalPeriodId: fiscalPeriodId } }
         });
         if (existingRecord) continue;
 
-        // Tính khấu hao đường thẳng
         const depreciationAmt = Number(asset.purchasePrice) / Number(asset.depreciationMonths);
         let actualDeprAmt = depreciationAmt;
         let newCurrentValue = Number(asset.currentValue) - actualDeprAmt;
 
-        // Xử lý giá trị thu hồi (Salvage Value)
         const salvageVal = Number(asset.salvageValue || 0);
         if (newCurrentValue <= salvageVal) {
           actualDeprAmt = Number(asset.currentValue) - salvageVal;
@@ -452,7 +443,6 @@ export const runDepreciation = async (req: Request, res: Response): Promise<void
 
         totalDepreciation += actualDeprAmt;
 
-        // Ghi lại lịch sử khấu hao của riêng tài sản này
         const deprHistory = await tx.assetDepreciationHistory.create({
           data: {
             assetId: asset.assetId, fiscalPeriodId: fiscalPeriodId,
@@ -463,13 +453,11 @@ export const runDepreciation = async (req: Request, res: Response): Promise<void
         });
         historyRecordsToUpdate.push(deprHistory.historyId);
 
-        // Cập nhật giá trị còn lại
         await tx.assets.update({ 
           where: { assetId: asset.assetId }, 
           data: { currentValue: newCurrentValue } 
         });
 
-        // Gom nhóm Hạch toán theo Category
         const deprAcc = asset.category.depreciationAccountId;
         const accumAcc = asset.category.accumDepreciationAccountId;
 
@@ -486,7 +474,6 @@ export const runDepreciation = async (req: Request, res: Response): Promise<void
         throw new Error("Không có tài sản nào phát sinh khấu hao hợp lệ trong kỳ này!");
       }
 
-      // 3. TẠO 1 BÚT TOÁN TỔNG HỢP DUY NHẤT (CONSOLIDATED JOURNAL ENTRY)
       if (Object.keys(glGrouped).length > 0 && branchId) {
         const journal = await tx.journalEntry.create({
           data: {
@@ -502,15 +489,12 @@ export const runDepreciation = async (req: Request, res: Response): Promise<void
         const journalLines = [];
         for (const key in glGrouped) {
           const group = glGrouped[key];
-          // Nợ: Tài khoản Chi phí khấu hao
           journalLines.push({ journalId: journal.journalId, accountId: group.deprAcc, debit: group.amount, credit: 0, description: "Trích chi phí khấu hao TSCĐ" });
-          // Có: Tài khoản Hao mòn lũy kế
           journalLines.push({ journalId: journal.journalId, accountId: group.accumAcc, debit: 0, credit: group.amount, description: "Hao mòn lũy kế TSCĐ" });
         }
 
         await tx.journalLine.createMany({ data: journalLines });
 
-        // Cập nhật lại ID Bút toán cho các lịch sử khấu hao vừa sinh ra
         await tx.assetDepreciationHistory.updateMany({
           where: { historyId: { in: historyRecordsToUpdate } },
           data: { journalEntryId: journal.journalId }
@@ -527,7 +511,7 @@ export const runDepreciation = async (req: Request, res: Response): Promise<void
 // ==========================================
 // 7. LỊCH SỬ TÀI SẢN & PHÊ DUYỆT (HISTORY & APPROVAL)
 // ==========================================
-export const getAssetHistory = async (req: Request, res: Response): Promise<void> => {
+export const getAssetHistory = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   try {
     const asset = await prisma.assets.findUnique({
@@ -554,8 +538,7 @@ export const getAssetHistory = async (req: Request, res: Response): Promise<void
   }
 };
 
-// Yêu cầu mua tài sản (Approval Request logic)
-export const getAssetRequests = async (req: Request, res: Response): Promise<void> => {
+export const getAssetRequests = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { status } = req.query;
     const requests = await prisma.approvalRequest.findMany({
@@ -576,9 +559,9 @@ export const getAssetRequests = async (req: Request, res: Response): Promise<voi
   }
 };
 
-export const approveAssetRequest = async (req: Request, res: Response): Promise<void> => {
+export const approveAssetRequest = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const actionerId = (req as any).user?.userId || req.body.actionerId;
+  const actionerId = getUserId(req);
   const { comments } = req.body;
 
   try {
@@ -597,9 +580,9 @@ export const approveAssetRequest = async (req: Request, res: Response): Promise<
   }
 };
 
-export const rejectAssetRequest = async (req: Request, res: Response): Promise<void> => {
+export const rejectAssetRequest = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const actionerId = (req as any).user?.userId || req.body.actionerId;
+  const actionerId = getUserId(req);
   const { comments } = req.body;
 
   try {

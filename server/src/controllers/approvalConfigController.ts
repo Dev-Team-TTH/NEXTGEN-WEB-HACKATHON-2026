@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { ActionType } from "@prisma/client";
 import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
 
@@ -62,7 +63,6 @@ export const getWorkflowById = async (req: Request, res: Response): Promise<void
 // ==========================================
 export const createWorkflow = async (req: Request, res: Response): Promise<void> => {
   const { branchId, module, name, steps, userId } = req.body;
-  // steps có dạng: [{ stepOrder: 1, roleId: "..." }, { stepOrder: 2, roleId: "..." }]
 
   try {
     const newWorkflow = await prisma.$transaction(async (tx) => {
@@ -97,7 +97,7 @@ export const createWorkflow = async (req: Request, res: Response): Promise<void>
       return workflow;
     });
 
-    await logAudit("ApprovalWorkflow", newWorkflow.workflowId, "CREATE", null, newWorkflow, userId, req.ip);
+    await logAudit("ApprovalWorkflow", newWorkflow.workflowId, ActionType.CREATE, null, newWorkflow, userId, req.ip);
     res.status(201).json({ message: "Tạo Quy trình duyệt thành công", workflow: newWorkflow });
   } catch (error: any) {
     res.status(400).json({ message: "Lỗi tạo Workflow", error: error.message });
@@ -128,8 +128,7 @@ export const updateWorkflow = async (req: Request, res: Response): Promise<void>
         }
       });
 
-      // 2. Cập nhật lại các bước duyệt (Nếu client gửi danh sách steps mới)
-      // Logic chuẩn nhất là Xóa toàn bộ step cũ và Insert lại step mới để đảm bảo tính thứ tự
+      // 2. Cập nhật lại các bước duyệt
       if (steps && Array.isArray(steps)) {
         await tx.approvalStep.deleteMany({ where: { workflowId: id } });
         
@@ -147,7 +146,7 @@ export const updateWorkflow = async (req: Request, res: Response): Promise<void>
       return workflow;
     });
 
-    await logAudit("ApprovalWorkflow", id, "UPDATE", null, updatedWorkflow, userId, req.ip);
+    await logAudit("ApprovalWorkflow", id, ActionType.UPDATE, null, updatedWorkflow, userId, req.ip);
     res.json({ message: "Cập nhật Quy trình duyệt thành công!", workflow: updatedWorkflow });
   } catch (error: any) {
     res.status(400).json({ message: "Lỗi cập nhật Workflow", error: error.message });
@@ -171,13 +170,12 @@ export const deleteWorkflow = async (req: Request, res: Response): Promise<void>
         throw new Error("Không thể xóa Quy trình này vì đang có chứng từ chờ duyệt sử dụng nó!");
       }
 
-      // Prisma đã thiết lập onDelete: Cascade cho ApprovalStep nên chỉ cần xóa Header
       await tx.approvalWorkflow.delete({
         where: { workflowId: id }
       });
     });
 
-    await logAudit("ApprovalWorkflow", id, "DELETE", null, { deleted: true }, userId, req.ip);
+    await logAudit("ApprovalWorkflow", id, ActionType.DELETE, null, { deleted: true }, userId, req.ip);
     res.json({ message: "Xóa Quy trình duyệt thành công!" });
   } catch (error: any) {
     res.status(400).json({ message: "Lỗi xóa Workflow", error: error.message });
