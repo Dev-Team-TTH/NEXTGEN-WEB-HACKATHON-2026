@@ -108,7 +108,7 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
     // 🚀 VALIDATION 3: Cảnh báo Nghiệp vụ Kế toán (Bán phá giá)
     if (priceVal > 0 && purchasePriceVal > 0 && priceVal < purchasePriceVal) {
       if (!window.confirm(`CẢNH BÁO: Giá bán (${formData.price}) đang thấp hơn Giá vốn (${formData.purchasePrice}).\nBạn có chắc chắn muốn tạo sản phẩm này (Bán lỗ) không?`)) {
-        return; // Hủy lưu nếu người dùng bấm Cancel
+        return; 
       }
     }
 
@@ -138,7 +138,7 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
     <>
       <button
         type="button" onClick={onClose} disabled={isSubmitting}
-        className="px-5 py-2.5 text-sm font-bold text-slate-600 bg-white dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+        className="px-5 py-2.5 text-sm font-bold text-slate-600 bg-white dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors duration-500 disabled:opacity-50"
       >
         Hủy bỏ
       </button>
@@ -162,13 +162,13 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
       disableOutsideClick={isSubmitting}
       footer={modalFooter}
     >
-      <div className="p-6">
+      <div className="p-6 transition-colors duration-500">
         <form id="create-product-form" onSubmit={handleSubmit} className="flex flex-col md:flex-row gap-8">
           
           {/* CỘT TRÁI: UPLOAD ẢNH */}
           <div className="w-full md:w-1/3 flex flex-col gap-4">
             <div className="sticky top-0">
-              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2 transition-colors duration-500">
                 <LinkIcon className="w-4 h-4 text-indigo-500" /> Hình ảnh nhận diện
               </h3>
               
@@ -180,21 +180,22 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
               />
 
               {formData.imageUrl && (
-                 <div className="mt-4 p-3 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl border border-emerald-200 dark:border-emerald-500/20">
+                 <div className="mt-4 p-3 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl border border-emerald-200 dark:border-emerald-500/20 transition-colors duration-500">
                    <p className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1.5">
                      <CheckCircle2 className="w-4 h-4" /> Đã đính kèm URL thành công
                    </p>
                  </div>
               )}
 
-              <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-500/10 rounded-2xl border border-blue-100 dark:border-blue-500/20">
-                <h4 className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center gap-1.5">
+              <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-500/10 rounded-2xl border border-blue-100 dark:border-blue-500/20 transition-colors duration-500">
+                <h4 className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center gap-1.5 transition-colors duration-500">
                   <AlertCircle className="w-4 h-4" /> Gợi ý chuẩn hóa
                 </h4>
-                <ul className="text-[11px] text-blue-600 dark:text-blue-400 space-y-1.5 list-disc pl-4">
+                <ul className="text-[11px] text-blue-600 dark:text-blue-400 space-y-1.5 list-disc pl-4 transition-colors duration-500">
                   <li>Mã SKU nên viết hoa, không dấu (VD: SP001)</li>
                   <li>Nên chọn chuẩn danh mục để dễ lên báo cáo</li>
                   <li>Sản phẩm có Date hạn sử dụng phải tick chọn "Quản lý theo Lô".</li>
+                  <li><b className="font-bold">Lưu ý:</b> Đơn vị tính và Cấu hình Lô/Biến thể sẽ không thể thay đổi sau khi tạo để bảo vệ Sổ cái kho.</li>
                 </ul>
               </div>
             </div>
@@ -204,13 +205,13 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
           <div className="w-full md:w-2/3 grid grid-cols-1 sm:grid-cols-2 gap-5">
             
             <div className="sm:col-span-2">
-              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 border-b border-slate-100 dark:border-slate-800 pb-2">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 border-b border-slate-100 dark:border-slate-800 pb-2 transition-colors duration-500">
                 1. Thông tin Định danh
               </h3>
             </div>
 
             <div className="space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors duration-500">
                 Mã SKU <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
@@ -218,13 +219,13 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
                 <input 
                   type="text" name="productCode" value={formData.productCode} onChange={handleChange} required
                   placeholder="VD: IPHONE15-PRO"
-                  className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none uppercase transition-all"
+                  className="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none uppercase shadow-sm text-slate-900 dark:text-white transition-colors duration-500"
                 />
               </div>
             </div>
 
             <div className="space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors duration-500">
                 Mã Vạch (Barcode)
               </label>
               <div className="relative">
@@ -232,13 +233,13 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
                 <input 
                   type="text" name="barcode" value={formData.barcode} onChange={handleChange}
                   placeholder="Quét mã vạch vào đây..."
-                  className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                  className="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm text-slate-900 dark:text-white transition-colors duration-500"
                 />
               </div>
             </div>
 
             <div className="sm:col-span-2 space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors duration-500">
                 Tên Hàng hóa / Sản phẩm <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
@@ -246,25 +247,24 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
                 <input 
                   type="text" name="name" value={formData.name} onChange={handleChange} required
                   placeholder="VD: Điện thoại iPhone 15 Pro Max 256GB"
-                  className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                  className="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm text-slate-900 dark:text-white transition-colors duration-500"
                 />
               </div>
             </div>
 
             <div className="sm:col-span-2 mt-2">
-              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 border-b border-slate-100 dark:border-slate-800 pb-2">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 border-b border-slate-100 dark:border-slate-800 pb-2 transition-colors duration-500">
                 2. Phân loại & Đo lường
               </h3>
             </div>
 
             <div className="space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors duration-500">
                 Danh mục <span className="text-rose-500">*</span>
               </label>
               <select 
-                name="categoryId" value={formData.categoryId} onChange={handleChange} required
-                disabled={loadingCats}
-                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                name="categoryId" value={formData.categoryId} onChange={handleChange} required disabled={loadingCats} 
+                className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer shadow-sm text-slate-900 dark:text-white transition-colors duration-500"
               >
                 <option value="">-- Chọn danh mục --</option>
                 {categories.map((c: any) => <option key={c.categoryId || c.id} value={c.categoryId || c.id}>{c.name}</option>)}
@@ -272,13 +272,12 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
             </div>
 
             <div className="space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors duration-500">
                 Đơn vị gốc (UoM) <span className="text-rose-500">*</span>
               </label>
               <select 
-                name="uomId" value={formData.uomId} onChange={handleChange} required
-                disabled={loadingUoms}
-                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                name="uomId" value={formData.uomId} onChange={handleChange} required disabled={loadingUoms} 
+                className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer shadow-sm text-slate-900 dark:text-white transition-colors duration-500"
               >
                 <option value="">-- Chọn đơn vị tính --</option>
                 {uoms.map((u: any) => <option key={u.uomId || u.id} value={u.uomId || u.id}>{u.name} ({u.code})</option>)}
@@ -286,15 +285,14 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
             </div>
 
             <div className="sm:col-span-2 space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors duration-500">
                 Nhà Cung Cấp Mặc Định
               </label>
               <div className="relative">
                 <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <select 
-                  name="supplierId" value={formData.supplierId} onChange={handleChange}
-                  disabled={loadingSuppliers}
-                  className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all appearance-none"
+                  name="supplierId" value={formData.supplierId} onChange={handleChange} disabled={loadingSuppliers} 
+                  className="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer shadow-sm text-slate-900 dark:text-white transition-colors duration-500"
                 >
                   <option value="">-- Bỏ trống nếu nhập từ nhiều NCC --</option>
                   {suppliers.map((s: any) => <option key={s.supplierId || s.id} value={s.supplierId || s.id}>{s.name}</option>)}
@@ -303,22 +301,21 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
             </div>
 
             <div className="sm:col-span-2 mt-2">
-              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 border-b border-slate-100 dark:border-slate-800 pb-2">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 border-b border-slate-100 dark:border-slate-800 pb-2 transition-colors duration-500">
                 3. Thiết lập Giá & Cảnh báo Kho
               </h3>
             </div>
 
-            {/* 🚀 ĐÃ BỔ SUNG VALIDATION MÀU SẮC ĐỂ CẢNH BÁO BÁN LỖ */}
             <div className="space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors duration-500">
                 Giá Bán Cơ Sở (VND)
               </label>
               <div className="relative">
-                <DollarSign className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4", Number(formData.price) > 0 && Number(formData.price) < Number(formData.purchasePrice) ? "text-rose-500" : "text-emerald-500")} />
+                <DollarSign className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors duration-500", Number(formData.price) > 0 && Number(formData.price) < Number(formData.purchasePrice) ? "text-rose-500" : "text-emerald-500")} />
                 <input 
                   type="number" name="price" value={formData.price} onChange={handleChange} min="0" step="1000"
                   className={cn(
-                    "w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border rounded-xl text-sm font-bold outline-none transition-all",
+                    "w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-900 border rounded-xl text-sm font-bold outline-none shadow-sm transition-colors duration-500",
                     Number(formData.price) > 0 && Number(formData.price) < Number(formData.purchasePrice) 
                       ? "text-rose-600 border-rose-300 focus:ring-rose-500 bg-rose-50/50 dark:bg-rose-500/10" 
                       : "text-emerald-600 dark:text-emerald-400 border-slate-200 dark:border-slate-700 focus:ring-emerald-500"
@@ -333,35 +330,34 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
             </div>
 
             <div className="space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors duration-500">
                 Giá Nhập / Giá Vốn Cơ Sở (VND)
               </label>
               <div className="relative">
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-orange-500" />
                 <input 
                   type="number" name="purchasePrice" value={formData.purchasePrice} onChange={handleChange} min="0" step="1000"
-                  className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-orange-600 dark:text-orange-400 focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                  className="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-orange-600 dark:text-orange-400 focus:ring-2 focus:ring-orange-500 outline-none shadow-sm transition-colors duration-500"
                 />
               </div>
             </div>
 
             <div className="space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors duration-500">
                 Định mức tồn tối thiểu (Reorder Point)
               </label>
               <div className="relative">
                 <Layers className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input 
                   type="number" name="reorderPoint" value={formData.reorderPoint} onChange={handleChange} min="0"
-                  className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                  className="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors duration-500"
                 />
               </div>
             </div>
 
-            {/* 🚀 NÂNG CẤP UX: Trạng thái Checked sẽ sáng viền Box để dễ nhìn hơn */}
-            <div className="sm:col-span-2 flex flex-col sm:flex-row gap-4 p-4 rounded-2xl border transition-colors mt-2 bg-slate-50 dark:bg-slate-800/30 border-slate-100 dark:border-slate-800">
+            <div className="sm:col-span-2 flex flex-col sm:flex-row gap-4 p-4 rounded-2xl border bg-slate-50 dark:bg-slate-800/30 border-slate-100 dark:border-slate-800 mt-2 transition-colors duration-500">
               
-              <label className={cn("flex-1 flex items-center gap-3 p-3 cursor-pointer group rounded-xl border transition-all", formData.hasVariants ? "bg-indigo-50 border-indigo-200 dark:bg-indigo-500/10 dark:border-indigo-500/30" : "border-transparent")}>
+              <label className={cn("flex-1 flex items-center gap-3 p-3 cursor-pointer group rounded-xl border transition-colors duration-500", formData.hasVariants ? "bg-indigo-50 border-indigo-200 dark:bg-indigo-500/10 dark:border-indigo-500/30" : "border-transparent")}>
                 <div className="relative flex items-center justify-center">
                   <input 
                     type="checkbox" name="hasVariants" checked={formData.hasVariants} onChange={handleChange}
@@ -369,12 +365,12 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
                   />
                   <CheckCircle2 className="absolute text-white w-3.5 h-3.5 opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" />
                 </div>
-                <span className={cn("text-sm font-bold transition-colors", formData.hasVariants ? "text-indigo-700 dark:text-indigo-400" : "text-slate-700 dark:text-slate-300 group-hover:text-indigo-500")}>
+                <span className={cn("text-sm font-bold transition-colors duration-500", formData.hasVariants ? "text-indigo-700 dark:text-indigo-400" : "text-slate-700 dark:text-slate-300 group-hover:text-indigo-500")}>
                   Có Biến thể (Màu sắc, Size...)
                 </span>
               </label>
 
-              <label className={cn("flex-1 flex items-center gap-3 p-3 cursor-pointer group rounded-xl border transition-all", formData.hasBatches ? "bg-indigo-50 border-indigo-200 dark:bg-indigo-500/10 dark:border-indigo-500/30" : "border-transparent")}>
+              <label className={cn("flex-1 flex items-center gap-3 p-3 cursor-pointer group rounded-xl border transition-colors duration-500", formData.hasBatches ? "bg-indigo-50 border-indigo-200 dark:bg-indigo-500/10 dark:border-indigo-500/30" : "border-transparent")}>
                 <div className="relative flex items-center justify-center">
                   <input 
                     type="checkbox" name="hasBatches" checked={formData.hasBatches} onChange={handleChange}
@@ -382,7 +378,7 @@ export default function CreateProductModal({ isOpen, onClose }: CreateProductMod
                   />
                   <CheckCircle2 className="absolute text-white w-3.5 h-3.5 opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" />
                 </div>
-                <span className={cn("text-sm font-bold transition-colors", formData.hasBatches ? "text-indigo-700 dark:text-indigo-400" : "text-slate-700 dark:text-slate-300 group-hover:text-indigo-500")}>
+                <span className={cn("text-sm font-bold transition-colors duration-500", formData.hasBatches ? "text-indigo-700 dark:text-indigo-400" : "text-slate-700 dark:text-slate-300 group-hover:text-indigo-500")}>
                   Quản lý Lô / Hạn Sử Dụng
                 </span>
               </label>

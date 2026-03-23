@@ -2,9 +2,8 @@ import { Response } from "express";
 import { TransactionType, MovementDirection, TransactionStatus, ActionType } from "@prisma/client";
 import prisma from "../prismaClient";
 import { logAudit } from "../utils/auditLogger";
-import { AuthRequest } from "../middleware/authMiddleware"; // 🚀 IMPORT CHUẨN KIẾN TRÚC
+import { AuthRequest } from "../middleware/authMiddleware";
 
-// Hàm Helper trích xuất userId an toàn, không dùng (req as any)
 const getUserId = (req: AuthRequest) => req.user?.userId || req.body.userId;
 
 // ==========================================
@@ -79,7 +78,7 @@ export const getDocumentById = async (req: AuthRequest, res: Response): Promise<
 };
 
 // ==========================================
-// 2. TẠO PHIẾU GIAO DỊCH (CREATE DRAFT & UOM CONVERSION)
+// 2. TẠO PHIẾU GIAO DỊCH
 // ==========================================
 export const createDocument = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -89,7 +88,6 @@ export const createDocument = async (req: AuthRequest, res: Response): Promise<v
     } = req.body;
     const userId = getUserId(req);
 
-    // ⚡ [TÍNH NĂNG MỚI] 1. Lấy thông tin Sản phẩm & Hệ số quy đổi UOM trước khi xử lý
     const productIds = transactions ? transactions.map((t: any) => t.productId) : [];
     const productsInfo = await prisma.products.findMany({
       where: { productId: { in: productIds } },
@@ -97,7 +95,18 @@ export const createDocument = async (req: AuthRequest, res: Response): Promise<v
     });
 
     const itemsTotal = transactions ? transactions.reduce((sum: number, tx: any) => sum + (Number(tx.quantity) * Number(tx.unitCost)), 0) : 0;
-    const taxesTotal = taxes ? taxes.reduce((sum: number, t: any) => sum + Number(t.taxAmount), 0) : 0;
+    
+    // 🚀 BẢO VỆ DATABASE TẦNG 1: Gộp nhóm Thuế (Tax Grouping) chống lỗi Unique Constraint
+    let taxesTotal = 0;
+    const groupedTaxes: Record<string, number> = {};
+    if (taxes && taxes.length > 0) {
+      taxes.forEach((t: any) => {
+        const amt = Number(t.taxAmount);
+        groupedTaxes[t.taxId] = (groupedTaxes[t.taxId] || 0) + amt;
+        taxesTotal += amt;
+      });
+    }
+
     const landedTotal = landedCosts ? landedCosts.reduce((sum: number, lc: any) => sum + Number(lc.amount), 0) : 0;
     const documentTotalAmount = itemsTotal + taxesTotal + landedTotal;
 
@@ -116,10 +125,12 @@ export const createDocument = async (req: AuthRequest, res: Response): Promise<v
         }
       });
 
-      if (taxes && taxes.length > 0) {
-        await tx.documentTax.createMany({
-          data: taxes.map((t: any) => ({ documentId: doc.documentId, taxId: t.taxId, taxAmount: Number(t.taxAmount) }))
-        });
+      // 🚀 Thực thi tạo Thuế từ Object đã gộp nhóm an toàn
+      const taxDataArray = Object.entries(groupedTaxes).map(([taxId, taxAmount]) => ({
+        documentId: doc.documentId, taxId, taxAmount
+      }));
+      if (taxDataArray.length > 0) {
+        await tx.documentTax.createMany({ data: taxDataArray });
       }
 
       if (landedCosts && landedCosts.length > 0) {
@@ -130,28 +141,23 @@ export const createDocument = async (req: AuthRequest, res: Response): Promise<v
 
       if (transactions && transactions.length > 0) {
         const txData = transactions.map((t: any) => {
-          
-          // ⚡ [TÍNH NĂNG MỚI] 2. Thực thi Thuật toán Quy đổi Đơn vị tính
           let baseQuantity = Number(t.quantity);
           let baseUnitCost = Number(t.unitCost);
 
           if (t.uomId) {
             const product = productsInfo.find(p => p.productId === t.productId);
-            // Nếu UOM người dùng truyền lên khác với UOM gốc của sản phẩm
             if (product && product.uomId !== t.uomId) {
-              // Tìm hệ số quy đổi xuôi (Từ UOM truyền lên -> UOM gốc)
               const conversion = product.uomConversions.find(c => c.fromUomId === t.uomId && c.toUomId === product.uomId);
               if (conversion) {
                 baseQuantity = baseQuantity * Number(conversion.conversionFactor);
                 baseUnitCost = baseUnitCost / Number(conversion.conversionFactor);
               } else {
-                // Tìm hệ số quy đổi ngược (Từ UOM gốc -> UOM truyền lên)
                 const revConversion = product.uomConversions.find(c => c.toUomId === t.uomId && c.fromUomId === product.uomId);
                 if (revConversion) {
                   baseQuantity = baseQuantity / Number(revConversion.conversionFactor);
                   baseUnitCost = baseUnitCost * Number(revConversion.conversionFactor);
                 } else {
-                  throw new Error(`Không tìm thấy hệ số quy đổi ĐVT hợp lệ cho sản phẩm [${product.name}]. Vui lòng cấu hình trong Master Data.`);
+                  throw new Error(`Không tìm thấy hệ số quy đổi ĐVT hợp lệ cho sản phẩm [${product.name}].`);
                 }
               }
             }
@@ -173,8 +179,8 @@ export const createDocument = async (req: AuthRequest, res: Response): Promise<v
             productId: t.productId,
             variantId: t.variantId || null,
             batchId: t.batchId || null,
-            quantity: baseQuantity,        // Sử dụng SL đã quy đổi
-            unitCost: baseUnitCost,        // Sử dụng Đơn giá đã quy đổi
+            quantity: baseQuantity,        
+            unitCost: baseUnitCost,        
             totalCost: baseQuantity * baseUnitCost,
           };
         });
@@ -192,7 +198,7 @@ export const createDocument = async (req: AuthRequest, res: Response): Promise<v
 };
 
 // ==========================================
-// 3. CẬP NHẬT CHỨNG TỪ (UPDATE DRAFT & UOM)
+// 3. CẬP NHẬT CHỨNG TỪ
 // ==========================================
 export const updateDocument = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
@@ -200,7 +206,6 @@ export const updateDocument = async (req: AuthRequest, res: Response): Promise<v
   const userId = getUserId(req);
 
   try {
-    // Lấy thông tin UOM trước khi xử lý
     const productIds = transactions ? transactions.map((t: any) => t.productId) : [];
     const productsInfo = await prisma.products.findMany({
       where: { productId: { in: productIds } },
@@ -220,21 +225,34 @@ export const updateDocument = async (req: AuthRequest, res: Response): Promise<v
       await tx.landedCost.deleteMany({ where: { documentId: id } });
 
       const itemsTotal = transactions ? transactions.reduce((sum: number, tx: any) => sum + (Number(tx.quantity) * Number(tx.unitCost)), 0) : 0;
-      const taxesTotal = taxes ? taxes.reduce((sum: number, t: any) => sum + Number(t.taxAmount), 0) : 0;
+      
+      // 🚀 BẢO VỆ DATABASE TẦNG 2: Gộp nhóm Thuế khi Update
+      let taxesTotal = 0;
+      const groupedTaxes: Record<string, number> = {};
+      if (taxes && taxes.length > 0) {
+        taxes.forEach((t: any) => {
+          const amt = Number(t.taxAmount);
+          groupedTaxes[t.taxId] = (groupedTaxes[t.taxId] || 0) + amt;
+          taxesTotal += amt;
+        });
+      }
+
       const landedTotal = landedCosts ? landedCosts.reduce((sum: number, lc: any) => sum + Number(lc.amount), 0) : 0;
       const newTotalAmount = itemsTotal + taxesTotal + landedTotal;
 
-      if (taxes && taxes.length > 0) {
-        await tx.documentTax.createMany({ data: taxes.map((t: any) => ({ documentId: id, taxId: t.taxId, taxAmount: Number(t.taxAmount) })) });
+      const taxDataArray = Object.entries(groupedTaxes).map(([taxId, taxAmount]) => ({
+        documentId: id, taxId, taxAmount
+      }));
+      if (taxDataArray.length > 0) {
+        await tx.documentTax.createMany({ data: taxDataArray });
       }
+
       if (landedCosts && landedCosts.length > 0) {
         await tx.landedCost.createMany({ data: landedCosts.map((lc: any) => ({ documentId: id, description: lc.description, amount: Number(lc.amount) })) });
       }
 
       if (transactions && transactions.length > 0) {
         const txData = transactions.map((t: any) => {
-          
-          // Thuật toán quy đổi tương tự phần Create
           let baseQuantity = Number(t.quantity);
           let baseUnitCost = Number(t.unitCost);
 
@@ -293,7 +311,7 @@ export const updateDocument = async (req: AuthRequest, res: Response): Promise<v
 };
 
 // ==========================================
-// 4. HỦY CHỨNG TỪ (CANCEL)
+// 4. HỦY CHỨNG TỪ 
 // ==========================================
 export const deleteDocument = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
@@ -347,7 +365,7 @@ export const approveDocument = async (req: AuthRequest, res: Response): Promise<
       }
 
       // ==============================================================
-      // LUỒNG 1: ĐƠN ĐẶT HÀNG MUA (PURCHASE ORDER)
+      // LUỒNG 1: ĐƠN ĐẶT HÀNG MUA (PO)
       // ==============================================================
       if (doc.type === "PURCHASE_ORDER") {
         const finalizedDoc = await tx.document.update({
@@ -364,7 +382,7 @@ export const approveDocument = async (req: AuthRequest, res: Response): Promise<
       }
 
       // ==============================================================
-      // LUỒNG 2: ĐƠN BÁN HÀNG (SALES ORDER) - NGHIỆP VỤ GIỮ CHỖ (ALLOCATION)
+      // LUỒNG 2: ĐƠN BÁN HÀNG (SO) - GIỮ CHỖ TỒN KHO
       // ==============================================================
       if (doc.type === "SALES_ORDER") {
         for (const item of doc.transactions) {
@@ -397,9 +415,7 @@ export const approveDocument = async (req: AuthRequest, res: Response): Promise<
               productId: item.productId, variantId: item.variantId || "DEFAULT", batchId: item.batchId || "DEFAULT",
               quantity: 0, lockedQty: item.quantity, avgCost: 0, totalValue: 0
             },
-            update: {
-              lockedQty: { increment: item.quantity }
-            }
+            update: { lockedQty: { increment: item.quantity } }
           });
         }
 
@@ -417,8 +433,16 @@ export const approveDocument = async (req: AuthRequest, res: Response): Promise<
       }
 
       // ==============================================================
-      // LUỒNG 3: PHIẾU XUẤT/NHẬP KHO THỰC TẾ (RECEIPT, ISSUE, RETURN)
+      // LUỒNG 3: PHIẾU XUẤT/NHẬP KHO THỰC TẾ (CÓ GHI SỔ KẾ TOÁN)
       // ==============================================================
+      
+      // 🚀 BẢO VỆ DATABASE TẦNG 3: Chặn đứt việc Giao dịch Kho mà không có Kỳ Kế Toán
+      if (doc.type === "PURCHASE_RECEIPT" || doc.type === "SALES_ISSUE" || doc.type === "RETURN" || doc.type === "ADJUSTMENT") {
+        if (!fiscalPeriodId) {
+          throw new Error("LỖI KẾ TOÁN KÉP: Giao dịch làm thay đổi tồn kho bắt buộc phải cung cấp Kỳ Kế Toán (Fiscal Period) để hệ thống tự động ghi Sổ cái (Auto-GL).");
+        }
+      }
+
       if (fiscalPeriodId) {
         const period = await tx.fiscalPeriod.findUnique({ where: { periodId: fiscalPeriodId } });
         if (period?.isClosed) throw new Error("Kỳ kế toán này đã bị Khóa. Không thể ghi nhận giao dịch!");
@@ -426,7 +450,6 @@ export const approveDocument = async (req: AuthRequest, res: Response): Promise<
 
       const glGrouped: Record<string, { inventoryAccount: string, cogsAccount: string, totalAmount: number }> = {};
 
-      // Tính toán Phân bổ Landed Cost
       const landedCosts = await tx.landedCost.findMany({ where: { documentId: id } });
       const totalLandedCost = landedCosts.reduce((sum, lc) => sum + Number(lc.amount), 0);
       
@@ -451,11 +474,8 @@ export const approveDocument = async (req: AuthRequest, res: Response): Promise<
         const currentBalance = await tx.inventoryBalance.findUnique({
           where: {
             warehouseId_binId_productId_variantId_batchId: {
-              warehouseId: targetWarehouseId,
-              binId: targetBinId || "DEFAULT",
-              productId: item.productId,
-              variantId: item.variantId || "DEFAULT",
-              batchId: item.batchId || "DEFAULT"
+              warehouseId: targetWarehouseId, binId: targetBinId || "DEFAULT",
+              productId: item.productId, variantId: item.variantId || "DEFAULT", batchId: item.batchId || "DEFAULT"
             }
           }
         });
@@ -567,7 +587,7 @@ export const approveDocument = async (req: AuthRequest, res: Response): Promise<
         });
       }
 
-      // TỰ ĐỘNG GHI SỔ KẾ TOÁN (AUTO-GL)
+      // TỰ ĐỘNG GHI SỔ KẾ TOÁN (AUTO-GL) ĐẢM BẢO TOÀN VẸN 100%
       if (fiscalPeriodId && Object.keys(glGrouped).length > 0) {
         const journal = await tx.journalEntry.create({
           data: {

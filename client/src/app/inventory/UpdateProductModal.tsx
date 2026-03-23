@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { 
   Package, Barcode, Tag, DollarSign, Layers, 
-  CheckCircle2, Loader2, Link as LinkIcon, Building2, AlertCircle, Edit 
+  CheckCircle2, Loader2, Link as LinkIcon, Building2, AlertCircle, Edit, Lock 
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -79,12 +79,10 @@ export default function UpdateProductModal({ isOpen, onClose, product }: UpdateP
   // --- HANDLERS ---
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
-    if (type === "checkbox") {
-      const checked = (e.target as HTMLInputElement).checked;
-      setFormData((prev) => ({ ...prev, [name]: checked }));
-    } else {
-      setFormData((prev) => ({ ...prev, [name]: value }));
-    }
+    // 🚀 LÁ CHẮN BẢO MẬT: Bỏ qua hành động đổi Checkbox trong chế độ Update
+    if (type === "checkbox") return;
+    
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleImageUploadSuccess = (url: string) => {
@@ -130,6 +128,10 @@ export default function UpdateProductModal({ isOpen, onClose, product }: UpdateP
         purchasePrice: safeRound(purchasePriceVal),
         reorderPoint: reorderVal,
         supplierId: formData.supplierId || undefined, 
+        // 🚀 BẢO VỆ: Ghi đè lại các giá trị cấu trúc từ product gốc, không cho phép update làm sai lệch kho
+        uomId: product.uomId,
+        hasVariants: product.hasVariants,
+        hasBatches: product.hasBatches
       };
 
       // Gọi API Cập nhật
@@ -145,7 +147,7 @@ export default function UpdateProductModal({ isOpen, onClose, product }: UpdateP
     <>
       <button
         type="button" onClick={onClose} disabled={isSubmitting}
-        className="px-5 py-2.5 text-sm font-bold text-slate-600 bg-white dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+        className="px-5 py-2.5 text-sm font-bold text-slate-600 bg-white dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors duration-500 disabled:opacity-50"
       >
         Hủy bỏ
       </button>
@@ -163,18 +165,18 @@ export default function UpdateProductModal({ isOpen, onClose, product }: UpdateP
       isOpen={isOpen} onClose={onClose} title="Cập nhật Sản phẩm / Vật tư" subtitle="Điều chỉnh thông tin Master Data"
       icon={<Edit className="w-6 h-6 text-blue-500" />} maxWidth="max-w-5xl" disableOutsideClick={isSubmitting} footer={modalFooter}
     >
-      <div className="p-6">
+      <div className="p-6 transition-colors duration-500">
         <form id="update-product-form" onSubmit={handleSubmit} className="flex flex-col md:flex-row gap-8">
           
           {/* CỘT TRÁI: UPLOAD ẢNH */}
           <div className="w-full md:w-1/3 flex flex-col gap-4">
             <div className="sticky top-0">
-              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2 transition-colors duration-500">
                 <LinkIcon className="w-4 h-4 text-blue-500" /> Hình ảnh nhận diện
               </h3>
               
               {formData.imageUrl && (
-                <div className="mb-4 relative rounded-2xl overflow-hidden border-2 border-slate-200 dark:border-slate-700 aspect-square flex items-center justify-center bg-slate-50 dark:bg-slate-900">
+                <div className="mb-4 relative rounded-2xl overflow-hidden border-2 border-slate-200 dark:border-slate-700 aspect-square flex items-center justify-center bg-slate-50 dark:bg-slate-900 transition-colors duration-500">
                   <img src={formData.imageUrl} alt="Preview" className="object-contain w-full h-full" />
                 </div>
               )}
@@ -192,27 +194,27 @@ export default function UpdateProductModal({ isOpen, onClose, product }: UpdateP
           <div className="w-full md:w-2/3 grid grid-cols-1 sm:grid-cols-2 gap-5">
             
             <div className="sm:col-span-2">
-              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 border-b border-slate-100 dark:border-slate-800 pb-2">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 border-b border-slate-100 dark:border-slate-800 pb-2 transition-colors duration-500">
                 1. Thông tin Định danh
               </h3>
             </div>
 
             <div className="space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-blue-500 transition-colors">
-                Mã SKU <span className="text-rose-500">*</span>
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-blue-500 transition-colors duration-500 flex items-center gap-1.5">
+                Mã SKU <Lock className="w-3 h-3 text-rose-500" />
               </label>
               <div className="relative">
                 <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input 
                   type="text" name="productCode" value={formData.productCode} onChange={handleChange} required disabled
-                  className="w-full pl-9 pr-4 py-2.5 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-500 uppercase cursor-not-allowed"
+                  className="w-full pl-9 pr-4 py-2.5 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-500 uppercase cursor-not-allowed shadow-inner transition-colors duration-500"
                   title="Mã SKU là định danh hệ thống, không thể sửa sau khi tạo"
                 />
               </div>
             </div>
 
             <div className="space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-blue-500 transition-colors">
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-blue-500 transition-colors duration-500">
                 Mã Vạch (Barcode)
               </label>
               <div className="relative">
@@ -220,51 +222,54 @@ export default function UpdateProductModal({ isOpen, onClose, product }: UpdateP
                 <input 
                   type="text" name="barcode" value={formData.barcode} onChange={handleChange}
                   placeholder="Quét mã vạch vào đây..."
-                  className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                  className="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors duration-500"
                 />
               </div>
             </div>
 
             <div className="sm:col-span-2 space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-blue-500 transition-colors">
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-blue-500 transition-colors duration-500">
                 Tên Hàng hóa / Sản phẩm <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
                 <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input 
                   type="text" name="name" value={formData.name} onChange={handleChange} required
-                  className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                  className="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors duration-500"
                 />
               </div>
             </div>
 
             <div className="sm:col-span-2 mt-2">
-              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 border-b border-slate-100 dark:border-slate-800 pb-2">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 border-b border-slate-100 dark:border-slate-800 pb-2 transition-colors duration-500">
                 2. Phân loại & Đo lường
               </h3>
             </div>
 
             <div className="space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-blue-500 transition-colors">Danh mục <span className="text-rose-500">*</span></label>
-              <select name="categoryId" value={formData.categoryId} onChange={handleChange} required disabled={loadingCats} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-blue-500 transition-colors duration-500">Danh mục <span className="text-rose-500">*</span></label>
+              <select name="categoryId" value={formData.categoryId} onChange={handleChange} required disabled={loadingCats} className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 dark:text-white shadow-sm cursor-pointer transition-colors duration-500">
                 <option value="">-- Chọn danh mục --</option>
                 {categories.map((c: any) => <option key={c.categoryId || c.id} value={c.categoryId || c.id}>{c.name}</option>)}
               </select>
             </div>
 
             <div className="space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-blue-500 transition-colors">Đơn vị gốc (UoM) <span className="text-rose-500">*</span></label>
-              <select name="uomId" value={formData.uomId} onChange={handleChange} required disabled={loadingUoms} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+              {/* 🚀 LÁ CHẮN BẢO MẬT: Khóa Đơn vị tính gốc */}
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-blue-500 transition-colors duration-500 flex items-center gap-1.5">
+                Đơn vị gốc (UoM) <Lock className="w-3 h-3 text-rose-500" />
+              </label>
+              <select name="uomId" value={formData.uomId} onChange={handleChange} required disabled className="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-500 outline-none cursor-not-allowed shadow-inner transition-colors duration-500" title="Đơn vị tính gốc không thể thay đổi để tránh sai lệch Tồn kho">
                 <option value="">-- Chọn đơn vị tính --</option>
                 {uoms.map((u: any) => <option key={u.uomId || u.id} value={u.uomId || u.id}>{u.name} ({u.code})</option>)}
               </select>
             </div>
 
             <div className="sm:col-span-2 space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-blue-500 transition-colors">Nhà Cung Cấp Mặc Định</label>
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-blue-500 transition-colors duration-500">Nhà Cung Cấp Mặc Định</label>
               <div className="relative">
                 <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <select name="supplierId" value={formData.supplierId} onChange={handleChange} disabled={loadingSuppliers} className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none">
+                <select name="supplierId" value={formData.supplierId} onChange={handleChange} disabled={loadingSuppliers} className="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none appearance-none text-slate-900 dark:text-white shadow-sm cursor-pointer transition-colors duration-500">
                   <option value="">-- Bỏ trống nếu nhập từ nhiều NCC --</option>
                   {suppliers.map((s: any) => <option key={s.supplierId || s.id} value={s.supplierId || s.id}>{s.name}</option>)}
                 </select>
@@ -272,50 +277,54 @@ export default function UpdateProductModal({ isOpen, onClose, product }: UpdateP
             </div>
 
             <div className="sm:col-span-2 mt-2">
-              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 border-b border-slate-100 dark:border-slate-800 pb-2">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 border-b border-slate-100 dark:border-slate-800 pb-2 transition-colors duration-500">
                 3. Thiết lập Giá & Cảnh báo Kho
               </h3>
             </div>
 
             <div className="space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-blue-500 transition-colors">Giá Bán Cơ Sở (VND)</label>
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-blue-500 transition-colors duration-500">Giá Bán Cơ Sở (VND)</label>
               <div className="relative">
-                <DollarSign className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4", Number(formData.price) > 0 && Number(formData.price) < Number(formData.purchasePrice) ? "text-rose-500" : "text-emerald-500")} />
-                <input type="number" name="price" value={formData.price} onChange={handleChange} min="0" step="1000" className={cn("w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border rounded-xl text-sm font-bold outline-none transition-all", Number(formData.price) > 0 && Number(formData.price) < Number(formData.purchasePrice) ? "text-rose-600 border-rose-300 focus:ring-rose-500 bg-rose-50/50 dark:bg-rose-500/10" : "text-emerald-600 dark:text-emerald-400 border-slate-200 dark:border-slate-700 focus:ring-emerald-500")} />
+                <DollarSign className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors duration-500", Number(formData.price) > 0 && Number(formData.price) < Number(formData.purchasePrice) ? "text-rose-500" : "text-emerald-500")} />
+                <input type="number" name="price" value={formData.price} onChange={handleChange} min="0" step="1000" className={cn("w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-900 border rounded-xl text-sm font-bold outline-none shadow-sm transition-colors duration-500", Number(formData.price) > 0 && Number(formData.price) < Number(formData.purchasePrice) ? "text-rose-600 border-rose-300 focus:ring-rose-500 bg-rose-50/50 dark:bg-rose-500/10" : "text-emerald-600 dark:text-emerald-400 border-slate-200 dark:border-slate-700 focus:ring-emerald-500")} />
               </div>
             </div>
 
             <div className="space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-blue-500 transition-colors">Giá Nhập / Giá Vốn Cơ Sở (VND)</label>
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-blue-500 transition-colors duration-500">Giá Nhập / Giá Vốn Cơ Sở (VND)</label>
               <div className="relative">
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-orange-500" />
-                <input type="number" name="purchasePrice" value={formData.purchasePrice} onChange={handleChange} min="0" step="1000" className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-orange-600 dark:text-orange-400 focus:ring-2 focus:ring-orange-500 outline-none transition-all" />
+                <input type="number" name="purchasePrice" value={formData.purchasePrice} onChange={handleChange} min="0" step="1000" className="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-orange-600 dark:text-orange-400 focus:ring-2 focus:ring-orange-500 outline-none shadow-sm transition-colors duration-500" />
               </div>
             </div>
 
             <div className="space-y-1.5 group">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-blue-500 transition-colors">Định mức tồn tối thiểu (Reorder Point)</label>
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-blue-500 transition-colors duration-500">Định mức tồn tối thiểu (Reorder Point)</label>
               <div className="relative">
                 <Layers className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input type="number" name="reorderPoint" value={formData.reorderPoint} onChange={handleChange} min="0" className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
+                <input type="number" name="reorderPoint" value={formData.reorderPoint} onChange={handleChange} min="0" className="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors duration-500" />
               </div>
             </div>
 
-            <div className="sm:col-span-2 flex flex-col sm:flex-row gap-4 p-4 rounded-2xl border transition-colors mt-2 bg-slate-50 dark:bg-slate-800/30 border-slate-100 dark:border-slate-800">
-              <label className={cn("flex-1 flex items-center gap-3 p-3 cursor-pointer group rounded-xl border transition-all", formData.hasVariants ? "bg-blue-50 border-blue-200 dark:bg-blue-500/10 dark:border-blue-500/30" : "border-transparent")}>
+            {/* 🚀 LÁ CHẮN BẢO MẬT: Khóa các thuộc tính Lô/Biến thể */}
+            <div className="sm:col-span-2 flex flex-col sm:flex-row gap-4 p-4 rounded-2xl border transition-colors duration-500 mt-2 bg-slate-100/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700/50 relative overflow-hidden">
+              <div className="absolute inset-0 bg-slate-100/30 dark:bg-slate-900/30 z-10 pointer-events-none flex items-center justify-center backdrop-blur-[1px]">
+                 <span className="flex items-center gap-1.5 text-xs font-bold text-slate-500 bg-white dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm"><Lock className="w-3.5 h-3.5 text-rose-500"/> Thuộc tính cố định</span>
+              </div>
+              <label className={cn("flex-1 flex items-center gap-3 p-3 rounded-xl border transition-colors duration-500", formData.hasVariants ? "bg-blue-50 border-blue-200 dark:bg-blue-500/10 dark:border-blue-500/30" : "border-transparent opacity-50")}>
                 <div className="relative flex items-center justify-center">
-                  <input type="checkbox" name="hasVariants" checked={formData.hasVariants} onChange={handleChange} className="peer appearance-none w-5 h-5 border-2 border-slate-300 dark:border-slate-600 rounded-md checked:bg-blue-500 checked:border-blue-500 transition-colors cursor-pointer" />
-                  <CheckCircle2 className="absolute text-white w-3.5 h-3.5 opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" />
+                  <input type="checkbox" checked={formData.hasVariants} readOnly className="appearance-none w-5 h-5 border-2 border-slate-300 dark:border-slate-600 rounded-md checked:bg-blue-500 checked:border-blue-500 transition-colors" />
+                  <CheckCircle2 className="absolute text-white w-3.5 h-3.5 opacity-0 peer-checked:opacity-100 transition-opacity" />
                 </div>
-                <span className={cn("text-sm font-bold transition-colors", formData.hasVariants ? "text-blue-700 dark:text-blue-400" : "text-slate-700 dark:text-slate-300 group-hover:text-blue-500")}>Có Biến thể</span>
+                <span className={cn("text-sm font-bold transition-colors duration-500", formData.hasVariants ? "text-blue-700 dark:text-blue-400" : "text-slate-700 dark:text-slate-300")}>Có Biến thể</span>
               </label>
 
-              <label className={cn("flex-1 flex items-center gap-3 p-3 cursor-pointer group rounded-xl border transition-all", formData.hasBatches ? "bg-blue-50 border-blue-200 dark:bg-blue-500/10 dark:border-blue-500/30" : "border-transparent")}>
+              <label className={cn("flex-1 flex items-center gap-3 p-3 rounded-xl border transition-colors duration-500", formData.hasBatches ? "bg-blue-50 border-blue-200 dark:bg-blue-500/10 dark:border-blue-500/30" : "border-transparent opacity-50")}>
                 <div className="relative flex items-center justify-center">
-                  <input type="checkbox" name="hasBatches" checked={formData.hasBatches} onChange={handleChange} className="peer appearance-none w-5 h-5 border-2 border-slate-300 dark:border-slate-600 rounded-md checked:bg-blue-500 checked:border-blue-500 transition-colors cursor-pointer" />
-                  <CheckCircle2 className="absolute text-white w-3.5 h-3.5 opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" />
+                  <input type="checkbox" checked={formData.hasBatches} readOnly className="appearance-none w-5 h-5 border-2 border-slate-300 dark:border-slate-600 rounded-md checked:bg-blue-500 checked:border-blue-500 transition-colors" />
+                  <CheckCircle2 className="absolute text-white w-3.5 h-3.5 opacity-0 peer-checked:opacity-100 transition-opacity" />
                 </div>
-                <span className={cn("text-sm font-bold transition-colors", formData.hasBatches ? "text-blue-700 dark:text-blue-400" : "text-slate-700 dark:text-slate-300 group-hover:text-blue-500")}>Quản lý Lô / Date</span>
+                <span className={cn("text-sm font-bold transition-colors duration-500", formData.hasBatches ? "text-blue-700 dark:text-blue-400" : "text-slate-700 dark:text-slate-300")}>Quản lý Lô / Date</span>
               </label>
             </div>
 

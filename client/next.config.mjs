@@ -2,7 +2,6 @@
 const nextConfig = {
   // Tắt StrictMode trong lúc Dev để tránh React render 2 lần liên tiếp làm x2 lượng RAM tiêu thụ
   reactStrictMode: false, 
-  swcMinify: true,
   images: {
     remotePatterns: [
       { protocol: "http", hostname: "**" },

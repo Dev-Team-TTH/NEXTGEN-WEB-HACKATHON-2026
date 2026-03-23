@@ -369,6 +369,7 @@ export interface FiscalPeriod {
   startDate: string;
   endDate: string;
   status: string;
+  isClosed?: boolean;
 }
 
 export interface Tax {

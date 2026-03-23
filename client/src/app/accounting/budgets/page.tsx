@@ -150,7 +150,7 @@ export default function BudgetsPage() {
   // --- LOGIC LỌC & MAP DỮ LIỆU (OPTIMIZED WITH USEMEMO) ---
   const mappedBudgets = useMemo(() => {
     return budgets.map(b => {
-      const cc = costCenters.find(c => c.costCenterId === b.costCenterId);
+      const cc = costCenters.find((c: any) => c.costCenterId === b.costCenterId);
       const ccName = cc ? cc.name : `CC ID: ${b.costCenterId}`;
       const yearName = b.year.toString();
       return { ...b, ccName, yearName };
@@ -378,7 +378,7 @@ export default function BudgetsPage() {
               className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white transition-all"
             >
               <option value="">-- Chọn Trung tâm --</option>
-              {costCenters.map(c => <option key={c.costCenterId} value={c.costCenterId}>{c.name}</option>)}
+              {costCenters.map((c: any) => <option key={c.costCenterId} value={c.costCenterId}>{c.name}</option>)}
             </select>
           </div>
 

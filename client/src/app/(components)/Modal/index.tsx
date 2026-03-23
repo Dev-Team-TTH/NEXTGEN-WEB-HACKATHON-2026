@@ -37,31 +37,21 @@ export default function Modal({
 }: ModalProps) {
   const [mounted, setMounted] = useState(false);
 
-  // Khắc phục Hydration Error của Next.js (Chỉ render Portal khi Client đã tải xong)
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // ==========================================
-  // LOGIC FIX: KHÓA CUỘN TRANG (SCROLL LOCK) AN TOÀN
-  // Lưu lại style cũ trước khi đè 'hidden', đảm bảo không làm hỏng layout tổng
-  // ==========================================
   useEffect(() => {
     if (!isOpen) return;
 
-    // Lưu lại giá trị gốc ban đầu của body
     const originalStyle = window.getComputedStyle(document.body).overflow;
     document.body.style.overflow = "hidden";
 
     return () => {
-      // Trả lại nguyên vẹn giá trị gốc thay vì dùng "unset" (gây lỗi)
       document.body.style.overflow = originalStyle;
     };
   }, [isOpen]);
 
-  // ==========================================
-  // LOGIC: LẮNG NGHE PHÍM ESCAPE (TẮT BẰNG BÀN PHÍM)
-  // ==========================================
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && isOpen && !disableOutsideClick) {
@@ -72,10 +62,8 @@ export default function Modal({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, disableOutsideClick, onClose]);
 
-  // Nếu chưa mount xong ở Client thì không render gì cả (Tránh lỗi document is not defined)
   if (!mounted) return null;
 
-  // Cấu hình chuyển động Framer Motion (Glassmorphism Effect)
   const backdropVariants: Variants = {
     hidden: { opacity: 0, backdropFilter: "blur(0px)" },
     visible: { opacity: 1, backdropFilter: "blur(8px)", transition: { duration: 0.3 } },
@@ -100,13 +88,11 @@ export default function Modal({
           initial="hidden"
           animate="visible"
           exit="hidden"
-          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60"
-          // CHUẨN ACCESSIBILITY
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 transition-colors duration-500"
           role="dialog"
           aria-modal="true"
           aria-labelledby={title ? "modal-title" : undefined}
         >
-          {/* LỚP BACKDROP BẮT SỰ KIỆN CLICK OUTSIDE */}
           <div
             className="absolute inset-0 cursor-pointer"
             onClick={!disableOutsideClick ? onClose : undefined}
@@ -118,28 +104,28 @@ export default function Modal({
             initial="hidden"
             animate="visible"
             exit="exit"
-            // Ngăn chặn việc click vào bên trong Modal làm tắt Modal (Bong bóng sự kiện - Event Bubbling)
             onClick={(e) => e.stopPropagation()}
+            /* 🚀 ĐÃ FIX: Sử dụng glass-panel để đồng bộ 100% thay vì fix cứng bg-white dark:bg-[#0f172a] */
             className={cn(
-              "relative w-full bg-white dark:bg-[#0f172a] rounded-[2rem] shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden z-10 flex flex-col max-h-[92vh]",
+              "relative w-full glass-panel rounded-[2rem] shadow-2xl overflow-hidden z-10 flex flex-col max-h-[92vh]",
               maxWidth
             )}
           >
             {/* --- HEADER --- */}
             {!hideHeader && (
-              <div className="flex items-center justify-between px-6 sm:px-8 py-5 sm:py-6 border-b border-slate-100 dark:border-white/5 bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-md shrink-0">
+              <div className="flex items-center justify-between px-6 sm:px-8 py-5 sm:py-6 border-b border-slate-100 dark:border-slate-700/50 bg-slate-50/80 dark:bg-slate-800/80 backdrop-blur-md shrink-0 transition-colors duration-500">
                 <div className="flex items-center gap-4">
                   {icon && (
-                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner border bg-indigo-50 border-indigo-200 text-indigo-600 dark:bg-indigo-500/20 dark:border-indigo-500/30 dark:text-indigo-400">
+                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner border bg-indigo-50 border-indigo-200 text-indigo-600 dark:bg-indigo-500/20 dark:border-indigo-500/30 dark:text-indigo-400 transition-colors duration-500">
                       {icon}
                     </div>
                   )}
                   <div>
-                    <h2 id="modal-title" className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                    <h2 id="modal-title" className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight transition-colors duration-500">
                       {title}
                     </h2>
                     {subtitle && (
-                      <p className="text-xs sm:text-sm font-medium text-slate-500 mt-0.5">
+                      <p className="text-xs sm:text-sm font-medium text-slate-500 dark:text-slate-400 mt-0.5 transition-colors duration-500">
                         {subtitle}
                       </p>
                     )}
@@ -157,13 +143,13 @@ export default function Modal({
             )}
 
             {/* --- CONTENT AREA (CÓ SCROLLBAR) --- */}
-            <div className="overflow-y-auto custom-scrollbar bg-white dark:bg-transparent flex-1 flex flex-col">
+            <div className="overflow-y-auto custom-scrollbar bg-transparent flex-1 flex flex-col transition-colors duration-500">
               {children}
             </div>
 
             {/* --- FOOTER --- */}
             {!hideFooter && footer && (
-              <div className="px-6 sm:px-8 py-4 sm:py-5 border-t border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900 flex justify-end gap-3 sm:gap-4 shrink-0">
+              <div className="px-6 sm:px-8 py-4 sm:py-5 border-t border-slate-200 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3 sm:gap-4 shrink-0 transition-colors duration-500">
                 {footer}
               </div>
             )}

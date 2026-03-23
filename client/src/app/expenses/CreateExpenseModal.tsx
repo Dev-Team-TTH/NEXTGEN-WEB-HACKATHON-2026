@@ -13,7 +13,8 @@ import { useAppSelector } from "@/app/redux";
 import { 
   useCreateExpenseMutation, 
   useGetAccountsQuery, 
-  useGetCostCentersQuery 
+  useGetCostCentersQuery,
+  useGetFiscalPeriodsQuery // 🚀 Lấy kỳ kế toán để ràng buộc sổ cái
 } from "@/state/api";
 
 // --- COMPONENTS CỐT LÕI ---
@@ -36,6 +37,7 @@ export default function CreateExpenseModal({ isOpen, onClose }: CreateExpenseMod
   // --- STATE ---
   const [formData, setFormData] = useState({
     entryDate: getTodayInputFormat(),
+    fiscalPeriodId: "", // 🚀 Quản lý trạng thái kỳ kế toán
     reference: "",
     description: "",
     amount: "",
@@ -48,6 +50,7 @@ export default function CreateExpenseModal({ isOpen, onClose }: CreateExpenseMod
   // --- API HOOKS ---
   const { data: accounts = [], isLoading: loadingAccounts } = useGetAccountsQuery({ isActive: 'true' }, { skip: !isOpen });
   const { data: costCenters = [], isLoading: loadingCostCenters } = useGetCostCentersQuery(undefined, { skip: !isOpen });
+  const { data: periods = [], isLoading: loadingPeriods } = useGetFiscalPeriodsQuery(undefined, { skip: !isOpen });
   
   const [createExpense, { isLoading: isSubmitting }] = useCreateExpenseMutation();
 
@@ -55,6 +58,7 @@ export default function CreateExpenseModal({ isOpen, onClose }: CreateExpenseMod
     if (isOpen) {
       setFormData({
         entryDate: getTodayInputFormat(),
+        fiscalPeriodId: "",
         reference: `PC-${Date.now().toString().slice(-6)}`,
         description: "",
         amount: "",
@@ -86,6 +90,11 @@ export default function CreateExpenseModal({ isOpen, onClose }: CreateExpenseMod
       return;
     }
 
+    if (!formData.fiscalPeriodId) {
+      toast.error("Vui lòng chọn Kỳ Kế toán để ghi sổ chi phí!");
+      return;
+    }
+
     if (!formData.expenseAccountId || !formData.paymentAccountId || !formData.amount || !formData.entryDate) {
       toast.error("Vui lòng điền đầy đủ các trường bắt buộc (*)");
       return;
@@ -99,6 +108,7 @@ export default function CreateExpenseModal({ isOpen, onClose }: CreateExpenseMod
     try {
       const payload: any = {
         branchId: activeBranchId,
+        fiscalPeriodId: formData.fiscalPeriodId, // 🚀 Gửi kèm kỳ kế toán
         entryDate: new Date(formData.entryDate).toISOString(),
         reference: formData.reference,
         description: formData.description || `Chi phí nội bộ: ${formData.reference}`,
@@ -205,6 +215,27 @@ export default function CreateExpenseModal({ isOpen, onClose }: CreateExpenseMod
               </h3>
             </div>
 
+            {/* 🚀 CHỌN KỲ KẾ TOÁN */}
+            <div className="space-y-1.5 group">
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-rose-500 transition-colors">
+                Kỳ Kế Toán <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative">
+                <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <select 
+                  name="fiscalPeriodId" value={formData.fiscalPeriodId} onChange={handleChange} required disabled={loadingPeriods}
+                  className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-rose-500 outline-none transition-all text-slate-900 dark:text-white"
+                >
+                  <option value="">-- Chọn Kỳ Hạch Toán --</option>
+                  {periods.map((p: any) => (
+                    <option key={p.periodId} value={p.periodId} disabled={p.isClosed || p.status === "CLOSED"}>
+                      {p.periodName} {p.isClosed || p.status === "CLOSED" ? "(Đã Khóa)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             <div className="space-y-1.5 group">
               <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-rose-500 transition-colors">
                 Ngày Chứng Từ <span className="text-rose-500">*</span>
@@ -218,7 +249,7 @@ export default function CreateExpenseModal({ isOpen, onClose }: CreateExpenseMod
               </div>
             </div>
 
-            <div className="space-y-1.5 group">
+            <div className="space-y-1.5 group sm:col-span-2">
               <label className="text-xs font-bold text-slate-600 dark:text-slate-400 group-focus-within:text-rose-500 transition-colors">
                 Số Tham Chiếu (Hóa đơn) <span className="text-rose-500">*</span>
               </label>

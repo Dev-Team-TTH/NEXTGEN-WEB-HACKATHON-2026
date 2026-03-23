@@ -1,11 +1,11 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
-import { motion, AnimatePresence, Variants } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { 
   Plus, Trash2, ShoppingCart, TrendingUp, Truck, 
   Receipt, Building, Package, Hash, DollarSign, 
-  Loader2, Save, FileText, Percent, Zap, Warehouse
+  Loader2, Save, FileText, Percent, Zap, Warehouse, Link as LinkIcon, Globe
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -17,19 +17,20 @@ import {
   useGetSuppliersQuery,
   useGetCustomersQuery,
   useGetTaxesQuery,
-  useGetUoMsQuery,                    
+  useGetUoMsQuery, 
+  useGetCurrenciesQuery,                   
   useCalculateDynamicPriceMutation,
   useGetWarehousesQuery               
 } from "@/state/api";
 
-// --- COMPONENTS & UTILS (SIÊU VŨ KHÍ) ---
+// --- COMPONENTS & UTILS ---
 import Modal from "@/app/(components)/Modal";
 import FileDropzone from "@/app/(components)/FileDropzone";
 import { formatVND, safeRound } from "@/utils/formatters";
 import { cn } from "@/utils/helpers";
 
 // ==========================================
-// 1. INTERFACES & HELPERS
+// 1. INTERFACES
 // ==========================================
 interface LineItem {
   id: string; 
@@ -53,7 +54,6 @@ interface CreateDocModalProps {
 // ==========================================
 export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalProps) {
   
-  // --- BỐI CẢNH (CONTEXT) TỪ REDUX ---
   const { activeBranchId } = useAppSelector((state: any) => state.global);
 
   // --- API HOOKS ---
@@ -64,6 +64,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
   const { data: customers = [], isLoading: loadingCusts } = useGetCustomersQuery(undefined, { skip: !isOpen });
   const { data: taxes = [], isLoading: loadingTaxes } = useGetTaxesQuery(undefined, { skip: !isOpen });
   const { data: uoms = [], isLoading: loadingUoms } = useGetUoMsQuery(undefined, { skip: !isOpen });
+  const { data: currencies = [], isLoading: loadingCurrencies } = useGetCurrenciesQuery(undefined, { skip: !isOpen });
   
   const { data: warehouses = [], isLoading: loadingWhs } = useGetWarehousesQuery(
     { branchId: activeBranchId }, 
@@ -77,6 +78,9 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
   const [docType, setDocType] = useState<"PURCHASE_ORDER" | "SALES_ORDER" | "PURCHASE_RECEIPT" | "SALES_ISSUE">("PURCHASE_ORDER");
   const [partnerId, setPartnerId] = useState("");
   const [warehouseId, setWarehouseId] = useState(""); 
+  const [referenceDoc, setReferenceDoc] = useState(""); 
+  const [currencyCode, setCurrencyCode] = useState("VND");
+  const [exchangeRate, setExchangeRate] = useState<number | string>(1);
   const [note, setNote] = useState("");
   const [documentUrl, setDocumentUrl] = useState(""); 
   const [lines, setLines] = useState<LineItem[]>([]);
@@ -86,6 +90,9 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
       setDocType("PURCHASE_ORDER");
       setPartnerId("");
       setWarehouseId("");
+      setReferenceDoc("");
+      setCurrencyCode("VND");
+      setExchangeRate(1);
       setNote("");
       setDocumentUrl("");
       setLines([{ id: Date.now().toString(), productId: "", uomId: "", quantity: 1, unitCost: "", taxId: "", taxRate: 0, taxAmount: 0 }]);
@@ -97,13 +104,21 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
   const partnerLabel = isPurchasing ? "Nhà Cung Cấp" : "Khách Hàng";
 
   const getDocTheme = () => {
-    if (docType === "PURCHASE_ORDER") return { icon: ShoppingCart, color: "text-blue-500", label: "Đơn Mua Hàng" };
-    if (docType === "SALES_ORDER") return { icon: TrendingUp, color: "text-emerald-500", label: "Đơn Bán Hàng" };
-    if (docType === "PURCHASE_RECEIPT") return { icon: Truck, color: "text-purple-500", label: "Phiếu Nhập Kho" };
-    return { icon: Receipt, color: "text-amber-500", label: "Phiếu Xuất / Hóa đơn" };
+    if (docType === "PURCHASE_ORDER") return { icon: ShoppingCart, color: "text-blue-500", label: "Đơn Mua Hàng (PO)" };
+    if (docType === "SALES_ORDER") return { icon: TrendingUp, color: "text-emerald-500", label: "Đơn Bán Hàng (SO)" };
+    if (docType === "PURCHASE_RECEIPT") return { icon: Truck, color: "text-purple-500", label: "Phiếu Nhập Kho (GRPO)" };
+    return { icon: Receipt, color: "text-amber-500", label: "Phiếu Xuất / Hóa đơn (INV)" };
   };
   const theme = getDocTheme();
   const ThemeIcon = theme.icon;
+
+  // Xử lý tự động thay đổi Tỷ giá khi chọn loại Tiền tệ
+  useEffect(() => {
+    const selectedCurrency = currencies.find(c => c.currencyCode === currencyCode);
+    if (selectedCurrency) {
+      setExchangeRate(selectedCurrency.exchangeRate);
+    }
+  }, [currencyCode, currencies]);
 
   // --- ENGINE ĐỊNH GIÁ LẠI KHI ĐỔI ĐỐI TÁC ---
   useEffect(() => {
@@ -119,7 +134,6 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
             
             const qty = Number(line.quantity) || 0;
             const price = res.finalPrice;
-            // ÁP DỤNG safeRound CHỐNG SAI SỐ KẾ TOÁN
             const taxAmount = safeRound(qty * price * (line.taxRate / 100));
 
             return { ...line, unitCost: price, taxAmount, isAutoPriced: res.appliedPriceList !== null };
@@ -197,7 +211,6 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
       if (isAuto) newLine.isAutoPriced = true;
       if (updatedPrice !== null && !isAuto) newLine.isAutoPriced = false;
 
-      // ÁP DỤNG safeRound CHỐNG SAI SỐ THUẾ
       const qty = Number(newLine.quantity) || 0;
       const price = Number(newLine.unitCost) || 0;
       newLine.taxAmount = safeRound(qty * price * (newLine.taxRate / 100));
@@ -206,7 +219,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
     }));
   };
 
-  // --- ENGINE TÍNH TỔNG KẾ TOÁN (Sử dụng safeRound tuyệt đối an toàn) ---
+  // --- ENGINE TÍNH TỔNG KẾ TOÁN ---
   const summary = useMemo(() => {
     let subTotal = 0;
     let totalTax = 0;
@@ -217,10 +230,10 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
     return { subTotal, totalTax, grandTotal: subTotal + totalTax };
   }, [lines]);
 
-  // --- SUBMIT ---
+  // --- SUBMIT: KHỚP CHUẨN BACKEND 100% ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeBranchId) return toast.error("Không tìm thấy bối cảnh Chi nhánh. Vui lòng F5 lại trang!");
+    if (!activeBranchId) return toast.error("Lỗi cấu hình Chi nhánh. Vui lòng F5 lại trang!");
     if (!partnerId) return toast.error(`Vui lòng chọn ${partnerLabel}!`);
     if (!warehouseId) return toast.error(`Vui lòng chọn Kho lưu trữ!`);
     
@@ -232,15 +245,32 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
       const prefix = docType === "PURCHASE_ORDER" ? "PO" : docType === "SALES_ORDER" ? "SO" : docType === "PURCHASE_RECEIPT" ? "GR" : "INV";
       const generatedDocNumber = `${prefix}-${Date.now().toString().slice(-6)}`;
 
+      // CỨU DỮ LIỆU: Ghép link file đính kèm vào Note để không bị xóa khi Backend phê duyệt
+      const finalNote = documentUrl 
+        ? `${note}\n\n[Tài liệu đính kèm]: ${documentUrl}`.trim() 
+        : note;
+
+      // THUẬT TOÁN GỘP THUẾ FRONTEND (Bảo hiểm 2 lớp cùng Backend)
+      const groupedTaxes: Record<string, number> = {};
+      validLines.forEach(l => {
+        if (l.taxId && l.taxAmount > 0) {
+          groupedTaxes[l.taxId] = (groupedTaxes[l.taxId] || 0) + l.taxAmount;
+        }
+      });
+      const taxesPayload = Object.keys(groupedTaxes).map(taxId => ({
+        taxId,
+        taxAmount: groupedTaxes[taxId]
+      }));
+
       const payload: any = {
         documentNumber: generatedDocNumber, 
         branchId: activeBranchId,           
         type: docType,
-        note: note, 
-        currencyCode: "VND", 
-        exchangeRate: 1,
+        note: finalNote, 
+        referenceDoc: referenceDoc || null, 
+        currencyCode: currencyCode, 
+        exchangeRate: Number(exchangeRate) || 1,
         totalAmount: summary.grandTotal, 
-        documentSnapshot: documentUrl ? JSON.stringify({ attachmentUrl: documentUrl }) : null, 
         
         ...(isPurchasing ? { supplierId: partnerId } : { customerId: partnerId }),
 
@@ -253,10 +283,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
           unitCost: Number(l.unitCost) 
         })),
 
-        taxes: validLines.filter(l => l.taxId && l.taxAmount > 0).map(l => ({
-          taxId: l.taxId,
-          taxAmount: l.taxAmount
-        }))
+        taxes: taxesPayload
       };
 
       await createDocument(payload).unwrap();
@@ -282,7 +309,6 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
         <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" />
         <div className="text-right">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tổng thanh toán</p>
-          {/* ÁP DỤNG CN CHO CLASS ĐỘNG */}
           <p className={cn("text-xl font-black", theme.color)}>{formatVND(summary.grandTotal)}</p>
         </div>
       </div>
@@ -297,7 +323,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
         <button 
           onClick={handleSubmit} 
           disabled={isSubmitting || summary.grandTotal === 0} 
-          className="flex items-center gap-2 px-8 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+          className="flex items-center gap-2 px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow-xl shadow-blue-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
         >
           {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
           PHÁT HÀNH
@@ -311,40 +337,40 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
       isOpen={isOpen}
       onClose={onClose}
       title={theme.label}
-      subtitle="Hệ thống Lập chứng từ Thông minh (Tự động kéo giá & Thuế)"
+      subtitle="Hệ thống Lập chứng từ Tự động (Hỗ trợ Định giá & Thuế linh hoạt)"
       icon={<ThemeIcon className={cn("w-6 h-6", theme.color)} />}
       maxWidth="max-w-7xl"
       disableOutsideClick={isSubmitting}
       footer={modalFooter}
     >
-      <div className="flex flex-col xl:flex-row h-full overflow-hidden bg-slate-50/50 dark:bg-transparent">
+      <div className="flex flex-col xl:flex-row h-full overflow-hidden bg-slate-50/30 dark:bg-transparent">
         
         {/* CỘT TRÁI: DÒNG HÀNG HÓA */}
-        <div className="flex-1 p-6 flex flex-col gap-4 overflow-hidden border-r border-slate-200 dark:border-white/5">
+        <div className="flex-1 p-6 flex flex-col gap-4 overflow-hidden border-r border-slate-200 dark:border-slate-800">
           <div className="flex items-center justify-between mb-2 shrink-0">
             <h3 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
-              <Package className={cn("w-4 h-4", theme.color)}/> Danh sách Hàng hóa Giao dịch
+              <Package className={cn("w-4 h-4", theme.color)}/> Danh mục Hàng hóa
             </h3>
-            <button onClick={addLine} className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-white bg-indigo-50 hover:bg-indigo-600 dark:bg-indigo-500/20 dark:hover:bg-indigo-600 px-3 py-1.5 rounded-lg transition-colors shadow-sm">
+            <button onClick={addLine} className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-white bg-blue-50 hover:bg-blue-600 dark:bg-blue-500/20 dark:hover:bg-blue-600 px-3 py-1.5 rounded-lg transition-colors shadow-sm">
               <Plus className="w-3.5 h-3.5"/> Thêm dòng
             </button>
           </div>
 
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm overflow-x-auto flex-1 custom-scrollbar">
-            <table className="w-full text-left text-sm whitespace-nowrap min-w-[900px]">
-              <thead className="text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-[#0B0F19] sticky top-0 z-10">
+          <div className="glass-panel rounded-2xl border border-slate-200 dark:border-slate-700/50 shadow-sm overflow-x-auto flex-1 custom-scrollbar">
+            <table className="w-full text-left text-sm whitespace-nowrap min-w-[950px]">
+              <thead className="text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200 dark:border-slate-700/50 bg-slate-100/50 dark:bg-slate-800/50 sticky top-0 z-10">
                 <tr>
                   <th className="px-4 py-3 w-10 text-center">#</th>
-                  <th className="px-4 py-3 w-[25%]">Mã & Tên Sản phẩm</th>
-                  <th className="px-4 py-3 w-[15%]">Đơn vị (UoM)</th>
+                  <th className="px-4 py-3 w-[25%]">Sản phẩm / Vật tư</th>
+                  <th className="px-4 py-3 w-[12%]">Đơn vị (UoM)</th>
                   <th className="px-4 py-3 w-[12%]">Số lượng</th>
-                  <th className="px-4 py-3 w-[18%]">Đơn giá (VND)</th>
-                  <th className="px-4 py-3 w-[15%]">Mã Thuế</th>
+                  <th className="px-4 py-3 w-[18%]">Đơn giá</th>
+                  <th className="px-4 py-3 w-[15%]">Thuế VAT</th>
                   <th className="px-4 py-3 w-[15%] text-right">Thành tiền</th>
                   <th className="px-4 py-3 w-10"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50 bg-white dark:bg-transparent">
                 <AnimatePresence initial={false}>
                   {lines.map((line, index) => {
                     const lineTotal = safeRound((Number(line.quantity) || 0) * (Number(line.unitCost) || 0));
@@ -352,14 +378,14 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
                       <motion.tr 
                         key={line.id}
                         initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
-                        className="group hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors"
+                        className="group hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
                       >
                         <td className="px-4 py-3 text-center text-xs font-bold text-slate-400">{index + 1}</td>
                         
                         <td className="px-4 py-3">
                           <select 
                             value={line.productId} onChange={(e) => updateLine(line.id, "productId", e.target.value)}
-                            className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800 dark:text-slate-200"
+                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-slate-800 dark:text-slate-200 transition-colors"
                           >
                             <option value="">-- Chọn mặt hàng --</option>
                             {products.map((p: any) => (
@@ -371,7 +397,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
                         <td className="px-4 py-3">
                           <select 
                             value={line.uomId} onChange={(e) => updateLine(line.id, "uomId", e.target.value)}
-                            className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700 dark:text-slate-300"
+                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 outline-none focus:ring-2 focus:ring-blue-500 text-slate-700 dark:text-slate-300 transition-colors"
                           >
                             <option value="">- ĐVT -</option>
                             {uoms.map((u: any) => (
@@ -385,7 +411,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
                             <Hash className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                             <input 
                               type="number" min="1" value={line.quantity} onChange={(e) => updateLine(line.id, "quantity", e.target.value)}
-                              className="w-full pl-8 pr-2 py-2 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                              className="w-full pl-8 pr-2 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-bold transition-colors"
                             />
                           </div>
                         </td>
@@ -393,20 +419,17 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
                         <td className="px-4 py-3">
                           <div className="relative flex items-center gap-1.5">
                             <div className="relative flex-1">
-                              {/* ÁP DỤNG CN CHO ICON */}
                               <DollarSign className={cn(
                                 "absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 transition-colors",
                                 line.isAutoPriced ? "text-orange-500" : "text-slate-400"
                               )} />
-                              
-                              {/* ÁP DỤNG CN THẦN THÁNH CHO INPUT ĐỂ LOẠI BỎ TEMPLATE LITERAL RỐI RẮM */}
                               <input 
                                 type="number" min="0" value={line.unitCost} onChange={(e) => updateLine(line.id, "unitCost", e.target.value)}
                                 className={cn(
-                                  "w-full pl-8 pr-2 py-2 bg-slate-100 dark:bg-slate-900 border rounded-lg outline-none focus:ring-2 font-bold transition-all",
+                                  "w-full pl-8 pr-2 py-2 border rounded-lg outline-none focus:ring-2 font-bold transition-all",
                                   line.isAutoPriced 
-                                    ? "text-orange-600 dark:text-orange-400 border-orange-300 dark:border-orange-500/50 focus:ring-orange-500" 
-                                    : "text-emerald-600 dark:text-emerald-400 border-slate-200 dark:border-slate-700 focus:ring-indigo-500"
+                                    ? "bg-orange-50 dark:bg-orange-900/10 text-orange-600 dark:text-orange-400 border-orange-300 dark:border-orange-500/50 focus:ring-orange-500" 
+                                    : "bg-slate-50 dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 border-slate-200 dark:border-slate-700 focus:ring-blue-500"
                                 )}
                               />
                             </div>
@@ -423,7 +446,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
                             <Percent className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                             <select 
                               value={line.taxId} onChange={(e) => updateLine(line.id, "taxId", e.target.value)}
-                              className="w-full pl-8 pr-2 py-2 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
+                              className="w-full pl-8 pr-2 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
                             >
                               <option value="">VAT 0%</option>
                               {taxes.map((t: any) => (
@@ -434,7 +457,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
                         </td>
 
                         <td className="px-4 py-3 text-right">
-                          <span className="font-black text-slate-800 dark:text-white bg-slate-100 dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 inline-block min-w-[130px]">
+                          <span className="font-black text-slate-800 dark:text-white bg-slate-100 dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 inline-block min-w-[130px] transition-colors">
                             {formatVND(lineTotal)}
                           </span>
                         </td>
@@ -453,16 +476,16 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
           </div>
         </div>
 
-        {/* CỘT PHẢI: CONFIG META TÍCH HỢP VÀO BODY */}
-        <div className="w-full xl:w-[380px] bg-white dark:bg-[#090D14] flex flex-col shrink-0 overflow-y-auto p-6">
+        {/* CỘT PHẢI: CONFIG META */}
+        <div className="w-full xl:w-[400px] glass-panel border-l border-slate-200 dark:border-slate-800 flex flex-col shrink-0 overflow-y-auto p-6 z-10 shadow-[-4px_0_15px_rgba(0,0,0,0.02)]">
           <div className="flex flex-col gap-5 flex-1">
-            <h3 className="text-sm font-bold text-slate-800 dark:text-white border-b border-slate-100 dark:border-slate-800 pb-3">Cấu hình Chứng từ</h3>
+            <h3 className="text-sm font-bold text-slate-800 dark:text-white border-b border-slate-100 dark:border-slate-800 pb-3">Thuộc tính Chứng từ</h3>
             
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5">Phân loại Giao dịch *</label>
               <select 
                 value={docType} onChange={(e) => setDocType(e.target.value as any)}
-                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer transition-colors"
               >
                 <option value="PURCHASE_ORDER">Đơn Đặt Mua Hàng (PO)</option>
                 <option value="SALES_ORDER">Đơn Đặt Bán Hàng (SO)</option>
@@ -478,7 +501,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
               ) : (
                 <select 
                   required value={partnerId} onChange={(e) => setPartnerId(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-indigo-700 dark:text-indigo-400 outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-blue-700 dark:text-blue-400 outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
                 >
                   <option value="">-- Click để tìm đối tác --</option>
                   {partners.map((p: any) => (
@@ -497,7 +520,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
               ) : (
                 <select 
                   required value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-emerald-700 dark:text-emerald-400 outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-emerald-700 dark:text-emerald-400 outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
                 >
                   <option value="">-- Chọn Kho Giao Dịch --</option>
                   {warehouses.map((w: any) => (
@@ -509,21 +532,57 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
               )}
             </div>
 
+            {/* 🚀 HỖ TRỢ ĐA TIỀN TỆ (MULTI-CURRENCY) */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5"><Globe className="w-3.5 h-3.5"/> Tiền tệ *</label>
+                {loadingCurrencies ? (
+                  <div className="w-full h-11 bg-slate-100 dark:bg-slate-800 rounded-xl animate-pulse" />
+                ) : (
+                  <select 
+                    value={currencyCode} onChange={(e) => setCurrencyCode(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  >
+                    {currencies.map((c: any) => (
+                      <option key={c.currencyCode} value={c.currencyCode}>{c.currencyCode}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5">Tỷ giá</label>
+                <input 
+                  type="number" min="1" value={exchangeRate} onChange={(e) => setExchangeRate(e.target.value)}
+                  disabled={currencyCode === "VND"}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-colors disabled:opacity-50"
+                />
+              </div>
+            </div>
+
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5"><FileText className="w-3.5 h-3.5"/> Diễn giải (Note)</label>
-              <textarea 
-                rows={3} value={note} onChange={(e) => setNote(e.target.value)}
-                placeholder="Nhập ghi chú cho chứng từ này..."
-                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+              <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5"><LinkIcon className="w-3.5 h-3.5"/> Số Hóa đơn / PO Tham chiếu</label>
+              <input 
+                type="text" value={referenceDoc} onChange={(e) => setReferenceDoc(e.target.value)}
+                placeholder="VD: HD-0012345..."
+                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5">Hồ sơ / Hợp đồng đính kèm</label>
+              <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5"><FileText className="w-3.5 h-3.5"/> Diễn giải chung (Note)</label>
+              <textarea 
+                rows={2} value={note} onChange={(e) => setNote(e.target.value)}
+                placeholder="Nhập ghi chú cho chứng từ..."
+                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 resize-none transition-colors"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5">Hồ sơ / Báo giá đính kèm</label>
               <FileDropzone 
                 onUploadSuccess={(url) => setDocumentUrl(url)}
                 accept="application/pdf, image/*"
-                label="Kéo thả PDF / Hình ảnh Hóa đơn"
+                label="Kéo thả PDF / Hình ảnh đính kèm"
                 maxSizeMB={10}
               />
             </div>
@@ -531,7 +590,7 @@ export default function CreateDocumentModal({ isOpen, onClose }: CreateDocModalP
             <div className="p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl mt-auto">
                 <p className="text-[11px] font-medium text-amber-700 dark:text-amber-400 flex items-start gap-2 leading-relaxed">
                   <Zap className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                  Khi bạn thay đổi Đối tác hoặc Số lượng, hệ thống định giá (Auto-Pricing Engine) sẽ tự động quét Bảng giá/Khuyến mãi để áp dụng mức giá tốt nhất.
+                  Hệ thống định giá (Auto-Pricing Engine) sẽ quét bảng giá động để áp dụng mức chiết khấu tốt nhất.
                 </p>
             </div>
           </div>

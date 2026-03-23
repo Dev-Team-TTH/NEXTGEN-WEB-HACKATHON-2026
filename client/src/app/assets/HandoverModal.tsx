@@ -9,6 +9,7 @@ import {
 import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
+import { useAppSelector } from "@/app/redux";
 import { 
   useGetAssetByIdQuery, 
   useGetUsersQuery,
@@ -31,6 +32,9 @@ interface HandoverModalProps {
 }
 
 export default function HandoverModal({ assetId, isOpen, onClose }: HandoverModalProps) {
+  // 🚀 BỐI CẢNH REDUX
+  const { activeBranchId } = useAppSelector((state: any) => state.global);
+
   // --- API HOOKS ---
   const { data: asset, isLoading: isLoadingAsset } = useGetAssetByIdQuery(assetId || "", { skip: !assetId || !isOpen });
   const { data: users = [], isLoading: isLoadingUsers } = useGetUsersQuery(undefined, { skip: !isOpen });
@@ -68,16 +72,23 @@ export default function HandoverModal({ assetId, isOpen, onClose }: HandoverModa
     e.preventDefault();
     if (!assetId) return;
 
+    if (!activeBranchId) {
+      toast.error("Không tìm thấy Chi nhánh làm việc. Vui lòng F5 lại trang!");
+      return;
+    }
+
     if (isHandoverMode && !userId) {
       toast.error("Vui lòng chọn nhân viên để bàn giao tài sản!"); return;
     }
 
     try {
       if (isHandoverMode) {
-        await assignAsset({ id: assetId, data: { userId, assignDate: actionDate, notes } }).unwrap();
+        // 🚀 BẢO VỆ CONTEXT CHI NHÁNH
+        await assignAsset({ id: assetId, data: { branchId: activeBranchId, userId, assignDate: actionDate, notes } }).unwrap();
         toast.success("Bàn giao tài sản cho nhân viên thành công!");
       } else {
-        await returnAsset({ id: assetId, data: { returnDate: actionDate, notes } }).unwrap();
+        // 🚀 BẢO VỆ CONTEXT CHI NHÁNH
+        await returnAsset({ id: assetId, data: { branchId: activeBranchId, returnDate: actionDate, notes } }).unwrap();
         toast.success("Thu hồi tài sản về kho thành công!");
       }
       onClose();
@@ -93,7 +104,7 @@ export default function HandoverModal({ assetId, isOpen, onClose }: HandoverModa
     <>
       <button 
         type="button" onClick={onClose} disabled={isSubmitting} 
-        className="px-5 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors disabled:opacity-50"
+        className="px-5 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors duration-500 disabled:opacity-50"
       >
         Hủy bỏ
       </button>
@@ -123,17 +134,17 @@ export default function HandoverModal({ assetId, isOpen, onClose }: HandoverModa
       disableOutsideClick={isSubmitting}
       footer={modalFooter}
     >
-      <div className="p-6 sm:p-8 flex flex-col gap-6">
+      <div className="p-6 sm:p-8 flex flex-col gap-6 transition-colors duration-500">
         
         {isLoadingAsset || isLoadingUsers ? (
-          <div className="flex flex-col items-center justify-center py-10 opacity-50">
+          <div className="flex flex-col items-center justify-center py-10 opacity-50 transition-colors duration-500">
             <Loader2 className={cn("w-8 h-8 animate-spin mb-2", isReturnMode ? "text-amber-500" : "text-indigo-500")} />
             <p className="text-sm font-medium text-slate-500">Đang tải thông tin thiết bị và nhân sự...</p>
           </div>
         ) : !asset ? (
-          <div className="text-center py-10 text-slate-500">Không tìm thấy dữ liệu tài sản.</div>
+          <div className="text-center py-10 text-slate-500 transition-colors duration-500">Không tìm thấy dữ liệu tài sản.</div>
         ) : asset.status === "MAINTENANCE" || asset.status === "LIQUIDATED" ? (
-          <div className="flex flex-col items-center justify-center py-10 text-center gap-3">
+          <div className="flex flex-col items-center justify-center py-10 text-center gap-3 transition-colors duration-500">
             <AlertOctagon className="w-12 h-12 text-rose-500 opacity-80" />
             <p className="text-sm font-bold text-slate-700 dark:text-slate-300">Tài sản đang Bảo trì hoặc đã Thanh lý.</p>
             <p className="text-xs text-slate-500">Không thể thực hiện luân chuyển lúc này.</p>
@@ -141,15 +152,15 @@ export default function HandoverModal({ assetId, isOpen, onClose }: HandoverModa
         ) : (
           <>
             {/* DATA VIZ */}
-            <div className="flex items-center justify-center gap-4 p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10">
+            <div className="flex items-center justify-center gap-4 p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 transition-colors duration-500">
               
               <div className="flex flex-col items-center text-center gap-2 flex-1">
-                <div className={cn("p-3 rounded-full", isHandoverMode ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 shadow-inner" : "bg-slate-200 text-slate-500 dark:bg-slate-700")}>
+                <div className={cn("p-3 rounded-full transition-colors duration-500", isHandoverMode ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 shadow-inner" : "bg-slate-200 text-slate-500 dark:bg-slate-700")}>
                   <Building className="w-6 h-6" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-700 dark:text-slate-300">Kho Lưu Trữ</p>
-                  <p className="text-[10px] text-slate-500">Sẵn sàng cấp phát</p>
+                  <p className="text-xs font-bold text-slate-700 dark:text-slate-300 transition-colors duration-500">Kho Lưu Trữ</p>
+                  <p className="text-[10px] text-slate-500 transition-colors duration-500">Sẵn sàng cấp phát</p>
                 </div>
               </div>
 
@@ -157,53 +168,53 @@ export default function HandoverModal({ assetId, isOpen, onClose }: HandoverModa
                 <motion.div 
                   initial={{ x: isHandoverMode ? -10 : 10, opacity: 0.5 }} animate={{ x: isHandoverMode ? 10 : -10, opacity: 1 }}
                   transition={{ repeat: Infinity, duration: 1, ease: "easeInOut", repeatType: "reverse" }}
-                  className={isHandoverMode ? "text-indigo-500" : "text-amber-500"}
+                  className={cn("transition-colors duration-500", isHandoverMode ? "text-indigo-500" : "text-amber-500")}
                 >
                   <ArrowRightLeft className="w-5 h-5" />
                 </motion.div>
-                <span className={cn("text-[10px] font-bold uppercase tracking-wider", isHandoverMode ? "text-indigo-500" : "text-amber-500")}>
+                <span className={cn("text-[10px] font-bold uppercase tracking-wider transition-colors duration-500", isHandoverMode ? "text-indigo-500" : "text-amber-500")}>
                   {isHandoverMode ? "Giao cho" : "Thu hồi từ"}
                 </span>
               </div>
 
               <div className="flex flex-col items-center text-center gap-2 flex-1">
-                <div className={cn("p-3 rounded-full", isReturnMode ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 shadow-inner" : "bg-slate-200 text-slate-500 dark:bg-slate-700")}>
+                <div className={cn("p-3 rounded-full transition-colors duration-500", isReturnMode ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 shadow-inner" : "bg-slate-200 text-slate-500 dark:bg-slate-700")}>
                   <UserCheck className="w-6 h-6" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-700 dark:text-slate-300">Nhân viên</p>
-                  <p className="text-[10px] text-slate-500">Người sử dụng</p>
+                  <p className="text-xs font-bold text-slate-700 dark:text-slate-300 transition-colors duration-500">Nhân viên</p>
+                  <p className="text-[10px] text-slate-500 transition-colors duration-500">Người sử dụng</p>
                 </div>
               </div>
 
             </div>
 
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl p-4 flex gap-4 items-center">
-              <div className="w-12 h-12 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+            <div className="glass-panel border border-slate-200 dark:border-white/10 rounded-xl p-4 flex gap-4 items-center transition-colors duration-500">
+              <div className="w-12 h-12 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 transition-colors duration-500">
                 <Laptop className="w-6 h-6 text-slate-500" />
               </div>
               <div>
-                <p className="font-bold text-sm text-slate-900 dark:text-white">{asset.name}</p>
-                <p className="text-xs text-slate-500 font-mono mt-0.5">{asset.assetCode}</p>
+                <p className="font-bold text-sm text-slate-900 dark:text-white transition-colors duration-500">{asset.name}</p>
+                <p className="text-xs text-slate-500 font-mono mt-0.5 transition-colors duration-500">{asset.assetCode}</p>
               </div>
             </div>
 
             <form id="handover-form" onSubmit={handleSubmit} className="flex flex-col gap-5">
               
               <div className="space-y-1.5 group">
-                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 group-focus-within:text-blue-500 transition-colors">
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 group-focus-within:text-blue-500 transition-colors duration-500">
                   {isHandoverMode ? "Người nhận tài sản (Nhân viên)" : "Đang được sử dụng bởi"} <span className="text-rose-500">*</span>
                 </label>
                 {isHandoverMode ? (
                   <select
                     value={userId} onChange={(e) => setUserId(e.target.value)} disabled={isLoadingUsers}
-                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white shadow-sm"
+                    className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors duration-500 cursor-pointer"
                   >
                     <option value="">-- Chọn nhân viên --</option>
-                    {users?.map(u => <option key={u.userId} value={u.userId}>{getUserDisplayName(u)}</option>)}
+                    {users?.map((u: any) => <option key={u.userId} value={u.userId}>{getUserDisplayName(u)}</option>)}
                   </select>
                 ) : (
-                  <div className="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-white/5 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-400 cursor-not-allowed flex items-center justify-between shadow-inner">
+                  <div className="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-400 cursor-not-allowed flex items-center justify-between shadow-inner transition-colors duration-500">
                     <span>{currentAssigneeName}</span>
                     {isLoadingHistory && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
                   </div>
@@ -211,24 +222,24 @@ export default function HandoverModal({ assetId, isOpen, onClose }: HandoverModa
               </div>
 
               <div className="space-y-1.5 group">
-                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 group-focus-within:text-blue-500 transition-colors">
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 group-focus-within:text-blue-500 transition-colors duration-500">
                   <CalendarDays className="w-4 h-4" /> Ngày {isHandoverMode ? "Bàn giao" : "Thu hồi"} <span className="text-rose-500">*</span>
                 </label>
                 <input 
                   type="date" required value={actionDate} onChange={(e) => setActionDate(e.target.value)}
-                  className={cn("w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-semibold outline-none text-slate-900 dark:text-white focus:ring-2 shadow-sm", isHandoverMode ? "focus:ring-indigo-500" : "focus:ring-amber-500")}
+                  className={cn("w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold outline-none text-slate-900 dark:text-white focus:ring-2 shadow-sm transition-colors duration-500", isHandoverMode ? "focus:ring-indigo-500" : "focus:ring-amber-500")}
                 />
               </div>
 
               <div className="space-y-1.5 group">
-                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 group-focus-within:text-blue-500 transition-colors">
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 group-focus-within:text-blue-500 transition-colors duration-500">
                   <FileText className="w-4 h-4" /> Ghi chú tình trạng thiết bị
                 </label>
                 <textarea
                   value={notes} onChange={(e) => setNotes(e.target.value)}
                   placeholder={isHandoverMode ? "Ghi nhận tình trạng ngoại quan khi giao..." : "Ghi nhận hư hỏng, xước xát (nếu có) khi thu hồi..."}
                   rows={3}
-                  className={cn("w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none text-slate-900 dark:text-white resize-none focus:ring-2 shadow-sm", isHandoverMode ? "focus:ring-indigo-500" : "focus:ring-amber-500")}
+                  className={cn("w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none text-slate-900 dark:text-white resize-none focus:ring-2 shadow-sm transition-colors duration-500", isHandoverMode ? "focus:ring-indigo-500" : "focus:ring-amber-500")}
                 />
               </div>
 
