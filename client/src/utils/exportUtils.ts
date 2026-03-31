@@ -67,7 +67,7 @@ const sanitizeCellData = (data: unknown): string => {
 /**
  * Xuất mảng Object thành file CSV (Đọc chuẩn tiếng Việt trên MS Excel).
  * Tự động chèn BOM (Byte Order Mark) để chống lỗi font.
- * * @param data Mảng dữ liệu cần xuất (VD: [{ id: 1, name: "Nguyễn Văn A" }])
+ * @param data Mảng dữ liệu cần xuất (VD: [{ id: 1, name: "Nguyễn Văn A" }])
  * @param filename Tên file mong muốn (không cần đuôi .csv)
  * @param headers Mapping tiêu đề cột (Tùy chọn). VD: { id: "Mã NV", name: "Họ và Tên" }
  */
@@ -82,8 +82,14 @@ export const exportToCSV = <T extends Record<string, any>>(
       return;
     }
 
-    // Lấy danh sách keys từ object đầu tiên
-    const keys = Object.keys(data[0]) as Array<keyof T>;
+    // 🚀 LÁ CHẮN BẢO MẬT: CHỈ LẤY CÁC KEY ĐƯỢC KHAI BÁO TRONG HEADERS (WHITELIST)
+    // Tránh xuất cả passwordHash hoặc dữ liệu nhạy cảm từ DB ra Excel.
+    let keys: Array<keyof T>;
+    if (headers && Object.keys(headers).length > 0) {
+      keys = Object.keys(headers) as Array<keyof T>;
+    } else {
+      keys = Object.keys(data[0]) as Array<keyof T>; // Fallback nguy hiểm nếu ko có headers
+    }
     
     // Xây dựng hàng Tiêu đề (Header Row)
     const headerRow = keys.map(key => {
@@ -113,7 +119,7 @@ export const exportToCSV = <T extends Record<string, any>>(
 
 /**
  * Xuất dữ liệu Hệ thống ra file JSON nguyên bản (Phục vụ Backup / Migration)
- * * @param data Bất kỳ cấu trúc dữ liệu nào (Mảng, Object...)
+ * @param data Bất kỳ cấu trúc dữ liệu nào (Mảng, Object...)
  * @param filename Tên file mong muốn
  */
 export const exportToJSON = <T>(data: T, filename: string): void => {
@@ -133,7 +139,7 @@ export const exportToJSON = <T>(data: T, filename: string): void => {
 /**
  * Lấy dữ liệu trực tiếp từ 1 thẻ HTML Table và xuất ra định dạng Excel (.xls).
  * Bắt buộc dùng cho các báo cáo Kế toán có cấu trúc gộp ô (colspan/rowspan) phức tạp.
- * * @param tableId ID của thẻ <table> trên giao diện (Không kèm dấu #)
+ * @param tableId ID của thẻ <table> trên giao diện (Không kèm dấu #)
  * @param filename Tên file mong muốn
  */
 export const exportTableToExcel = (tableId: string, filename: string): void => {
@@ -179,7 +185,7 @@ export const exportTableToExcel = (tableId: string, filename: string): void => {
 /**
  * Tiện ích in ấn Document (Mở cửa sổ Print của Browser một cách âm thầm).
  * Phục vụ in Phiếu Nhập Kho, Hóa đơn, Ủy nhiệm chi mà không làm hỏng giao diện hiện tại.
- * * @param elementId ID của vùng HTML (div) cần in
+ * @param elementId ID của vùng HTML (div) cần in
  * @param documentTitle Tên chứng từ (Hiển thị trên header của bản in giấy)
  */
 export const printElement = (elementId: string, documentTitle: string = "Document"): void => {

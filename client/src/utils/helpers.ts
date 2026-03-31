@@ -25,7 +25,7 @@ export function cn(...inputs: ClassValue[]): string {
 
 /**
  * Kiểm tra quyền hạn an toàn, hỗ trợ linh hoạt 1 quyền hoặc 1 mảng quyền.
- * * @param userPermissions Mảng các quyền mà User đang có (lấy từ Redux)
+ * @param userPermissions Mảng các quyền mà User đang có (lấy từ Redux)
  * @param requiredPermissions Quyền hoặc mảng quyền yêu cầu của tính năng
  * @param requireAll Nếu TRUE: Bắt buộc phải có đủ TẤT CẢ quyền trong mảng. Nếu FALSE: Chỉ cần 1 trong số đó.
  * @returns Boolean - Có được phép truy cập hay không?
@@ -98,7 +98,7 @@ export const sleep = (ms: number): Promise<void> => {
 /**
  * Debounce Function: Trì hoãn thực thi hàm cho đến khi người dùng ngừng thao tác.
  * BẮT BUỘC dùng cho Thanh tìm kiếm (Search Input) để tránh dDoS Backend của chính mình.
- * * @param func Hàm cần thực thi
+ * @param func Hàm cần thực thi
  * @param delay Thời gian chờ (milliseconds)
  */
 export function debounce<T extends (...args: any[]) => void>(
@@ -122,7 +122,7 @@ export function debounce<T extends (...args: any[]) => void>(
 /**
  * Parse chuỗi JSON từ API hoặc LocalStorage một cách an toàn.
  * Cứu cánh tuyệt đối cho ứng dụng (Ngăn chặn White Screen of Death khi JSON bị hỏng).
- * * @param jsonString Chuỗi JSON cần parse
+ * @param jsonString Chuỗi JSON cần parse
  * @param fallback Dữ liệu mặc định trả về nếu parse lỗi (Cùng kiểu T)
  */
 export const safeJSONParse = <T>(jsonString: string | null | undefined, fallback: T): T => {
@@ -144,21 +144,20 @@ export const safeJSONParse = <T>(jsonString: string | null | undefined, fallback
 export const deepClone = <T>(obj: T): T => {
   if (obj === null || typeof obj !== "object") return obj;
   
-  // Dùng API siêu tốc độ của trình duyệt hiện đại (Nhanh hơn JSON.parse 10 lần)
+  // 🚀 TỐI ƯU HÓA: Dùng API siêu tốc độ của trình duyệt hiện đại (Bảo toàn được Date, Map, Set)
   if (typeof structuredClone === "function") {
     try {
       return structuredClone(obj);
     } catch (error) {
-      // Fallback nếu structuredClone không hỗ trợ các object đặc biệt (như DOM Node, Functions)
-      console.warn("Cảnh báo: Không thể structuredClone, dùng giải pháp thay thế.");
+      console.warn("Cảnh báo: Không thể structuredClone, lùi về giải pháp truyền thống.");
     }
   }
   
-  // Giải pháp truyền thống
+  // Giải pháp truyền thống (Sẽ bị mất định dạng Date -> chuyển thành chuỗi ISO)
   try {
     return JSON.parse(JSON.stringify(obj));
   } catch (error) {
     console.error("Lỗi Deep Clone: Object chứa tham chiếu vòng tròn (Circular Reference).");
-    return obj; // Trả về nguyên gốc nếu thất bại
+    return obj; 
   }
 };

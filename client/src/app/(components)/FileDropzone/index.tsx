@@ -100,7 +100,7 @@ export default function FileDropzone({
   };
 
   return (
-    <div className="w-full">
+    <div className="w-full transition-colors duration-500">
       <AnimatePresence mode="wait">
         {!uploadedUrl ? (
           <motion.div
@@ -109,7 +109,7 @@ export default function FileDropzone({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95 }}
             className={cn(
-              "relative w-full h-40 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all duration-200 overflow-hidden",
+              "relative w-full h-40 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all duration-500 overflow-hidden",
               isDragging 
                 ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-inner" 
                 : "border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800"
@@ -120,34 +120,34 @@ export default function FileDropzone({
           >
             <input 
               type="file" 
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 transition-colors duration-500" 
               onChange={handleFileChange}
               accept={accept}
               disabled={isLoading}
             />
 
             {isLoading ? (
-              <div className="flex flex-col items-center gap-3 text-blue-500">
-                <Loader2 className="w-8 h-8 animate-spin" />
-                <span className="text-sm font-semibold">Đang tải lên máy chủ...</span>
+              <div className="flex flex-col items-center gap-3 text-blue-500 transition-colors duration-500">
+                <Loader2 className="w-8 h-8 animate-spin transition-colors duration-500" />
+                <span className="text-sm font-semibold transition-colors duration-500">Đang tải lên máy chủ...</span>
               </div>
             ) : previewUrl ? (
               // Trạng thái đang preview ảnh chờ tải xong
-               <div className="relative w-full h-full">
-                 <img src={previewUrl} alt="Preview" className="w-full h-full object-cover opacity-50 grayscale" />
-                 <div className="absolute inset-0 flex items-center justify-center">
-                    <Loader2 className="w-8 h-8 text-white animate-spin drop-shadow-md" />
+               <div className="relative w-full h-full transition-colors duration-500">
+                 <img src={previewUrl} alt="Preview" className="w-full h-full object-cover opacity-50 grayscale transition-colors duration-500" />
+                 <div className="absolute inset-0 flex items-center justify-center transition-colors duration-500">
+                    <Loader2 className="w-8 h-8 text-white animate-spin drop-shadow-md transition-colors duration-500" />
                  </div>
                </div>
             ) : (
-              <div className="flex flex-col items-center gap-2 text-slate-500 dark:text-slate-400 pointer-events-none">
-                <div className={cn("p-3 rounded-full transition-colors", isDragging ? "bg-blue-100 dark:bg-blue-800/50 text-blue-600 dark:text-blue-400" : "bg-white dark:bg-slate-800 shadow-sm")}>
-                  <UploadCloud className="w-6 h-6" />
+              <div className="flex flex-col items-center gap-2 text-slate-500 dark:text-slate-400 pointer-events-none transition-colors duration-500">
+                <div className={cn("p-3 rounded-full transition-colors duration-500", isDragging ? "bg-blue-100 dark:bg-blue-800/50 text-blue-600 dark:text-blue-400" : "bg-white dark:bg-slate-800 shadow-sm")}>
+                  <UploadCloud className="w-6 h-6 transition-colors duration-500" />
                 </div>
-                <p className="text-sm font-medium px-4 text-center">
+                <p className="text-sm font-medium px-4 text-center transition-colors duration-500">
                   {label}
                 </p>
-                <p className="text-[10px] uppercase tracking-wide opacity-70">
+                <p className="text-[10px] uppercase tracking-wide opacity-70 transition-colors duration-500">
                   Kích thước tối đa {maxSizeMB}MB
                 </p>
               </div>
@@ -158,29 +158,29 @@ export default function FileDropzone({
             key="success"
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="w-full relative bg-white/50 dark:bg-slate-800/50 backdrop-blur-md rounded-2xl p-4 flex items-center gap-4 border border-emerald-200 dark:border-emerald-500/30"
+            className="w-full relative bg-white/50 dark:bg-slate-800/50 backdrop-blur-md rounded-2xl p-4 flex items-center gap-4 border border-emerald-200 dark:border-emerald-500/30 transition-colors duration-500"
           >
-            <div className="shrink-0 w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 flex items-center justify-center overflow-hidden border border-emerald-200 dark:border-emerald-800/50">
+            <div className="shrink-0 w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 flex items-center justify-center overflow-hidden border border-emerald-200 dark:border-emerald-800/50 transition-colors duration-500">
                {previewUrl ? (
-                 <img src={previewUrl} alt="Uploaded" className="w-full h-full object-cover" />
+                 <img src={previewUrl} alt="Uploaded" className="w-full h-full object-cover transition-colors duration-500" />
                ) : (
-                 <File className="w-6 h-6" />
+                 <File className="w-6 h-6 transition-colors duration-500" />
                )}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" /> Tải lên thành công!
+            <div className="flex-1 min-w-0 transition-colors duration-500">
+              <p className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 transition-colors duration-500">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500 transition-colors duration-500" /> Tải lên thành công!
               </p>
-              <a href={uploadedUrl} target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:underline truncate block w-full mt-0.5">
+              <a href={uploadedUrl} target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:underline truncate block w-full mt-0.5 transition-colors duration-500">
                 Xem file đính kèm
               </a>
             </div>
             <button 
               onClick={resetUpload}
-              className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors z-20"
+              className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors z-20 duration-500"
               title="Xóa và tải lại"
             >
-              <X className="w-4 h-4" />
+              <X className="w-4 h-4 transition-colors duration-500" />
             </button>
           </motion.div>
         )}

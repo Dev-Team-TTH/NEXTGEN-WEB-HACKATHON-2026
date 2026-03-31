@@ -97,19 +97,20 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <div className={cn("transition-opacity duration-500 w-full min-h-screen flex", isMounted ? "opacity-100" : "opacity-0")}>
+    // 🚀 BỔ SUNG transition-colors duration-500 để Dark Mode mượt mà toàn cục
+    <div className={cn("transition-all duration-500 w-full min-h-screen flex bg-slate-50 dark:bg-[#0B0F19]", isMounted ? "opacity-100" : "opacity-0")}>
       {!isAuthenticated ? (
-        // LUỒNG 1: CHƯA ĐĂNG NHẬP (Làm sạch class rác)
+        // LUỒNG 1: CHƯA ĐĂNG NHẬP
         <div className="w-full flex bg-transparent">
           {children}
         </div>
       ) : (
-        // LUỒNG 2: ĐÃ ĐĂNG NHẬP (Làm sạch class rác)
+        // LUỒNG 2: ĐÃ ĐĂNG NHẬP
         <div className="flex h-screen w-full overflow-hidden bg-transparent relative selection:bg-blue-500/30">
           
           {/* --- IMMERSIVE BACKGROUND --- */}
-          <div className="absolute inset-0 opacity-[0.015] dark:opacity-[0.04] pointer-events-none mix-blend-overlay bg-[url('/noise.png')] z-0"></div>
-          <div className="absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-blue-500/5 dark:bg-blue-600/10 blur-[100px] pointer-events-none z-0"></div>
+          <div className="absolute inset-0 opacity-[0.015] dark:opacity-[0.04] pointer-events-none mix-blend-overlay bg-[url('/noise.png')] z-0 transition-opacity duration-500"></div>
+          <div className="absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-blue-500/5 dark:bg-blue-600/10 blur-[100px] pointer-events-none z-0 transition-colors duration-500"></div>
 
           {/* SPLASH SCREEN */}
           <AnimatePresence>

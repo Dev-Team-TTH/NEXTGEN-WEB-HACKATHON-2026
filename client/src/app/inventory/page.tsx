@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import { useTranslation } from "react-i18next";
-import dynamic from "next/dynamic"; // 🚀 BỔ SUNG DYNAMIC IMPORT
+import dynamic from "next/dynamic"; 
 import { 
   Package, Map, ScanBarcode, ArrowRightLeft, 
   ClipboardEdit, AlertOctagon, RefreshCcw, Box, Lock, DollarSign, History, Layers,
@@ -12,6 +12,7 @@ import {
 import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
+import { useAppSelector } from "@/app/redux"; // 🚀 BỔ SUNG: Import Redux để lấy Bối cảnh Chi nhánh
 import { 
   useGetInventoryBalancesQuery, 
   useGetLowStockAlertsQuery, 
@@ -36,13 +37,12 @@ import { exportToCSV } from "@/utils/exportUtils";
 import { cn } from "@/utils/helpers";
 
 // 🚀 TỐI ƯU HÓA BUNDLE SIZE: Lazy Load các component siêu nặng
-// Trình chiếu 3D (WebGL) sẽ chỉ được tải về máy khách khi bấm vào tab 3D
 const Warehouse3DViewer = dynamic(() => import("@/app/(components)/Warehouse3DViewer"), { 
   ssr: false,
   loading: () => (
-    <div className="flex flex-col items-center justify-center h-[500px] w-full bg-slate-100/50 dark:bg-slate-800/50 rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-700">
+    <div className="flex flex-col items-center justify-center h-[500px] w-full bg-slate-100/50 dark:bg-slate-800/50 rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-700 transition-colors duration-500">
       <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-4" />
-      <p className="text-sm font-bold text-slate-500">Đang tải Engine Đồ họa 3D...</p>
+      <p className="text-sm font-bold text-slate-500 transition-colors duration-500">Đang tải Engine Đồ họa 3D...</p>
     </div>
   )
 });
@@ -54,13 +54,13 @@ const UniversalScanner = dynamic(() => import("@/app/(components)/UniversalScann
 // 1. SKELETON LOADING
 // ==========================================
 const InventorySkeleton = () => (
-  <div className="flex flex-col gap-6 w-full animate-pulse mt-6">
-    <div className="h-24 w-full bg-slate-200 dark:bg-slate-800/50 rounded-2xl"></div>
+  <div className="flex flex-col gap-6 w-full animate-pulse mt-6 transition-colors duration-500">
+    <div className="h-24 w-full bg-slate-200 dark:bg-slate-800/50 rounded-2xl transition-colors duration-500"></div>
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
-      {[1, 2, 3].map(i => <div key={i} className="h-28 rounded-2xl bg-slate-200 dark:bg-slate-800/50"></div>)}
+      {[1, 2, 3].map(i => <div key={i} className="h-28 rounded-2xl bg-slate-200 dark:bg-slate-800/50 transition-colors duration-500"></div>)}
     </div>
-    <div className="h-12 w-96 bg-slate-200 dark:bg-slate-800/50 rounded-xl mt-2"></div>
-    <div className="h-[500px] w-full bg-slate-200 dark:bg-slate-800/50 rounded-3xl mt-2"></div>
+    <div className="h-12 w-96 bg-slate-200 dark:bg-slate-800/50 rounded-xl mt-2 transition-colors duration-500"></div>
+    <div className="h-[500px] w-full bg-slate-200 dark:bg-slate-800/50 rounded-3xl mt-2 transition-colors duration-500"></div>
   </div>
 );
 
@@ -77,6 +77,9 @@ type TabType = "BALANCES" | "PRODUCTS" | "HISTORY" | "3D_MAP";
 export default function InventoryPage() {
   const { t } = useTranslation();
   
+  // 🚀 BỐI CẢNH REDUX (CONTEXT ISOLATION)
+  const { activeBranchId } = useAppSelector((state: any) => state.global);
+
   // --- STATE ĐIỀU HƯỚNG TABS ---
   const [activeTab, setActiveTab] = useState<TabType>("BALANCES");
 
@@ -89,12 +92,21 @@ export default function InventoryPage() {
   const [filterWarehouse, setFilterWarehouse] = useState("ALL");
   const [filterStatus, setFilterStatus] = useState("ALL");
 
-  // 👉 FETCH DATA TỪ BACKEND
+  // 👉 FETCH DATA TỪ BACKEND (🚀 ĐÃ BƠM BỐI CẢNH CHI NHÁNH VÀ KHÓA KHI TRỐNG)
   const { data: responseData, isLoading, isError, refetch, isFetching } = useGetInventoryBalancesQuery({
-    page: 1, limit: 50
-  });
-  const { data: lowStockAlerts = [] } = useGetLowStockAlertsQuery();
-  const { data: expiringBatches = [] } = useGetExpiringBatchesQuery({ days: 30 });
+    branchId: activeBranchId, // 🚀 BẢO VỆ TỒN KHO ĐA CHI NHÁNH
+    page: 1, 
+    limit: 50
+  } as any, { skip: !activeBranchId });
+
+  const { data: lowStockAlerts = [] } = useGetLowStockAlertsQuery({
+    branchId: activeBranchId // 🚀 CÔ LẬP BÁO ĐỘNG HẾT HÀNG
+  } as any, { skip: !activeBranchId });
+
+  const { data: expiringBatches = [] } = useGetExpiringBatchesQuery({ 
+    branchId: activeBranchId, // 🚀 CÔ LẬP BÁO ĐỘNG HẾT HẠN
+    days: 30 
+  } as any, { skip: !activeBranchId });
 
   const balances: InventoryBalance[] = responseData?.data || [];
 
@@ -111,7 +123,6 @@ export default function InventoryPage() {
   const filteredBalances = useMemo(() => {
     let arr = balances.map(b => ({
       ...b,
-      // Tạo trường ảo gộp tên + mã SKU để DataTable search mượt mà
       productSearchName: `${b.product?.name || ""} ${b.product?.productCode || ""} ${b.variant?.sku || ""}`.trim()
     }));
 
@@ -137,7 +148,6 @@ export default function InventoryPage() {
     }), { totalValue: 0, totalAvailable: 0, totalLocked: 0 });
   }, [filteredBalances]);
 
-  // Kiểm tra xem user có đang dùng bộ lọc không (để hiển thị badge cảnh báo cho KPI)
   const isFiltering = filterWarehouse !== "ALL" || filterStatus !== "ALL";
 
   // --- HANDLER EXPORT TỒN KHO ---
@@ -166,15 +176,15 @@ export default function InventoryPage() {
       accessorKey: "productSearchName", 
       sortable: true,
       cell: (row: any) => (
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 border border-blue-200 dark:border-blue-500/30">
+        <div className="flex items-center gap-3 transition-colors duration-500">
+          <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 border border-blue-200 dark:border-blue-500/30 transition-colors duration-500">
             <Package className="w-5 h-5 text-blue-600 dark:text-blue-400" />
           </div>
-          <div className="flex flex-col">
-            <span className="font-bold text-slate-900 dark:text-white truncate max-w-[200px]" title={row.product?.name}>
+          <div className="flex flex-col transition-colors duration-500">
+            <span className="font-bold text-slate-900 dark:text-white truncate max-w-[200px] transition-colors duration-500" title={row.product?.name}>
               {row.product?.name || "Sản phẩm không xác định"}
             </span>
-            <span className="text-xs text-slate-500 font-mono">
+            <span className="text-xs text-slate-500 font-mono transition-colors duration-500">
               {row.product?.productCode} {row.variant ? `| ${row.variant.sku}` : ""}
             </span>
           </div>
@@ -185,11 +195,11 @@ export default function InventoryPage() {
       header: "Vị trí Kho",
       accessorKey: "warehouse",
       cell: (row: any) => (
-        <div className="flex flex-col">
-          <span className="font-semibold text-slate-700 dark:text-slate-300">
+        <div className="flex flex-col transition-colors duration-500">
+          <span className="font-semibold text-slate-700 dark:text-slate-300 transition-colors duration-500">
             {row.warehouse?.name || "Kho tổng"}
           </span>
-          <span className="text-[10px] text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded w-fit mt-0.5">
+          <span className="text-[10px] text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded w-fit mt-0.5 transition-colors duration-500">
             {row.bin ? `Kệ: ${row.bin.code}` : "Chưa xếp kệ"}
           </span>
         </div>
@@ -201,12 +211,12 @@ export default function InventoryPage() {
       sortable: true,
       align: "right",
       cell: (row: any) => (
-        <div className="flex flex-col items-end">
-          <span className={`font-bold ${row.quantity <= 0 ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400'}`}>
+        <div className="flex flex-col items-end transition-colors duration-500">
+          <span className={`font-bold transition-colors duration-500 ${row.quantity <= 0 ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400'}`}>
             {formatQty(row.quantity)} <span className="text-xs font-normal opacity-70">{row.product?.uom?.name}</span>
           </span>
           {row.lockedQty > 0 && (
-            <span className="text-[10px] font-medium text-rose-500 bg-rose-50 dark:bg-rose-500/10 px-1.5 rounded flex items-center gap-1 mt-0.5">
+            <span className="text-[10px] font-medium text-rose-500 bg-rose-50 dark:bg-rose-500/10 px-1.5 rounded flex items-center gap-1 mt-0.5 transition-colors duration-500">
               <Lock className="w-3 h-3" /> Đang khóa {formatQty(row.lockedQty)}
             </span>
           )}
@@ -219,7 +229,7 @@ export default function InventoryPage() {
       sortable: true,
       align: "right",
       cell: (row: any) => (
-        <span className="font-medium text-slate-700 dark:text-slate-300">
+        <span className="font-medium text-slate-700 dark:text-slate-300 transition-colors duration-500">
           {formatVND(row.avgCost)}
         </span>
       )
@@ -230,7 +240,7 @@ export default function InventoryPage() {
       sortable: true,
       align: "right",
       cell: (row: any) => (
-        <span className="font-bold text-blue-600 dark:text-blue-400">
+        <span className="font-bold text-blue-600 dark:text-blue-400 transition-colors duration-500">
           {formatVND(row.totalValue)}
         </span>
       )
@@ -238,14 +248,14 @@ export default function InventoryPage() {
   ], []);
 
   const inventoryFiltersNode = useMemo(() => (
-    <div className="flex flex-wrap items-center gap-4 w-full">
+    <div className="flex flex-wrap items-center gap-4 w-full transition-colors duration-500">
       <div className="w-full sm:w-64">
-        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Lọc theo Kho lưu trữ</label>
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block transition-colors duration-500">Lọc theo Kho lưu trữ</label>
         <div className="relative group">
           <Map className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
           <select 
             value={filterWarehouse} onChange={(e) => setFilterWarehouse(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm appearance-none cursor-pointer"
+            className="w-full pl-9 pr-4 py-2 bg-transparent border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm appearance-none cursor-pointer text-slate-900 dark:text-white"
           >
             <option value="ALL">Tất cả Kho bãi</option>
             {uniqueWarehouses.map(w => (
@@ -256,12 +266,12 @@ export default function InventoryPage() {
       </div>
       
       <div className="w-full sm:w-64">
-        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Trạng thái Tồn kho</label>
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block transition-colors duration-500">Trạng thái Tồn kho</label>
         <div className="relative group">
           <Box className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
           <select 
             value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm appearance-none cursor-pointer"
+            className="w-full pl-9 pr-4 py-2 bg-transparent border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm appearance-none cursor-pointer text-slate-900 dark:text-white"
           >
             <option value="ALL">Tất cả Trạng thái</option>
             <option value="IN_STOCK">🟢 Còn hàng khả dụng (&gt;0)</option>
@@ -277,13 +287,24 @@ export default function InventoryPage() {
   const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
   const itemVariants: Variants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } };
 
+  // 🚀 LÁ CHẮN UI: KHÔNG CÓ CHI NHÁNH
+  if (!activeBranchId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[70vh] w-full text-center transition-colors duration-500">
+        <AlertOctagon className="w-16 h-16 text-amber-500 mb-4 animate-pulse" />
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2 transition-colors duration-500">Chưa chọn Chi nhánh</h2>
+        <p className="text-slate-500 transition-colors duration-500">Vui lòng chọn Chi nhánh hoạt động ở góc trên màn hình để tải Phân hệ Kho.</p>
+      </div>
+    );
+  }
+
   // --- RENDER XỬ LÝ LỖI MẠNG ---
   if (isError) {
     return (
-      <div className="flex flex-col items-center justify-center h-[70vh] w-full text-center">
+      <div className="flex flex-col items-center justify-center h-[70vh] w-full text-center transition-colors duration-500">
         <AlertOctagon className="w-16 h-16 text-rose-500 mb-4 animate-pulse" />
-        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Không thể tải dữ liệu Phân hệ Kho</h2>
-        <button onClick={() => refetch()} className="px-6 py-3 mt-4 bg-blue-600 text-white rounded-xl shadow-lg active:scale-95 flex items-center gap-2">
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2 transition-colors duration-500">Không thể tải dữ liệu Phân hệ Kho</h2>
+        <button onClick={() => refetch()} className="px-6 py-3 mt-4 bg-blue-600 text-white rounded-xl shadow-lg active:scale-95 flex items-center gap-2 transition-colors duration-500">
           <RefreshCcw className={`w-5 h-5 ${isFetching ? 'animate-spin' : ''}`} /> Thử lại
         </button>
       </div>
@@ -291,13 +312,13 @@ export default function InventoryPage() {
   }
 
   return (
-    <div className="w-full flex flex-col gap-6 pb-10">
+    <div className="w-full flex flex-col gap-6 pb-10 transition-colors duration-500">
       
       <Header 
         title={t("Trung tâm Kho Bãi")} 
         subtitle={t("Giám sát danh mục vật tư, tồn kho thời gian thực và lịch sử luân chuyển.")}
         rightNode={
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide transition-colors duration-500">
             <RequirePermission permissions={["MANAGE_INVENTORY"]}>
               <button 
                 onClick={handleExportBalances}
@@ -342,7 +363,7 @@ export default function InventoryPage() {
       {isLoading ? (
         <InventorySkeleton />
       ) : (
-        <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-6 w-full">
+        <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-6 w-full transition-colors duration-500">
           
           <AnimatePresence>
             {(lowStockAlerts.length > 0 || expiringBatches.length > 0) && (
@@ -350,21 +371,21 @@ export default function InventoryPage() {
                 initial={{ opacity: 0, height: 0, scale: 0.95 }}
                 animate={{ opacity: 1, height: "auto", scale: 1 }}
                 exit={{ opacity: 0, height: 0, scale: 0.95 }}
-                className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6"
+                className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 transition-colors duration-500"
               >
                 {lowStockAlerts.length > 0 && (
                   <motion.div 
                     animate={{ boxShadow: ["0px 0px 0px rgba(244,63,94,0)", "0px 0px 20px rgba(244,63,94,0.4)", "0px 0px 0px rgba(244,63,94,0)"] }}
                     transition={{ repeat: Infinity, duration: 2.5 }}
-                    className="flex items-start gap-4 p-5 rounded-2xl bg-gradient-to-br from-rose-50 to-white dark:from-rose-500/10 dark:to-slate-900 border border-rose-200 dark:border-rose-500/30 relative overflow-hidden group cursor-pointer"
+                    className="flex items-start gap-4 p-5 rounded-2xl bg-gradient-to-br from-rose-50 to-white dark:from-rose-500/10 dark:to-slate-900 border border-rose-200 dark:border-rose-500/30 relative overflow-hidden group cursor-pointer transition-colors duration-500"
                   >
-                    <div className="absolute -right-4 -top-4 w-24 h-24 bg-rose-500/10 rounded-full blur-2xl group-hover:bg-rose-500/20 transition-all"></div>
-                    <div className="p-3 bg-rose-100 dark:bg-rose-500/20 rounded-xl shrink-0">
+                    <div className="absolute -right-4 -top-4 w-24 h-24 bg-rose-500/10 rounded-full blur-2xl group-hover:bg-rose-500/20 transition-all duration-500"></div>
+                    <div className="p-3 bg-rose-100 dark:bg-rose-500/20 rounded-xl shrink-0 transition-colors duration-500">
                       <AlertTriangle className="w-7 h-7 text-rose-600 dark:text-rose-400" />
                     </div>
-                    <div className="flex flex-col z-10">
-                      <h4 className="text-base font-bold text-rose-800 dark:text-rose-300">Cảnh báo Tồn kho an toàn</h4>
-                      <p className="text-sm text-rose-600/80 dark:text-rose-400/80 mt-1 leading-relaxed">
+                    <div className="flex flex-col z-10 transition-colors duration-500">
+                      <h4 className="text-base font-bold text-rose-800 dark:text-rose-300 transition-colors duration-500">Cảnh báo Tồn kho an toàn</h4>
+                      <p className="text-sm text-rose-600/80 dark:text-rose-400/80 mt-1 leading-relaxed transition-colors duration-500">
                         Phát hiện <span className="font-bold text-rose-600 dark:text-rose-400 text-lg">{lowStockAlerts.length}</span> mặt hàng đã chạm đáy (Reorder Point). Cần lên kế hoạch nhập khẩu hoặc sản xuất ngay!
                       </p>
                     </div>
@@ -375,15 +396,15 @@ export default function InventoryPage() {
                   <motion.div 
                     animate={{ boxShadow: ["0px 0px 0px rgba(245,158,11,0)", "0px 0px 20px rgba(245,158,11,0.4)", "0px 0px 0px rgba(245,158,11,0)"] }}
                     transition={{ repeat: Infinity, duration: 2.5, delay: 1.25 }}
-                    className="flex items-start gap-4 p-5 rounded-2xl bg-gradient-to-br from-amber-50 to-white dark:from-amber-500/10 dark:to-slate-900 border border-amber-200 dark:border-amber-500/30 relative overflow-hidden group cursor-pointer"
+                    className="flex items-start gap-4 p-5 rounded-2xl bg-gradient-to-br from-amber-50 to-white dark:from-amber-500/10 dark:to-slate-900 border border-amber-200 dark:border-amber-500/30 relative overflow-hidden group cursor-pointer transition-colors duration-500"
                   >
-                    <div className="absolute -right-4 -top-4 w-24 h-24 bg-amber-500/10 rounded-full blur-2xl group-hover:bg-amber-500/20 transition-all"></div>
-                    <div className="p-3 bg-amber-100 dark:bg-amber-500/20 rounded-xl shrink-0">
+                    <div className="absolute -right-4 -top-4 w-24 h-24 bg-amber-500/10 rounded-full blur-2xl group-hover:bg-amber-500/20 transition-all duration-500"></div>
+                    <div className="p-3 bg-amber-100 dark:bg-amber-500/20 rounded-xl shrink-0 transition-colors duration-500">
                       <Clock className="w-7 h-7 text-amber-600 dark:text-amber-400" />
                     </div>
-                    <div className="flex flex-col z-10">
-                      <h4 className="text-base font-bold text-amber-800 dark:text-amber-300">Cảnh báo Hàng sắp hết hạn</h4>
-                      <p className="text-sm text-amber-600/80 dark:text-amber-400/80 mt-1 leading-relaxed">
+                    <div className="flex flex-col z-10 transition-colors duration-500">
+                      <h4 className="text-base font-bold text-amber-800 dark:text-amber-300 transition-colors duration-500">Cảnh báo Hàng sắp hết hạn</h4>
+                      <p className="text-sm text-amber-600/80 dark:text-amber-400/80 mt-1 leading-relaxed transition-colors duration-500">
                         Có <span className="font-bold text-amber-600 dark:text-amber-400 text-lg">{expiringBatches.length}</span> lô hàng sẽ hết hạn trong 30 ngày tới. Yêu cầu ưu tiên xuất kho theo tiêu chuẩn FEFO.
                       </p>
                     </div>
@@ -393,73 +414,73 @@ export default function InventoryPage() {
             )}
           </AnimatePresence>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
-            <motion.div variants={itemVariants} className="glass p-5 rounded-2xl border-l-4 border-l-emerald-500 group hover:-translate-y-1 transition-transform">
-              <div className="flex justify-between items-start mb-2">
-                <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 transition-colors duration-500">
+            <motion.div variants={itemVariants} className="glass p-5 rounded-2xl border-l-4 border-l-emerald-500 group hover:-translate-y-1 transition-transform duration-500">
+              <div className="flex justify-between items-start mb-2 transition-colors duration-500">
+                <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center transition-colors duration-500">
                   Tổng Tồn Khả Dụng
-                  {isFiltering && <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400">Đã lọc</span>}
+                  {isFiltering && <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400 transition-colors duration-500">Đã lọc</span>}
                 </p>
-                <div className="p-2 bg-emerald-100 dark:bg-emerald-500/20 rounded-lg"><Box className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /></div>
+                <div className="p-2 bg-emerald-100 dark:bg-emerald-500/20 rounded-lg transition-colors duration-500"><Box className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /></div>
               </div>
-              <h3 className="text-3xl font-black text-slate-900 dark:text-white truncate">{formatQty(summary.totalAvailable)}</h3>
+              <h3 className="text-3xl font-black text-slate-900 dark:text-white truncate transition-colors duration-500">{formatQty(summary.totalAvailable)}</h3>
             </motion.div>
 
-            <motion.div variants={itemVariants} className="glass p-5 rounded-2xl border-l-4 border-l-rose-500 group hover:-translate-y-1 transition-transform relative overflow-hidden">
-              <div className="flex justify-between items-start mb-2 relative z-10">
-                <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center">
+            <motion.div variants={itemVariants} className="glass p-5 rounded-2xl border-l-4 border-l-rose-500 group hover:-translate-y-1 transition-transform relative overflow-hidden duration-500">
+              <div className="flex justify-between items-start mb-2 relative z-10 transition-colors duration-500">
+                <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center transition-colors duration-500">
                   Hàng Đang Khóa
-                  {isFiltering && <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400">Đã lọc</span>}
+                  {isFiltering && <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400 transition-colors duration-500">Đã lọc</span>}
                 </p>
-                <div className="p-2 bg-rose-100 dark:bg-rose-500/20 rounded-lg"><Lock className="w-4 h-4 text-rose-600 dark:text-rose-400" /></div>
+                <div className="p-2 bg-rose-100 dark:bg-rose-500/20 rounded-lg transition-colors duration-500"><Lock className="w-4 h-4 text-rose-600 dark:text-rose-400" /></div>
               </div>
-              <h3 className="text-3xl font-black text-rose-600 dark:text-rose-400 relative z-10 truncate">{formatQty(summary.totalLocked)}</h3>
+              <h3 className="text-3xl font-black text-rose-600 dark:text-rose-400 relative z-10 truncate transition-colors duration-500">{formatQty(summary.totalLocked)}</h3>
             </motion.div>
 
-            <motion.div variants={itemVariants} className="glass p-5 rounded-2xl border-l-4 border-l-blue-500 group hover:-translate-y-1 transition-transform">
-              <div className="flex justify-between items-start mb-2">
-                <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center">
+            <motion.div variants={itemVariants} className="glass p-5 rounded-2xl border-l-4 border-l-blue-500 group hover:-translate-y-1 transition-transform duration-500">
+              <div className="flex justify-between items-start mb-2 transition-colors duration-500">
+                <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center transition-colors duration-500">
                   Tổng Giá Trị (MAC)
-                  {isFiltering && <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400">Đã lọc</span>}
+                  {isFiltering && <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400 transition-colors duration-500">Đã lọc</span>}
                 </p>
-                <div className="p-2 bg-blue-100 dark:bg-blue-500/20 rounded-lg"><DollarSign className="w-4 h-4 text-blue-600 dark:text-blue-400" /></div>
+                <div className="p-2 bg-blue-100 dark:bg-blue-500/20 rounded-lg transition-colors duration-500"><DollarSign className="w-4 h-4 text-blue-600 dark:text-blue-400" /></div>
               </div>
-              <h3 className="text-3xl font-black text-blue-600 dark:text-blue-400 truncate">{formatVND(summary.totalValue)}</h3>
+              <h3 className="text-3xl font-black text-blue-600 dark:text-blue-400 truncate transition-colors duration-500">{formatVND(summary.totalValue)}</h3>
             </motion.div>
           </div>
 
-          <div className="w-full overflow-x-auto scrollbar-hide">
-            <div className="flex items-center gap-2 p-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-2xl w-fit border border-slate-200 dark:border-white/5">
+          <div className="w-full overflow-x-auto scrollbar-hide transition-colors duration-500">
+            <div className="flex items-center gap-2 p-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-2xl w-fit border border-slate-200 dark:border-white/5 transition-colors duration-500">
               
-              <button onClick={() => setActiveTab("BALANCES")} className={`relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap ${activeTab === "BALANCES" ? "text-blue-600 dark:text-blue-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}>
-                {activeTab === "BALANCES" && <motion.div layoutId="invTab" className="absolute inset-0 bg-white dark:bg-slate-700 rounded-xl shadow-sm -z-10" />}
+              <button onClick={() => setActiveTab("BALANCES")} className={`relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap duration-500 ${activeTab === "BALANCES" ? "text-blue-600 dark:text-blue-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}>
+                {activeTab === "BALANCES" && <motion.div layoutId="invTab" className="absolute inset-0 bg-white dark:bg-slate-700 rounded-xl shadow-sm -z-10 transition-colors duration-500" />}
                 <Box className="w-4 h-4" /> Tồn kho hiện tại
               </button>
 
-              <button onClick={() => setActiveTab("PRODUCTS")} className={`relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap ${activeTab === "PRODUCTS" ? "text-blue-600 dark:text-blue-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}>
-                {activeTab === "PRODUCTS" && <motion.div layoutId="invTab" className="absolute inset-0 bg-white dark:bg-slate-700 rounded-xl shadow-sm -z-10" />}
+              <button onClick={() => setActiveTab("PRODUCTS")} className={`relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap duration-500 ${activeTab === "PRODUCTS" ? "text-blue-600 dark:text-blue-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}>
+                {activeTab === "PRODUCTS" && <motion.div layoutId="invTab" className="absolute inset-0 bg-white dark:bg-slate-700 rounded-xl shadow-sm -z-10 transition-colors duration-500" />}
                 <Layers className="w-4 h-4" /> Danh mục Hàng hóa
               </button>
 
-              <button onClick={() => setActiveTab("HISTORY")} className={`relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap ${activeTab === "HISTORY" ? "text-blue-600 dark:text-blue-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}>
-                {activeTab === "HISTORY" && <motion.div layoutId="invTab" className="absolute inset-0 bg-white dark:bg-slate-700 rounded-xl shadow-sm -z-10" />}
+              <button onClick={() => setActiveTab("HISTORY")} className={`relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap duration-500 ${activeTab === "HISTORY" ? "text-blue-600 dark:text-blue-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}>
+                {activeTab === "HISTORY" && <motion.div layoutId="invTab" className="absolute inset-0 bg-white dark:bg-slate-700 rounded-xl shadow-sm -z-10 transition-colors duration-500" />}
                 <History className="w-4 h-4" /> Lịch sử (Thẻ kho)
               </button>
 
-              <button onClick={() => setActiveTab("3D_MAP")} className={`relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap ${activeTab === "3D_MAP" ? "text-blue-600 dark:text-blue-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}>
-                {activeTab === "3D_MAP" && <motion.div layoutId="invTab" className="absolute inset-0 bg-white dark:bg-slate-700 rounded-xl shadow-sm -z-10" />}
+              <button onClick={() => setActiveTab("3D_MAP")} className={`relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap duration-500 ${activeTab === "3D_MAP" ? "text-blue-600 dark:text-blue-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}>
+                {activeTab === "3D_MAP" && <motion.div layoutId="invTab" className="absolute inset-0 bg-white dark:bg-slate-700 rounded-xl shadow-sm -z-10 transition-colors duration-500" />}
                 <Map className="w-4 h-4" /> Bản đồ Kho 3D
               </button>
 
             </div>
           </div>
 
-          <div className="w-full relative">
+          <div className="w-full relative transition-colors duration-500">
             <AnimatePresence mode="wait">
               
               {activeTab === "BALANCES" && (
                 <motion.div key="balances" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
-                  <div className="glass-panel rounded-3xl overflow-hidden shadow-sm border border-slate-100 dark:border-white/5">
+                  <div className="glass-panel rounded-3xl overflow-hidden shadow-sm border border-slate-100 dark:border-white/5 transition-colors duration-500">
                     <DataTable 
                       data={filteredBalances} 
                       columns={columns} 

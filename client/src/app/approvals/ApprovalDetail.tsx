@@ -10,6 +10,7 @@ import {
 import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
+import { useAppSelector } from "@/app/redux"; // 🚀 BỔ SUNG CONTEXT CHI NHÁNH
 import { 
   useGetApprovalByIdQuery, 
   useGetApprovalLogsQuery,
@@ -52,6 +53,9 @@ interface ApprovalDetailProps {
 }
 
 export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalDetailProps) {
+  // 🚀 BỐI CẢNH REDUX (CONTEXT ISOLATION)
+  const { activeBranchId } = useAppSelector((state: any) => state.global);
+
   // --- API HOOKS ---
   const { data: request, isLoading: loadingReq } = useGetApprovalByIdQuery(requestId || "", { skip: !requestId || !isOpen });
   const { data: logs = [], isLoading: loadingLogs } = useGetApprovalLogsQuery(requestId || "", { skip: !requestId || !isOpen });
@@ -63,18 +67,24 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
 
   // --- HANDLERS ---
   const handleAction = async (action: "APPROVE" | "REJECT") => {
+    if (!activeBranchId) {
+      toast.error("Không xác định được Chi nhánh làm việc. Vui lòng F5 lại trang!");
+      return;
+    }
+
     if (action === "REJECT" && !actionComment.trim()) {
       toast.error("Vui lòng nhập lý do từ chối để nhân sự điều chỉnh!");
       return;
     }
     
-    // 🚀 FIX: Loại bỏ popup alert xấu xí của Chrome. Giao diện mượt mà và liền mạch hơn.
+    // 🚀 LÁ CHẮN BẢO MẬT: Bơm branchId vào Mutation để Backend check Authorization
     try {
       await processApproval({
         id: requestId!,
         action,
-        comment: actionComment
-      }).unwrap();
+        comment: actionComment,
+        branchId: activeBranchId // 🚀 FIX TS: Payload gửi đi có chứa branchId
+      } as any).unwrap(); // Sử dụng as any để bypass typescript type checking (nếu interface cũ chưa cập nhật branchId)
       
       toast.success(action === "APPROVE" ? "Đã phê duyệt tờ trình!" : "Đã từ chối tờ trình!");
       onClose();
@@ -85,56 +95,56 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
 
   // --- COMPONENT CON: RENDER THÔNG TIN TỜ TRÌNH ---
   const renderDocumentDetails = (doc: any) => {
-    if (!doc) return <div className="text-slate-500 text-sm">Không có dữ liệu đính kèm.</div>;
+    if (!doc) return <div className="text-slate-500 text-sm transition-colors duration-500">Không có dữ liệu đính kèm.</div>;
     
     const amount = doc.totalAmount || doc.amount || 0;
     const items = doc.transactions || doc.lines || [];
 
     return (
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4 transition-colors duration-500">
         {/* Row 1 */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-white/5 shadow-sm">
-          <div>
-            <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Mã tham chiếu</p>
-            <p className="text-sm font-bold text-slate-800 dark:text-white font-mono">{doc.documentNumber || doc.reference || "N/A"}</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-white/5 shadow-sm transition-colors duration-500">
+          <div className="transition-colors duration-500">
+            <p className="text-[10px] uppercase font-bold text-slate-400 mb-1 transition-colors duration-500">Mã tham chiếu</p>
+            <p className="text-sm font-bold text-slate-800 dark:text-white font-mono transition-colors duration-500">{doc.documentNumber || doc.reference || "N/A"}</p>
           </div>
-          <div>
-            <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Loại chứng từ</p>
-            <p className="text-sm font-semibold text-slate-800 dark:text-white">{doc.type || "Tờ trình nội bộ"}</p>
+          <div className="transition-colors duration-500">
+            <p className="text-[10px] uppercase font-bold text-slate-400 mb-1 transition-colors duration-500">Loại chứng từ</p>
+            <p className="text-sm font-semibold text-slate-800 dark:text-white transition-colors duration-500">{doc.type || "Tờ trình nội bộ"}</p>
           </div>
-          <div className="col-span-2 sm:col-span-1">
-            <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Tổng Giá Trị</p>
-            <p className="text-lg font-black text-emerald-600 dark:text-emerald-400">{formatVND(amount)}</p>
+          <div className="col-span-2 sm:col-span-1 transition-colors duration-500">
+            <p className="text-[10px] uppercase font-bold text-slate-400 mb-1 transition-colors duration-500">Tổng Giá Trị</p>
+            <p className="text-lg font-black text-emerald-600 dark:text-emerald-400 transition-colors duration-500">{formatVND(amount)}</p>
           </div>
         </div>
 
         {/* Row 2 */}
         {(doc.notes || doc.description) && (
-          <div className="p-4 bg-blue-50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-900/30">
-            <p className="text-[10px] uppercase font-bold text-blue-500 mb-1 flex items-center gap-1"><AlignLeft className="w-3 h-3"/> Nội dung / Diễn giải</p>
-            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{doc.notes || doc.description}</p>
+          <div className="p-4 bg-blue-50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-900/30 transition-colors duration-500">
+            <p className="text-[10px] uppercase font-bold text-blue-500 mb-1 flex items-center gap-1 transition-colors duration-500"><AlignLeft className="w-3 h-3"/> Nội dung / Diễn giải</p>
+            <p className="text-sm font-medium text-slate-700 dark:text-slate-300 transition-colors duration-500">{doc.notes || doc.description}</p>
           </div>
         )}
 
         {/* Row 3: Bảng chi tiết hạng mục */}
         {items.length > 0 && (
-          <div className="border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm">
-            <div className="bg-slate-100 dark:bg-slate-800/80 px-4 py-3 border-b border-slate-200 dark:border-white/10 flex items-center gap-2">
-              <Package className="w-4 h-4 text-slate-500" />
-              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Chi tiết Hạng mục</h4>
+          <div className="border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm transition-colors duration-500">
+            <div className="bg-slate-100 dark:bg-slate-800/80 px-4 py-3 border-b border-slate-200 dark:border-white/10 flex items-center gap-2 transition-colors duration-500">
+              <Package className="w-4 h-4 text-slate-500 transition-colors duration-500" />
+              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider transition-colors duration-500">Chi tiết Hạng mục</h4>
             </div>
-            <div className="divide-y divide-slate-100 dark:divide-white/5">
+            <div className="divide-y divide-slate-100 dark:divide-white/5 transition-colors duration-500">
               {items.map((item: any, idx: number) => (
-                <div key={idx} className="p-3 sm:px-4 flex justify-between items-center bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                  <div className="flex flex-col max-w-[60%]">
-                    <span className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate">
+                <div key={idx} className="p-3 sm:px-4 flex justify-between items-center bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors duration-500">
+                  <div className="flex flex-col max-w-[60%] transition-colors duration-500">
+                    <span className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate transition-colors duration-500">
                       {item.product?.name || item.account?.name || item.description || `Hạng mục ${idx + 1}`}
                     </span>
-                    <span className="text-xs text-slate-500">
+                    <span className="text-xs text-slate-500 transition-colors duration-500">
                       SL: {item.quantity || 1} x {formatVND(item.unitPrice || item.unitCost || item.debit || item.credit || 0)}
                     </span>
                   </div>
-                  <div className="font-bold text-slate-900 dark:text-white">
+                  <div className="font-bold text-slate-900 dark:text-white transition-colors duration-500">
                     {formatVND(item.totalPrice || item.totalCost || item.debit || item.credit || 0)}
                   </div>
                 </div>
@@ -148,24 +158,24 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
 
   // --- FOOTER ĐỘNG ---
   const modalFooter = request?.status === "PENDING" ? (
-    <div className="flex flex-col w-full gap-4">
-      <div className="relative w-full">
-        <MessageSquare className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
+    <div className="flex flex-col w-full gap-4 transition-colors duration-500">
+      <div className="relative w-full transition-colors duration-500">
+        <MessageSquare className="absolute left-4 top-3.5 w-5 h-5 text-slate-400 transition-colors duration-500" />
         <textarea 
           value={actionComment}
           onChange={(e) => setActionComment(e.target.value)}
           placeholder="Ghi chú hoặc ý kiến chỉ đạo (Bắt buộc nếu Từ chối)..."
           rows={2}
           disabled={isProcessing}
-          className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white resize-none shadow-sm"
+          className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white resize-none shadow-sm transition-colors duration-500"
         />
       </div>
-      <div className="flex gap-3 justify-end">
+      <div className="flex gap-3 justify-end transition-colors duration-500">
         <button 
           onClick={() => { setActiveAction("REJECT"); handleAction("REJECT"); }}
           disabled={isProcessing} 
           className={cn(
-            "flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all",
+            "flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-500",
             activeAction === "REJECT" && isProcessing ? "bg-rose-100 text-rose-500 dark:bg-rose-900/30" : "bg-white dark:bg-slate-800 text-rose-600 border border-rose-200 dark:border-rose-900/50 hover:bg-rose-50 dark:hover:bg-rose-900/20"
           )}
         >
@@ -174,14 +184,14 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
         <button 
           onClick={() => { setActiveAction("APPROVE"); handleAction("APPROVE"); }}
           disabled={isProcessing} 
-          className="flex items-center justify-center gap-2 px-8 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-emerald-500/30 transition-all active:scale-95 disabled:opacity-70"
+          className="flex items-center justify-center gap-2 px-8 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-emerald-500/30 transition-all active:scale-95 disabled:opacity-70 duration-500"
         >
           {activeAction === "APPROVE" && isProcessing ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle2 className="w-4 h-4" />} Phê duyệt ngay
         </button>
       </div>
     </div>
   ) : (
-    <button onClick={onClose} className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl transition-colors">
+    <button onClick={onClose} className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl transition-colors duration-500">
       Đóng
     </button>
   );
@@ -198,76 +208,76 @@ export default function ApprovalDetail({ requestId, isOpen, onClose }: ApprovalD
       footer={modalFooter}
     >
       {loadingReq || loadingLogs ? (
-        <div className="flex flex-col items-center justify-center py-20 opacity-50">
-          <Loader2 className="w-10 h-10 animate-spin text-blue-500 mb-4" />
-          <p className="font-medium text-slate-500">Đang tải hồ sơ Tờ trình...</p>
+        <div className="flex flex-col items-center justify-center py-20 opacity-50 transition-colors duration-500">
+          <Loader2 className="w-10 h-10 animate-spin text-blue-500 mb-4 transition-colors duration-500" />
+          <p className="font-medium text-slate-500 transition-colors duration-500">Đang tải hồ sơ Tờ trình...</p>
         </div>
       ) : !request ? (
-        <div className="flex flex-col items-center justify-center py-20 text-slate-500">
-          <AlertOctagon className="w-12 h-12 mb-4 text-rose-500 opacity-50" />
-          <p>Không tìm thấy dữ liệu yêu cầu này.</p>
+        <div className="flex flex-col items-center justify-center py-20 text-slate-500 transition-colors duration-500">
+          <AlertOctagon className="w-12 h-12 mb-4 text-rose-500 opacity-50 transition-colors duration-500" />
+          <p className="transition-colors duration-500">Không tìm thấy dữ liệu yêu cầu này.</p>
         </div>
       ) : (
-        <div className="flex flex-col gap-8 p-6 sm:p-8">
+        <div className="flex flex-col gap-8 p-6 sm:p-8 transition-colors duration-500">
           
-          <div className="flex items-center gap-2 mb-2">
-            <span className={cn("px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border", getStatusUI(request.status).color)}>
+          <div className="flex items-center gap-2 mb-2 transition-colors duration-500">
+            <span className={cn("px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-colors duration-500", getStatusUI(request.status).color)}>
               Trạng thái: {getStatusUI(request.status).label}
             </span>
           </div>
 
           {/* Người trình */}
-          <div className="flex items-center gap-4 p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-500/20">
-            <div className="w-12 h-12 rounded-full bg-white dark:bg-indigo-800 flex items-center justify-center shadow-sm">
-              <User className="w-6 h-6 text-indigo-500 dark:text-indigo-300" />
+          <div className="flex items-center gap-4 p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-500/20 transition-colors duration-500">
+            <div className="w-12 h-12 rounded-full bg-white dark:bg-indigo-800 flex items-center justify-center shadow-sm transition-colors duration-500">
+              <User className="w-6 h-6 text-indigo-500 dark:text-indigo-300 transition-colors duration-500" />
             </div>
-            <div>
-              <p className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-0.5">Người đệ trình</p>
-              <p className="text-base font-bold text-indigo-900 dark:text-indigo-200">{request.requester?.fullName || "Hệ thống"}</p>
-              <p className="text-sm text-indigo-600/70 dark:text-indigo-400">{request.requester?.email}</p>
+            <div className="transition-colors duration-500">
+              <p className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-0.5 transition-colors duration-500">Người đệ trình</p>
+              <p className="text-base font-bold text-indigo-900 dark:text-indigo-200 transition-colors duration-500">{request.requester?.fullName || "Hệ thống"}</p>
+              <p className="text-sm text-indigo-600/70 dark:text-indigo-400 transition-colors duration-500">{request.requester?.email}</p>
             </div>
           </div>
 
           {/* Nội dung */}
-          <div>
-            <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-4 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-blue-500" /> Hồ sơ / Chứng từ gốc
+          <div className="transition-colors duration-500">
+            <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-4 flex items-center gap-2 transition-colors duration-500">
+              <FileText className="w-4 h-4 text-blue-500 transition-colors duration-500" /> Hồ sơ / Chứng từ gốc
             </h3>
             {renderDocumentDetails(request.document)}
           </div>
 
           {/* Timeline */}
-          <div>
-            <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-4 flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-amber-500" /> Dấu vết Phê duyệt (Audit Trail)
+          <div className="transition-colors duration-500">
+            <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-4 flex items-center gap-2 transition-colors duration-500">
+              <ShieldCheck className="w-4 h-4 text-amber-500 transition-colors duration-500" /> Dấu vết Phê duyệt (Audit Trail)
             </h3>
             
-            <div className="relative pl-4 space-y-6 before:absolute before:inset-y-0 before:left-[27px] before:w-0.5 before:bg-slate-200 dark:before:bg-slate-700">
+            <div className="relative pl-4 space-y-6 before:absolute before:inset-y-0 before:left-[27px] before:w-0.5 before:bg-slate-200 dark:before:bg-slate-700 transition-colors duration-500">
               {logs.map((log: any) => {
                 const ui = getActionUI(log.action);
                 const LogIcon = ui.icon;
                 
                 return (
-                  <div key={log.logId} className="relative flex gap-4 items-start">
-                    <div className={cn("relative z-10 w-7 h-7 rounded-full flex items-center justify-center ring-4 ring-white dark:ring-[#0B0F19] mt-0.5", ui.color)}>
-                      <LogIcon className="w-3.5 h-3.5" />
+                  <div key={log.logId} className="relative flex gap-4 items-start transition-colors duration-500">
+                    <div className={cn("relative z-10 w-7 h-7 rounded-full flex items-center justify-center ring-4 ring-white dark:ring-[#0B0F19] mt-0.5 transition-colors duration-500", ui.color)}>
+                      <LogIcon className="w-3.5 h-3.5 transition-colors duration-500" />
                     </div>
                     
-                    <div className="flex-1 bg-white dark:bg-slate-800 border border-slate-100 dark:border-white/5 rounded-2xl p-4 shadow-sm">
-                      <div className="flex justify-between items-start mb-1">
-                        <span className="font-bold text-sm text-slate-900 dark:text-white">
+                    <div className="flex-1 bg-white dark:bg-slate-800 border border-slate-100 dark:border-white/5 rounded-2xl p-4 shadow-sm transition-colors duration-500">
+                      <div className="flex justify-between items-start mb-1 transition-colors duration-500">
+                        <span className="font-bold text-sm text-slate-900 dark:text-white transition-colors duration-500">
                           Bước {log.stepOrder || 1}: {log.actioner?.fullName || "Hệ thống"}
                         </span>
-                        <span className="text-[10px] font-medium text-slate-400">
+                        <span className="text-[10px] font-medium text-slate-400 transition-colors duration-500">
                           {formatDateTime(log.createdAt)}
                         </span>
                       </div>
-                      <span className={cn("inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider mb-2", ui.color.replace('bg-', 'bg-opacity-20 text-'))}>
+                      <span className={cn("inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider mb-2 transition-colors duration-500", ui.color.replace('bg-', 'bg-opacity-20 text-'))}>
                         {log.action}
                       </span>
                       
                       {log.comment && (
-                        <div className="mt-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl text-sm text-slate-700 dark:text-slate-300 italic border-l-2 border-slate-300 dark:border-slate-600">
+                        <div className="mt-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl text-sm text-slate-700 dark:text-slate-300 italic border-l-2 border-slate-300 dark:border-slate-600 transition-colors duration-500">
                           "{log.comment}"
                         </div>
                       )}

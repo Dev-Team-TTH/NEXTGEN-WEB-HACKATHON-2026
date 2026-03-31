@@ -162,11 +162,14 @@ export const generateCode = (prefix: string = "DOC"): string => {
 };
 
 /**
- * Biến đổi chuỗi thành dạng Slug an toàn cho URL (VD: "Sản Phẩm" -> "san-pham")
+ * Biến đổi chuỗi thành dạng Slug an toàn cho URL (VD: "Hợp đồng Đồng Nai" -> "hop-dong-dong-nai")
  */
 export const slugify = (text: string): string => {
   return text
     .toString()
+    // 🚀 LÁ CHẮN BẢN ĐỊA HÓA: Fix lỗi kinh điển của JS khi không nhận diện được chữ Đ trong tiếng Việt
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D') 
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "") // Bỏ dấu tiếng Việt
     .toLowerCase()

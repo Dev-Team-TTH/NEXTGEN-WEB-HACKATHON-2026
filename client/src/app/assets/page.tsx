@@ -12,6 +12,7 @@ import {
 import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
+import { useAppSelector } from "@/app/redux"; // 🚀 BỔ SUNG CONTEXT CHI NHÁNH
 import { 
   useGetAssetsQuery, 
   useDeleteAssetMutation, 
@@ -56,12 +57,12 @@ type TabType = "ALL" | "ACTIVE" | "IN_USE" | "MAINTENANCE" | "LIQUIDATED";
 // 2. SKELETON LOADING
 // ==========================================
 const AssetsSkeleton = () => (
-  <div className="flex flex-col gap-6 w-full animate-pulse mt-6">
+  <div className="flex flex-col gap-6 w-full animate-pulse mt-6 transition-colors duration-500">
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-      {[1, 2, 3, 4].map(i => <div key={i} className="h-32 rounded-3xl bg-slate-200 dark:bg-slate-800/50"></div>)}
+      {[1, 2, 3, 4].map(i => <div key={i} className="h-32 rounded-3xl bg-slate-200 dark:bg-slate-800/50 transition-colors duration-500"></div>)}
     </div>
-    <div className="h-16 w-full rounded-2xl bg-slate-200 dark:bg-slate-800/50"></div>
-    <div className="h-[500px] w-full bg-slate-200 dark:bg-slate-800/50 rounded-3xl"></div>
+    <div className="h-16 w-full rounded-2xl bg-slate-200 dark:bg-slate-800/50 transition-colors duration-500"></div>
+    <div className="h-[500px] w-full bg-slate-200 dark:bg-slate-800/50 rounded-3xl transition-colors duration-500"></div>
   </div>
 );
 
@@ -70,6 +71,9 @@ const AssetsSkeleton = () => (
 // ==========================================
 export default function AssetsPage() {
   const { t } = useTranslation();
+
+  // 🚀 BỐI CẢNH REDUX (CONTEXT ISOLATION)
+  const { activeBranchId } = useAppSelector((state: any) => state.global);
 
   // --- STATE TABS & BỘ LỌC ---
   const [activeTab, setActiveTab] = useState<TabType>("ALL");
@@ -85,10 +89,21 @@ export default function AssetsPage() {
   const [handoverAssetId, setHandoverAssetId] = useState<string | null>(null);
   const [liquidateAssetId, setLiquidateAssetId] = useState<string | null>(null);
 
-  // 👉 FETCH DATA TỪ API THẬT
-  const { data: rawAssets = [], isLoading: loadingAssets, isError, refetch, isFetching } = useGetAssetsQuery({});
-  const { data: categories = [], isLoading: loadingCats } = useGetAssetCategoriesQuery();
-  const { data: departments = [], isLoading: loadingDepts } = useGetDepartmentsQuery({});
+  // 👉 FETCH DATA TỪ API THẬT (🚀 ĐÃ BƠM BỐI CẢNH CHI NHÁNH VÀ KHÓA KHI TRỐNG)
+  const { data: rawAssets = [], isLoading: loadingAssets, isError, refetch, isFetching } = useGetAssetsQuery(
+    { branchId: activeBranchId } as any, 
+    { skip: !activeBranchId }
+  );
+  
+  const { data: categories = [], isLoading: loadingCats } = useGetAssetCategoriesQuery(
+    { branchId: activeBranchId } as any, 
+    { skip: !activeBranchId }
+  );
+  
+  const { data: departments = [], isLoading: loadingDepts } = useGetDepartmentsQuery(
+    { branchId: activeBranchId } as any, 
+    { skip: !activeBranchId }
+  );
   
   const [deleteAsset, { isLoading: isDeleting }] = useDeleteAssetMutation();
   const [logMaintenance, { isLoading: isLoggingMaintenance }] = useLogAssetMaintenanceMutation();
@@ -188,20 +203,20 @@ export default function AssetsPage() {
       accessorKey: "assetSearchText", // 💡 Liên kết với trường ảo để Data Table tự Search Text
       sortable: true,
       cell: (row) => (
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 transition-colors duration-500">
           <div className={cn(
-            "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border shadow-sm",
+            "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border shadow-sm transition-colors duration-500",
             row.status === "LIQUIDATED" 
               ? "bg-slate-100 border-slate-200 dark:bg-slate-800 dark:border-slate-700" 
               : "bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 dark:from-blue-900/20 dark:to-indigo-900/20 dark:border-blue-700/50"
           )}>
-            <Laptop className={cn("w-5 h-5", row.status === "LIQUIDATED" ? "text-slate-400" : "text-blue-600 dark:text-blue-400")} />
+            <Laptop className={cn("w-5 h-5 transition-colors duration-500", row.status === "LIQUIDATED" ? "text-slate-400" : "text-blue-600 dark:text-blue-400")} />
           </div>
-          <div className="flex flex-col max-w-[200px]">
-            <span className={cn("font-bold truncate", row.status === "LIQUIDATED" ? "text-slate-500 line-through" : "text-slate-900 dark:text-white")} title={row.name}>
+          <div className="flex flex-col max-w-[200px] transition-colors duration-500">
+            <span className={cn("font-bold truncate transition-colors duration-500", row.status === "LIQUIDATED" ? "text-slate-500 line-through" : "text-slate-900 dark:text-white")} title={row.name}>
               {row.name}
             </span>
-            <span className="text-[10px] font-mono text-slate-500 mt-0.5 px-1.5 py-0.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded w-fit">
+            <span className="text-[10px] font-mono text-slate-500 mt-0.5 px-1.5 py-0.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded w-fit transition-colors duration-500">
               {row.assetCode}
             </span>
           </div>
@@ -212,11 +227,11 @@ export default function AssetsPage() {
       header: "Phân loại / Vị trí",
       accessorKey: "categoryId",
       cell: (row) => (
-        <div className="flex flex-col">
-          <span className="font-semibold text-slate-700 dark:text-slate-300 text-xs flex items-center gap-1">
+        <div className="flex flex-col transition-colors duration-500">
+          <span className="font-semibold text-slate-700 dark:text-slate-300 text-xs flex items-center gap-1 transition-colors duration-500">
             <PackageOpen className="w-3.5 h-3.5 text-indigo-400" /> {row.category?.name || "Chưa phân loại"}
           </span>
-          <span className="text-[10px] text-slate-500 flex items-center gap-1 mt-1">
+          <span className="text-[10px] text-slate-500 flex items-center gap-1 mt-1 transition-colors duration-500">
             <Building className="w-3 h-3" /> {row.department?.name || "Kho chung"}
           </span>
         </div>
@@ -233,17 +248,17 @@ export default function AssetsPage() {
         const isLiquidated = row.status === "LIQUIDATED";
 
         return (
-          <div className="flex flex-col w-40 sm:w-48">
-            <div className="flex justify-between items-end mb-1 text-[11px]">
-              <span className="text-slate-400">Gốc: <span className="font-medium text-slate-600 dark:text-slate-300">{formatVND(purchase)}</span></span>
-              <span className={cn("font-bold", isLiquidated ? "text-slate-400" : "text-emerald-600 dark:text-emerald-400")}>
+          <div className="flex flex-col w-40 sm:w-48 transition-colors duration-500">
+            <div className="flex justify-between items-end mb-1 text-[11px] transition-colors duration-500">
+              <span className="text-slate-400 transition-colors duration-500">Gốc: <span className="font-medium text-slate-600 dark:text-slate-300">{formatVND(purchase)}</span></span>
+              <span className={cn("font-bold transition-colors duration-500", isLiquidated ? "text-slate-400" : "text-emerald-600 dark:text-emerald-400")}>
                 {formatVND(current)}
               </span>
             </div>
-            <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner">
+            <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner transition-colors duration-500">
               <motion.div 
                 initial={{ width: 0 }} animate={{ width: `${percentRemain}%` }} transition={{ duration: 1, ease: "easeOut" }}
-                className={cn("h-full rounded-full", isLiquidated ? "bg-slate-400" : percentRemain < 20 ? "bg-rose-500" : percentRemain < 50 ? "bg-amber-500" : "bg-emerald-500")}
+                className={cn("h-full rounded-full transition-colors duration-500", isLiquidated ? "bg-slate-400" : percentRemain < 20 ? "bg-rose-500" : percentRemain < 50 ? "bg-amber-500" : "bg-emerald-500")}
               />
             </div>
           </div>
@@ -256,7 +271,7 @@ export default function AssetsPage() {
       cell: (row) => {
         const { label, icon: Icon, color } = getStatusUI(row.status);
         return (
-          <span className={cn("inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold border", color)}>
+          <span className={cn("inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors duration-500", color)}>
             <Icon className="w-3 h-3" /> {label}
           </span>
         );
@@ -272,21 +287,21 @@ export default function AssetsPage() {
         const isClean = row.purchasePrice === row.currentValue;
 
         return (
-          <div className="flex items-center justify-end gap-1">
+          <div className="flex items-center justify-end gap-1 transition-colors duration-500">
             {!isLiquidated && !isMaintenance && (
               <>
-                <button onClick={() => setHandoverAssetId(row.assetId)} title="Luân chuyển (Giao/Thu hồi)" className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 rounded-xl transition-colors active:scale-95">
+                <button onClick={() => setHandoverAssetId(row.assetId)} title="Luân chuyển (Giao/Thu hồi)" className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 rounded-xl transition-colors active:scale-95 duration-500">
                   <ArrowRightLeft className="w-4 h-4" />
                 </button>
-                <button onClick={() => handleQuickMaintenance(row.assetId, row.name)} disabled={isLoggingMaintenance} title="Ghi nhận Hư hỏng" className="p-2 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/20 rounded-xl transition-colors active:scale-95 disabled:opacity-50">
+                <button onClick={() => handleQuickMaintenance(row.assetId, row.name)} disabled={isLoggingMaintenance} title="Ghi nhận Hư hỏng" className="p-2 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/20 rounded-xl transition-colors active:scale-95 disabled:opacity-50 duration-500">
                   <Wrench className="w-4 h-4" />
                 </button>
-                <button onClick={() => setLiquidateAssetId(row.assetId)} title="Thanh lý tài sản" className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/20 rounded-xl transition-colors active:scale-95">
+                <button onClick={() => setLiquidateAssetId(row.assetId)} title="Thanh lý tài sản" className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/20 rounded-xl transition-colors active:scale-95 duration-500">
                   <ShieldAlert className="w-4 h-4" />
                 </button>
               </>
             )}
-            <button onClick={() => handleDelete(row.assetId, row.name)} disabled={!isClean || isLiquidated || isDeleting} title="Xóa vĩnh viễn" className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/20 rounded-xl transition-colors active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed">
+            <button onClick={() => handleDelete(row.assetId, row.name)} disabled={!isClean || isLiquidated || isDeleting} title="Xóa vĩnh viễn" className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/20 rounded-xl transition-colors active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed duration-500">
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
@@ -297,14 +312,14 @@ export default function AssetsPage() {
 
   // 🚀 BỘ LỌC NÂNG CAO (UI ĐỂ BƠM VÀO DATATABLE)
   const assetFiltersNode = (
-    <div className="flex flex-wrap items-center gap-4 w-full">
+    <div className="flex flex-wrap items-center gap-4 w-full transition-colors duration-500">
       <div className="w-full sm:w-64">
-        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Lọc theo Nhóm Tài sản</label>
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block transition-colors duration-500">Lọc theo Nhóm Tài sản</label>
         <div className="relative group">
           <PackageOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
           <select 
             value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm appearance-none cursor-pointer"
+            className="w-full pl-9 pr-4 py-2 bg-transparent border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm appearance-none cursor-pointer text-slate-900 dark:text-white duration-500"
           >
             <option value="">-- Tất cả Nhóm Tài sản --</option>
             {categories.map((c: any) => <option key={c.categoryId} value={c.categoryId}>{c.name}</option>)}
@@ -313,12 +328,12 @@ export default function AssetsPage() {
       </div>
       
       <div className="w-full sm:w-64">
-        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Lọc theo Phòng ban</label>
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block transition-colors duration-500">Lọc theo Phòng ban</label>
         <div className="relative group">
           <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
           <select 
             value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm appearance-none cursor-pointer"
+            className="w-full pl-9 pr-4 py-2 bg-transparent border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm appearance-none cursor-pointer text-slate-900 dark:text-white duration-500"
           >
             <option value="">-- Tất cả Phòng ban --</option>
             {departments.map((d: any) => <option key={d.departmentId} value={d.departmentId}>{d.name}</option>)}
@@ -332,12 +347,23 @@ export default function AssetsPage() {
   const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
   const itemVariants: Variants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } };
 
+  // 🚀 LÁ CHẮN UI: KHÔNG CÓ CHI NHÁNH
+  if (!activeBranchId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[70vh] w-full text-center transition-colors duration-500">
+        <AlertOctagon className="w-16 h-16 text-amber-500 mb-4 animate-pulse" />
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2 transition-colors duration-500">Chưa chọn Chi nhánh</h2>
+        <p className="text-slate-500 transition-colors duration-500">Vui lòng chọn Chi nhánh hoạt động ở góc trên màn hình để tải Dữ liệu Tài sản.</p>
+      </div>
+    );
+  }
+
   if (isError) {
     return (
-      <div className="flex flex-col items-center justify-center h-[70vh] w-full text-center">
+      <div className="flex flex-col items-center justify-center h-[70vh] w-full text-center transition-colors duration-500">
         <AlertOctagon className="w-16 h-16 text-rose-500 mb-4 animate-pulse" />
-        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Lỗi kết nối Hệ thống Tài sản</h2>
-        <button onClick={() => refetch()} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg active:scale-95 flex items-center gap-2 mt-4 transition-transform">
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2 transition-colors duration-500">Lỗi kết nối Hệ thống Tài sản</h2>
+        <button onClick={() => refetch()} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg active:scale-95 flex items-center gap-2 mt-4 transition-transform duration-500">
           <RefreshCcw className={cn("w-5 h-5", isFetching && "animate-spin")} /> Tải lại dữ liệu
         </button>
       </div>
@@ -345,17 +371,17 @@ export default function AssetsPage() {
   }
 
   return (
-    <div className="w-full flex flex-col gap-6 pb-10">
+    <div className="w-full flex flex-col gap-6 pb-10 transition-colors duration-500">
       
       {/* 1. HEADER CHUẨN ENTERPRISE */}
       <Header 
         title={t("Trung tâm Quản trị Tài sản")} 
         subtitle={t("Giám sát vòng đời, luân chuyển thiết bị và theo dõi tình trạng khấu hao.")}
         rightNode={
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide transition-colors duration-500">
             <button 
               onClick={handleExportAssets}
-              className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 whitespace-nowrap border border-slate-200 dark:border-slate-700 shadow-sm"
+              className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 whitespace-nowrap border border-slate-200 dark:border-slate-700 shadow-sm duration-500"
             >
               <Download className="w-4 h-4" />
               <span className="hidden sm:block text-sm font-bold">Xuất File</span>
@@ -363,7 +389,7 @@ export default function AssetsPage() {
 
             <button 
               onClick={() => setIsAdvancedOpsOpen(true)}
-              className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl shadow-lg shadow-amber-500/30 transition-all active:scale-95 whitespace-nowrap"
+              className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl shadow-lg shadow-amber-500/30 transition-all active:scale-95 whitespace-nowrap duration-500"
             >
               <Crown className="w-5 h-5" />
               <span className="hidden sm:block text-sm font-bold">Nghiệp vụ Nâng cao</span>
@@ -371,7 +397,7 @@ export default function AssetsPage() {
 
             <button 
               onClick={() => setIsRunDepreciationOpen(true)}
-              className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700 rounded-xl transition-all shadow-sm active:scale-95 whitespace-nowrap"
+              className="p-2 sm:px-4 sm:py-2.5 flex items-center gap-2 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700 rounded-xl transition-all shadow-sm active:scale-95 whitespace-nowrap duration-500"
             >
               <Calculator className="w-5 h-5" />
               <span className="hidden sm:block text-sm font-bold">Chạy Khấu hao</span>
@@ -379,7 +405,7 @@ export default function AssetsPage() {
 
             <button 
               onClick={() => setIsCreateModalOpen(true)}
-              className="px-5 py-2.5 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-blue-500/30 transition-all active:scale-95 whitespace-nowrap"
+              className="px-5 py-2.5 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-blue-500/30 transition-all active:scale-95 whitespace-nowrap duration-500"
             >
               <Plus className="w-5 h-5" />
               <span className="hidden sm:inline">Thêm Tài sản</span>
@@ -389,54 +415,54 @@ export default function AssetsPage() {
       />
 
       {isLoading ? <AssetsSkeleton /> : (
-        <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-6 w-full">
+        <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-6 w-full transition-colors duration-500">
           
           {/* 2. KHỐI THỐNG KÊ (KPI CARDS) - DATA VIZ */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 transition-colors duration-500">
             
-            <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-blue-300 transition-colors">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tổng Nguyên Giá Đầu tư</p>
-              <h3 className="text-2xl font-black text-slate-900 dark:text-white truncate">{formatVND(kpis.totalPurchasePrice)}</h3>
-              <p className="text-xs text-blue-600 dark:text-blue-400 font-medium mt-2 flex items-center gap-1">
+            <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-blue-300 transition-colors duration-500">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 transition-colors duration-500">Tổng Nguyên Giá Đầu tư</p>
+              <h3 className="text-2xl font-black text-slate-900 dark:text-white truncate transition-colors duration-500">{formatVND(kpis.totalPurchasePrice)}</h3>
+              <p className="text-xs text-blue-600 dark:text-blue-400 font-medium mt-2 flex items-center gap-1 transition-colors duration-500">
                 <LayoutGrid className="w-3.5 h-3.5"/> Quản lý {kpis.totalAssets} thiết bị
               </p>
             </motion.div>
             
-            <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-emerald-300 transition-colors">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Giá trị sổ sách hiện tại</p>
-              <h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 truncate">{formatVND(kpis.totalCurrentValue)}</h3>
-              <div className="flex items-center gap-2 mt-2">
-                <div className="flex-1 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+            <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-emerald-300 transition-colors duration-500">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 transition-colors duration-500">Giá trị sổ sách hiện tại</p>
+              <h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 truncate transition-colors duration-500">{formatVND(kpis.totalCurrentValue)}</h3>
+              <div className="flex items-center gap-2 mt-2 transition-colors duration-500">
+                <div className="flex-1 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden transition-colors duration-500">
                   <motion.div initial={{ width: 0 }} animate={{ width: `${100 - kpis.depreciationRate}%` }} transition={{ duration: 1 }} className="h-full bg-emerald-500 rounded-full" />
                 </div>
-                <span className="text-[10px] font-bold text-slate-400">Hao mòn {kpis.depreciationRate}%</span>
+                <span className="text-[10px] font-bold text-slate-400 transition-colors duration-500">Hao mòn {kpis.depreciationRate}%</span>
               </div>
             </motion.div>
             
-            <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-indigo-300 transition-colors">
-              <div className="absolute -right-4 -bottom-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform"><TrendingDown className="w-24 h-24 text-indigo-500"/></div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Hiệu suất sử dụng (Giao việc)</p>
-              <div className="flex items-center gap-2 relative z-10">
-                <h3 className="text-2xl font-black text-indigo-600 dark:text-indigo-400">{kpis.utilizationRate}%</h3>
+            <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-indigo-300 transition-colors duration-500">
+              <div className="absolute -right-4 -bottom-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform duration-500"><TrendingDown className="w-24 h-24 text-indigo-500"/></div>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10 transition-colors duration-500">Hiệu suất sử dụng (Giao việc)</p>
+              <div className="flex items-center gap-2 relative z-10 transition-colors duration-500">
+                <h3 className="text-2xl font-black text-indigo-600 dark:text-indigo-400 transition-colors duration-500">{kpis.utilizationRate}%</h3>
                 {kpis.utilizationRate > 85 && <Zap className="w-4 h-4 text-amber-500" fill="currentColor" />}
               </div>
-              <div className="flex items-center gap-2 mt-2 relative z-10">
-                <div className="flex-1 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                  <motion.div initial={{ width: 0 }} animate={{ width: `${kpis.utilizationRate}%` }} transition={{ duration: 1 }} className={cn("h-full rounded-full", kpis.utilizationRate > 85 ? "bg-amber-500" : "bg-indigo-500")} />
+              <div className="flex items-center gap-2 mt-2 relative z-10 transition-colors duration-500">
+                <div className="flex-1 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden transition-colors duration-500">
+                  <motion.div initial={{ width: 0 }} animate={{ width: `${kpis.utilizationRate}%` }} transition={{ duration: 1 }} className={cn("h-full rounded-full transition-colors duration-500", kpis.utilizationRate > 85 ? "bg-amber-500" : "bg-indigo-500")} />
                 </div>
-                <span className="text-[10px] font-bold text-slate-400">Lý tưởng {'>'} 85%</span>
+                <span className="text-[10px] font-bold text-slate-400 transition-colors duration-500">Lý tưởng {'>'} 85%</span>
               </div>
             </motion.div>
             
-            <motion.div variants={itemVariants} className={cn("glass p-5 rounded-3xl border shadow-sm flex flex-col justify-center relative overflow-hidden group transition-colors", kpis.maintenanceCount > 0 ? "border-amber-200 bg-amber-50/50 dark:border-amber-500/30 dark:bg-amber-900/10" : "border-slate-200 dark:border-white/10")}>
-              <div className="absolute -right-2 -bottom-2 opacity-[0.05] group-hover:scale-110 transition-transform"><Wrench className="w-20 h-20 text-amber-500"/></div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Thiết bị đang bảo trì</p>
-              <div className="flex items-center gap-3 relative z-10">
-                <h3 className={cn("text-3xl font-black", kpis.maintenanceCount > 0 ? "text-amber-600 dark:text-amber-400" : "text-slate-400")}>
+            <motion.div variants={itemVariants} className={cn("glass p-5 rounded-3xl border shadow-sm flex flex-col justify-center relative overflow-hidden group transition-colors duration-500", kpis.maintenanceCount > 0 ? "border-amber-200 bg-amber-50/50 dark:border-amber-500/30 dark:bg-amber-900/10" : "border-slate-200 dark:border-white/10")}>
+              <div className="absolute -right-2 -bottom-2 opacity-[0.05] group-hover:scale-110 transition-transform duration-500"><Wrench className="w-20 h-20 text-amber-500"/></div>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10 transition-colors duration-500">Thiết bị đang bảo trì</p>
+              <div className="flex items-center gap-3 relative z-10 transition-colors duration-500">
+                <h3 className={cn("text-3xl font-black transition-colors duration-500", kpis.maintenanceCount > 0 ? "text-amber-600 dark:text-amber-400" : "text-slate-400")}>
                   {kpis.maintenanceCount}
                 </h3>
                 {kpis.maintenanceCount > 0 && (
-                  <span className="flex h-3 w-3 relative">
+                  <span className="flex h-3 w-3 relative transition-colors duration-500">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
                   </span>
@@ -447,10 +473,10 @@ export default function AssetsPage() {
           </div>
 
           {/* 3. THANH CÔNG CỤ: TÌM KIẾM, LỌC & TABS */}
-          <motion.div variants={itemVariants} className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-3 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm z-10 sticky top-4">
+          <motion.div variants={itemVariants} className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 glass p-3 rounded-2xl border border-slate-200 dark:border-slate-700/50 shadow-sm z-10 sticky top-4 transition-colors duration-500">
             
             {/* Tabs Ngữ cảnh */}
-            <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200/50 dark:border-white/5">
+            <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200/50 dark:border-slate-700/50 transition-colors duration-500">
               {[
                 { id: "ALL", label: "Tất cả" },
                 { id: "ACTIVE", label: "Trong kho" },
@@ -461,11 +487,11 @@ export default function AssetsPage() {
                 <button 
                   key={tab.id} onClick={() => setActiveTab(tab.id as TabType)} 
                   className={cn(
-                    "relative px-4 py-2 text-xs font-bold rounded-lg transition-colors whitespace-nowrap z-10",
+                    "relative px-4 py-2 text-xs font-bold rounded-lg transition-colors whitespace-nowrap z-10 duration-500",
                     activeTab === tab.id ? "text-slate-900 dark:text-white" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
                   )}
                 >
-                  {activeTab === tab.id && <motion.div layoutId="assetFilterTab" className="absolute inset-0 bg-white dark:bg-slate-700 shadow-sm rounded-lg -z-10 border border-slate-200/50 dark:border-slate-600" />}
+                  {activeTab === tab.id && <motion.div layoutId="assetFilterTab" className="absolute inset-0 glass-panel shadow-sm rounded-lg -z-10 transition-colors duration-500" />}
                   {tab.label}
                 </button>
               ))}
@@ -474,14 +500,14 @@ export default function AssetsPage() {
           </motion.div>
 
           {/* 4. BẢNG DỮ LIỆU */}
-          <motion.div variants={itemVariants} className="glass-panel rounded-3xl overflow-hidden shadow-sm border border-slate-200 dark:border-white/10">
+          <motion.div variants={itemVariants} className="glass-panel rounded-3xl overflow-hidden shadow-sm border border-slate-200 dark:border-white/10 transition-colors duration-500">
             {assets.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-24 text-slate-400">
-                <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+              <div className="flex flex-col items-center justify-center py-24 text-slate-400 transition-colors duration-500">
+                <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4 transition-colors duration-500">
                   <Laptop className="w-10 h-10 opacity-50" />
                 </div>
-                <p className="font-bold text-slate-600 dark:text-slate-300 text-lg">Trống rỗng</p>
-                <p className="text-sm mt-1">Không tìm thấy tài sản nào khớp với bộ lọc.</p>
+                <p className="font-bold text-slate-600 dark:text-slate-300 text-lg transition-colors duration-500">Trống rỗng</p>
+                <p className="text-sm mt-1 transition-colors duration-500">Không tìm thấy tài sản nào khớp với bộ lọc.</p>
               </div>
             ) : (
               <DataTable 

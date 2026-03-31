@@ -46,6 +46,11 @@ export default function RolePermissionModal({ isOpen, onClose, existingRole }: R
   const [selectedPerms, setSelectedPerms] = useState<string[]>([]); // Lưu mảng UUID (permissionId)
   const [initialPerms, setInitialPerms] = useState<string[]>([]);
 
+  // 🚀 TỐI ƯU HIỆU NĂNG: TRÁNH O(N^2) KHI RENDER ---
+  // Chuyển mảng thành Set (Hash table) để tra cứu với độ phức tạp O(1) thay vì O(N)
+  const selectedSet = useMemo(() => new Set(selectedPerms), [selectedPerms]);
+  const initialSet = useMemo(() => new Set(initialPerms), [initialPerms]);
+
   // 💡 HÀM GOM NHÓM ĐỘNG: Tự động chia quyền theo Module để vẽ UI
   const dynamicModules = useMemo(() => {
     if (!rawPermissionsList) return [];
@@ -157,27 +162,27 @@ export default function RolePermissionModal({ isOpen, onClose, existingRole }: R
 
   // --- TÍNH TOÁN UI STATE ---
   const superAdminPermId = rawPermissionsList?.find((p: any) => p.code === "ALL")?.permissionId;
-  const hasAdminPerm = superAdminPermId ? selectedPerms.includes(superAdminPermId) : false;
+  const hasAdminPerm = superAdminPermId ? selectedSet.has(superAdminPermId) : false;
 
-  const addedCount = selectedPerms.filter(p => !initialPerms.includes(p)).length;
-  const removedCount = initialPerms.filter(p => !selectedPerms.includes(p)).length;
+  const addedCount = selectedPerms.filter(p => !initialSet.has(p)).length;
+  const removedCount = initialPerms.filter(p => !selectedSet.has(p)).length;
   const isChanged = addedCount > 0 || removedCount > 0;
 
   // --- RENDER FOOTER ---
   const modalFooter = (
-    <div className="w-full flex items-center justify-between">
-      <div className="hidden sm:flex flex-col gap-1">
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tổng đang chọn: <span className="text-purple-600 dark:text-purple-400 text-sm">{selectedPerms.length}</span></p>
+    <div className="w-full flex items-center justify-between transition-colors duration-500">
+      <div className="hidden sm:flex flex-col gap-1 transition-colors duration-500">
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider transition-colors duration-500">Tổng đang chọn: <span className="text-purple-600 dark:text-purple-400 text-sm transition-colors duration-500">{selectedPerms.length}</span></p>
         {isChanged && (
-          <div className="flex items-center gap-2 text-[10px] font-black">
-            {addedCount > 0 && <span className="text-emerald-600 bg-emerald-50 dark:bg-emerald-500/20 px-1.5 py-0.5 rounded">+{addedCount} MỚI</span>}
-            {removedCount > 0 && <span className="text-rose-600 bg-rose-50 dark:bg-rose-500/20 px-1.5 py-0.5 rounded">-{removedCount} GỠ BỎ</span>}
+          <div className="flex items-center gap-2 text-[10px] font-black transition-colors duration-500">
+            {addedCount > 0 && <span className="text-emerald-600 bg-emerald-50 dark:bg-emerald-500/20 px-1.5 py-0.5 rounded transition-colors duration-500">+{addedCount} MỚI</span>}
+            {removedCount > 0 && <span className="text-rose-600 bg-rose-50 dark:bg-rose-500/20 px-1.5 py-0.5 rounded transition-colors duration-500">-{removedCount} GỠ BỎ</span>}
           </div>
         )}
       </div>
-      <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-        <button type="button" onClick={onClose} disabled={isSubmitting} className="px-5 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors disabled:opacity-50">Hủy bỏ</button>
-        <button type="submit" form="role-form" disabled={isSubmitting || selectedPerms.length === 0} className="flex items-center gap-2 px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-purple-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+      <div className="flex items-center gap-3 w-full sm:w-auto justify-end transition-colors duration-500">
+        <button type="button" onClick={onClose} disabled={isSubmitting} className="px-5 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors disabled:opacity-50 duration-500">Hủy bỏ</button>
+        <button type="submit" form="role-form" disabled={isSubmitting || selectedPerms.length === 0} className="flex items-center gap-2 px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-purple-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed duration-500">
           {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
           {isChanged ? "Lưu các thay đổi" : "Lưu Cấu hình"}
         </button>
@@ -187,50 +192,49 @@ export default function RolePermissionModal({ isOpen, onClose, existingRole }: R
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={existingRole ? "Chỉnh sửa Vai trò (Role)" : "Tạo Vai trò Mới"} subtitle="Thiết lập chính sách phân quyền chi tiết (RBAC Tự Động)" icon={<KeyRound className="w-6 h-6 text-purple-500" />} maxWidth="max-w-5xl" disableOutsideClick={isSubmitting} footer={modalFooter}>
-      <form id="role-form" onSubmit={handleSubmit} className="flex flex-col md:flex-row h-full md:h-[65vh] bg-slate-50/50 dark:bg-transparent relative">
+      <form id="role-form" onSubmit={handleSubmit} className="flex flex-col md:flex-row h-full md:h-[65vh] bg-slate-50/50 dark:bg-transparent relative transition-colors duration-500">
         
         {/* LỚP PHỦ LOADING API KHI ĐANG FETCH */}
         {isFetchingPerms && (
-          <div className="absolute inset-0 z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center rounded-xl">
-            <Loader2 className="w-10 h-10 animate-spin text-purple-600 mb-3" />
-            <p className="text-sm font-bold text-slate-700 dark:text-slate-300">Đang lấy dữ liệu Quyền hạn từ Database...</p>
+          <div className="absolute inset-0 z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center rounded-xl transition-colors duration-500">
+            <Loader2 className="w-10 h-10 animate-spin text-purple-600 mb-3 transition-colors duration-500" />
+            <p className="text-sm font-bold text-slate-700 dark:text-slate-300 transition-colors duration-500">Đang lấy dữ liệu Quyền hạn từ Database...</p>
           </div>
         )}
 
         {/* --- CỘT TRÁI: THÔNG TIN ROLE --- */}
-        <div className="w-full md:w-1/3 p-6 border-r border-slate-200 dark:border-white/5 flex flex-col gap-5 shrink-0 bg-white/50 dark:bg-black/20">
-          <div className="space-y-1.5 group">
-            <label className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase flex items-center gap-1.5 group-focus-within:text-purple-500 transition-colors">Tên Vai Trò (Role Name) <span className="text-rose-500">*</span></label>
-            <input type="text" required value={roleName} onChange={(e) => setRoleName(e.target.value)} placeholder="VD: Kế Toán Trưởng..." className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500 transition-shadow shadow-sm" />
+        <div className="w-full md:w-1/3 p-6 border-r border-slate-200 dark:border-white/5 flex flex-col gap-5 shrink-0 bg-white/50 dark:bg-black/20 transition-colors duration-500">
+          <div className="space-y-1.5 group transition-colors duration-500">
+            <label className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase flex items-center gap-1.5 group-focus-within:text-purple-500 transition-colors duration-500">Tên Vai Trò (Role Name) <span className="text-rose-500">*</span></label>
+            <input type="text" required value={roleName} onChange={(e) => setRoleName(e.target.value)} placeholder="VD: Kế Toán Trưởng..." className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-500 shadow-sm" />
           </div>
           
-          <div className="space-y-1.5 group flex-1 flex flex-col">
-            <label className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase flex items-center gap-1.5 group-focus-within:text-purple-500 transition-colors">Mô tả chi tiết</label>
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Phạm vi công việc của role này..." className="w-full flex-1 min-h-[100px] px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-2 focus:ring-purple-500 resize-none transition-shadow shadow-sm" />
+          <div className="space-y-1.5 group flex-1 flex flex-col transition-colors duration-500">
+            <label className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase flex items-center gap-1.5 group-focus-within:text-purple-500 transition-colors duration-500">Mô tả chi tiết</label>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Phạm vi công việc của role này..." className="w-full flex-1 min-h-[100px] px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-2 focus:ring-purple-500 resize-none transition-all duration-500 shadow-sm text-slate-900 dark:text-white" />
           </div>
 
           <AnimatePresence>
             {hasAdminPerm && (
-              <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="p-4 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-xl text-rose-700 dark:text-rose-400 text-xs font-medium flex items-start gap-2 shadow-inner">
-                <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
-                <p><strong>CẢNH BÁO NGUY HIỂM:</strong> Bạn đang cấp quyền <b>Super Admin</b>. Tài khoản sở hữu role này có khả năng can thiệp toàn bộ hệ thống!</p>
+              <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="p-4 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-xl text-rose-700 dark:text-rose-400 text-xs font-medium flex items-start gap-2 shadow-inner transition-colors duration-500">
+                <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 transition-colors duration-500" />
+                <p className="transition-colors duration-500"><strong>CẢNH BÁO NGUY HIỂM:</strong> Bạn đang cấp quyền <b>Super Admin</b>. Tài khoản sở hữu role này có khả năng can thiệp toàn bộ hệ thống!</p>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
         {/* --- CỘT PHẢI: MA TRẬN QUYỀN ĐỘNG --- */}
-        <div className="flex-1 overflow-y-auto p-6 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto p-6 scrollbar-thin transition-colors duration-500">
           
-          {/* HEADER CỦA CỘT BÊN PHẢI (MA TRẬN QUYỀN VÀ NÚT SEED LUÔN HIỂN THỊ) */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-            <div className="flex items-center gap-2">
-              <Shield className="w-5 h-5 text-purple-500" />
-              <h3 className="text-lg font-black text-slate-800 dark:text-white">Ma trận Phân quyền</h3>
+          {/* HEADER CỦA CỘT BÊN PHẢI */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 transition-colors duration-500">
+            <div className="flex items-center gap-2 transition-colors duration-500">
+              <Shield className="w-5 h-5 text-purple-500 transition-colors duration-500" />
+              <h3 className="text-lg font-black text-slate-800 dark:text-white transition-colors duration-500">Ma trận Phân quyền</h3>
             </div>
             
-            <div className="flex items-center gap-2">
-              {/* NÚT AUTO-HEALING: LUÔN HIỂN THỊ ĐỂ BƠM DỮ LIỆU */}
+            <div className="flex items-center gap-2 transition-colors duration-500">
               <button 
                 type="button" 
                 onClick={async () => {
@@ -242,50 +246,50 @@ export default function RolePermissionModal({ isOpen, onClose, existingRole }: R
                   }
                 }}
                 disabled={isSeeding || isFetchingPerms}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 hover:bg-purple-100 dark:bg-purple-500/10 dark:hover:bg-purple-500/20 border border-purple-200 dark:border-purple-500/30 text-purple-700 dark:text-purple-400 text-[11px] font-bold rounded-lg transition-colors shadow-sm"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 hover:bg-purple-100 dark:bg-purple-500/10 dark:hover:bg-purple-500/20 border border-purple-200 dark:border-purple-500/30 text-purple-700 dark:text-purple-400 text-[11px] font-bold rounded-lg transition-colors shadow-sm duration-500"
               >
                 {isSeeding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Database className="w-3.5 h-3.5" />}
                 Chuẩn hóa & Bơm đủ Quyền
               </button>
 
               {existingRole && isChanged && (
-                <button type="button" onClick={handleResetToInitial} className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-500/10 border border-amber-200 text-amber-700 dark:text-amber-400 text-[11px] font-bold rounded-lg transition-colors shadow-sm">
+                <button type="button" onClick={handleResetToInitial} className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-500/10 border border-amber-200 text-amber-700 dark:text-amber-400 text-[11px] font-bold rounded-lg transition-colors shadow-sm duration-500">
                   <RotateCcw className="w-3.5 h-3.5" /> Khôi phục gốc
                 </button>
               )}
             </div>
           </div>
 
-          <div className="flex flex-col gap-6">
-            {/* THÔNG BÁO NẾU DATABASE CHƯA CÓ QUYỀN NÀO SAU KHI LOAD XONG */}
+          <div className="flex flex-col gap-6 transition-colors duration-500">
             {dynamicModules.length === 0 && !isFetchingPerms && (
-               <div className="p-8 text-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
-                 <p className="text-slate-500 dark:text-slate-400 font-medium">Chưa có Quyền nào được định nghĩa trong Cơ sở dữ liệu.<br/><span className="text-xs">Vui lòng bấm nút "Chuẩn hóa & Bơm đủ Quyền" ở trên.</span></p>
+               <div className="p-8 text-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl transition-colors duration-500">
+                 <p className="text-slate-500 dark:text-slate-400 font-medium transition-colors duration-500">Chưa có Quyền nào được định nghĩa trong Cơ sở dữ liệu.<br/><span className="text-xs transition-colors duration-500">Vui lòng bấm nút "Chuẩn hóa & Bơm đủ Quyền" ở trên.</span></p>
                </div>
             )}
 
             {/* VÒNG LẶP RENDER MODULES ĐỘNG TỪ DB */}
             {dynamicModules.map((mod, mIdx) => {
               const modulePermIds = mod.permissions.map((p: any) => p.permissionId);
-              const isAllSelected = modulePermIds.every((id: string) => selectedPerms.includes(id));
-              const isPartiallySelected = modulePermIds.some((id: string) => selectedPerms.includes(id)) && !isAllSelected;
+              // 🚀 SỬ DỤNG Set.has ĐỂ KIỂM TRA O(1) TỐC ĐỘ BÀN THỜ
+              const isAllSelected = modulePermIds.every((id: string) => selectedSet.has(id));
+              const isPartiallySelected = modulePermIds.some((id: string) => selectedSet.has(id)) && !isAllSelected;
 
               return (
-                <div key={mIdx} className="bg-white dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-white/10 overflow-hidden shadow-sm">
+                <div key={mIdx} className="bg-white dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-white/10 overflow-hidden shadow-sm transition-colors duration-500">
                   {/* Tiêu đề Module & Nút Chọn tất cả */}
-                  <div className="flex justify-between items-center px-5 py-3 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-white/10">
-                    <h4 className="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">
-                      Module: <span className="text-purple-600 dark:text-purple-400">{mod.moduleName}</span>
+                  <div className="flex justify-between items-center px-5 py-3 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-white/10 transition-colors duration-500">
+                    <h4 className="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider transition-colors duration-500">
+                      Module: <span className="text-purple-600 dark:text-purple-400 transition-colors duration-500">{mod.moduleName}</span>
                     </h4>
                     <button 
                       type="button" onClick={() => handleSelectAllInModule(modulePermIds)}
                       className={cn(
-                        "text-[10px] font-bold px-3 py-1.5 rounded-lg border transition-all active:scale-95",
+                        "text-[10px] font-bold px-3 py-1.5 rounded-lg border transition-all active:scale-95 duration-500",
                         isAllSelected 
                           ? "bg-purple-100 border-purple-200 text-purple-700 dark:bg-purple-900/30 dark:border-purple-500/50 dark:text-purple-400" 
                           : isPartiallySelected 
                             ? "bg-amber-100 border-amber-200 text-amber-700 dark:bg-amber-900/30 dark:border-amber-500/50 dark:text-amber-400" 
-                            : "bg-white border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700 hover:bg-slate-100"
+                            : "bg-white border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
                       )}
                     >
                       {isAllSelected ? "Bỏ chọn tất cả" : isPartiallySelected ? "Chọn nốt phần còn lại" : "Chọn tất cả"}
@@ -293,13 +297,13 @@ export default function RolePermissionModal({ isOpen, onClose, existingRole }: R
                   </div>
 
                   {/* Lưới các Quyền (Grid) */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:gap-px bg-slate-100 dark:bg-slate-700/50">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:gap-px bg-slate-100 dark:bg-slate-700/50 transition-colors duration-500">
                     {mod.permissions.map((perm: any) => {
-                      const isSelected = selectedPerms.includes(perm.permissionId);
-                      const wasSelected = initialPerms.includes(perm.permissionId);
+                      // 🚀 SỬ DỤNG Set.has ĐỂ TRÁNH O(N^2)
+                      const isSelected = selectedSet.has(perm.permissionId);
+                      const wasSelected = initialSet.has(perm.permissionId);
                       const isCritical = perm.code === "ALL" || perm.code.includes("MANAGE_USERS");
 
-                      // Tính toán trạng thái Highlight (dành cho chế độ Edit)
                       const isNewlyAdded = isSelected && !wasSelected && existingRole;
                       const isBeingRemoved = !isSelected && wasSelected && existingRole;
 
@@ -308,47 +312,41 @@ export default function RolePermissionModal({ isOpen, onClose, existingRole }: R
                           key={perm.permissionId} onClick={() => togglePermission(perm.permissionId)}
                           className={cn(
                             "flex items-start gap-3 p-4 cursor-pointer transition-all duration-300 relative group overflow-hidden",
-                            isNewlyAdded ? "bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100" 
-                            : isBeingRemoved ? "bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100"
+                            isNewlyAdded ? "bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/40" 
+                            : isBeingRemoved ? "bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800/60"
                             : isSelected ? (isCritical ? "bg-rose-50/50 dark:bg-rose-900/20" : "bg-purple-50/30 dark:bg-purple-900/10")
                             : "bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/80"
                           )}
                         >
-                          {/* Dải màu đánh dấu (Indicator) */}
-                          {isNewlyAdded && <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500" />}
-                          {isBeingRemoved && <div className="absolute left-0 top-0 bottom-0 w-1 bg-rose-500" />}
+                          {isNewlyAdded && <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500 transition-colors duration-500" />}
+                          {isBeingRemoved && <div className="absolute left-0 top-0 bottom-0 w-1 bg-rose-500 transition-colors duration-500" />}
 
-                          {/* Checkbox vuông UI */}
                           <div className={cn(
-                            "w-5 h-5 rounded flex items-center justify-center shrink-0 border mt-0.5 transition-all relative z-10",
+                            "w-5 h-5 rounded flex items-center justify-center shrink-0 border mt-0.5 transition-all relative z-10 duration-500",
                             isNewlyAdded ? "bg-emerald-500 border-emerald-600"
                             : isSelected ? (isCritical ? "bg-rose-500 border-rose-600" : "bg-purple-500 border-purple-600") 
                             : "bg-slate-100 border-slate-300 dark:bg-slate-900 dark:border-slate-600 group-hover:border-purple-400"
                           )}>
-                            {isSelected && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
+                            {isSelected && <Check className="w-3.5 h-3.5 text-white transition-colors duration-500" strokeWidth={3} />}
                           </div>
                           
-                          {/* Nội dung Quyền */}
-                          <div className={cn("relative z-10 flex-1", isBeingRemoved && "opacity-60")}>
-                            <div className="flex items-center justify-between">
+                          <div className={cn("relative z-10 flex-1 transition-all duration-500", isBeingRemoved && "opacity-60")}>
+                            <div className="flex items-center justify-between transition-colors duration-500">
                               <p className={cn(
-                                "text-sm font-bold transition-colors line-clamp-1", 
+                                "text-sm font-bold transition-colors line-clamp-1 duration-500", 
                                 isBeingRemoved ? "text-slate-400 line-through"
                                 : isNewlyAdded ? "text-emerald-700 dark:text-emerald-400"
                                 : isSelected ? (isCritical ? "text-rose-700 dark:text-rose-400" : "text-purple-700 dark:text-purple-400") 
                                 : "text-slate-700 dark:text-slate-300"
                               )}>
-                                {/* THÔNG MINH HIỂN THỊ: Ưu tiên name, nếu không có lấy code */}
                                 {perm.name || perm.code} 
                               </p>
 
-                              {/* Nhãn tag (Badges) cho quyền vừa đổi */}
-                              {isNewlyAdded && <span className="flex items-center gap-1 text-[9px] font-black bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400 px-1.5 py-0.5 rounded uppercase"><PlusCircle className="w-2.5 h-2.5"/> Mới</span>}
-                              {isBeingRemoved && <span className="flex items-center gap-1 text-[9px] font-black bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400 px-1.5 py-0.5 rounded uppercase"><MinusCircle className="w-2.5 h-2.5"/> Bỏ</span>}
+                              {isNewlyAdded && <span className="flex items-center gap-1 text-[9px] font-black bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400 px-1.5 py-0.5 rounded uppercase transition-colors duration-500"><PlusCircle className="w-2.5 h-2.5"/> Mới</span>}
+                              {isBeingRemoved && <span className="flex items-center gap-1 text-[9px] font-black bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400 px-1.5 py-0.5 rounded uppercase transition-colors duration-500"><MinusCircle className="w-2.5 h-2.5"/> Bỏ</span>}
                             </div>
                             
-                            {/* Mô tả nhỏ ở dưới */}
-                            <p className="text-[11px] text-slate-500 mt-0.5 leading-snug line-clamp-2">
+                            <p className="text-[11px] text-slate-500 mt-0.5 leading-snug line-clamp-2 transition-colors duration-500">
                               {perm.description || `Mã kỹ thuật: ${perm.code}`}
                             </p>
                           </div>

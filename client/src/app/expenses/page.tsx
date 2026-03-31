@@ -10,6 +10,7 @@ import {
 import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
+import { useAppSelector } from "@/app/redux"; // 🚀 BỔ SUNG CONTEXT CHI NHÁNH
 import { 
   useGetExpensesQuery,
   useDeleteExpenseMutation,
@@ -40,12 +41,12 @@ const calculateTotalExpense = (expense: any) => {
 // 2. SKELETON LOADING
 // ==========================================
 const ExpensesSkeleton = () => (
-  <div className="flex flex-col gap-6 w-full animate-pulse mt-6">
+  <div className="flex flex-col gap-6 w-full animate-pulse mt-6 transition-colors duration-500">
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
-      {[1, 2, 3].map(i => <div key={i} className="h-32 rounded-3xl bg-slate-200 dark:bg-slate-800/50"></div>)}
+      {[1, 2, 3].map(i => <div key={i} className="h-32 rounded-3xl bg-slate-200 dark:bg-slate-800/50 transition-colors duration-500"></div>)}
     </div>
-    <div className="h-16 w-full rounded-2xl bg-slate-200 dark:bg-slate-800/50"></div>
-    <div className="h-[500px] w-full bg-slate-200 dark:bg-slate-800/50 rounded-3xl mt-2"></div>
+    <div className="h-16 w-full rounded-2xl bg-slate-200 dark:bg-slate-800/50 transition-colors duration-500"></div>
+    <div className="h-[500px] w-full bg-slate-200 dark:bg-slate-800/50 rounded-3xl mt-2 transition-colors duration-500"></div>
   </div>
 );
 
@@ -55,6 +56,9 @@ const ExpensesSkeleton = () => (
 export default function ExpensesPage() {
   const { t } = useTranslation();
   
+  // 🚀 BỐI CẢNH REDUX (CONTEXT ISOLATION)
+  const { activeBranchId } = useAppSelector((state: any) => state.global);
+
   // --- STATE MODAL ---
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
@@ -62,8 +66,12 @@ export default function ExpensesPage() {
   // 🚀 STATE BỘ LỌC NÂNG CAO
   const [filterPostingStatus, setFilterPostingStatus] = useState("ALL");
 
-  // --- API HOOKS ---
-  const { data: rawExpenses, isLoading, isError, refetch, isFetching } = useGetExpensesQuery({});
+  // --- API HOOKS (🚀 ĐÃ BƠM BỐI CẢNH CHI NHÁNH VÀ KHÓA KHI TRỐNG) ---
+  const { data: rawExpenses, isLoading, isError, refetch, isFetching } = useGetExpensesQuery(
+    { branchId: activeBranchId } as any, 
+    { skip: !activeBranchId }
+  );
+  
   const [deleteExpense, { isLoading: isDeleting }] = useDeleteExpenseMutation();
   const [postExpense, { isLoading: isPosting }] = usePostExpenseMutation();
 
@@ -73,16 +81,13 @@ export default function ExpensesPage() {
     
     return arr.map((exp: any) => ({
       ...exp,
-      // Trường ảo gộp REF + Diễn giải để DataTable search mượt mà
       searchField: `${exp.reference || ""} ${exp.description || ""}`.toLowerCase()
     })).filter((exp: any) => {
-      // Logic lọc theo trạng thái (Draft / Posted)
       return filterPostingStatus === "ALL" || exp.postingStatus === filterPostingStatus;
     });
   }, [rawExpenses, filterPostingStatus]);
 
   // --- TÍNH TOÁN KPI ĐỘNG THEO DỮ LIỆU ĐÃ LỌC ---
-  // 💡 FIX LỖI TS7006: Khai báo rõ (exp: any)
   const summary = useMemo(() => {
     let totalAmount = 0;
     let pendingCount = 0;
@@ -126,7 +131,6 @@ export default function ExpensesPage() {
     }
   };
 
-  // 💡 FIX LỖI TS7006: Khai báo rõ (exp: any)
   const handleExportData = () => {
     if (expensesList.length === 0) {
       toast.error("Không có dữ liệu để xuất!"); return;
@@ -147,18 +151,18 @@ export default function ExpensesPage() {
   const columns: ColumnDef<any>[] = [
     {
       header: "Chứng từ / Diễn giải",
-      accessorKey: "searchField", // Trỏ vào trường ảo để Search đa năng
+      accessorKey: "searchField", 
       sortable: true,
       cell: (row: any) => (
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-500/10 flex items-center justify-center border border-rose-100 dark:border-rose-500/20 shrink-0 group-hover:scale-105 transition-transform">
+        <div className="flex items-center gap-3 transition-colors duration-500">
+          <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-500/10 flex items-center justify-center border border-rose-100 dark:border-rose-500/20 shrink-0 group-hover:scale-105 transition-transform duration-500">
             <Receipt className="w-5 h-5 text-rose-500" />
           </div>
-          <div className="flex flex-col max-w-[250px]">
-            <span className="font-bold text-slate-900 dark:text-white line-clamp-1 truncate" title={row.description}>
+          <div className="flex flex-col max-w-[250px] transition-colors duration-500">
+            <span className="font-bold text-slate-900 dark:text-white line-clamp-1 truncate transition-colors duration-500" title={row.description}>
               {row.description || "Không có diễn giải"}
             </span>
-            <span className="text-[11px] font-mono text-slate-500 mt-0.5 px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 rounded w-fit border border-slate-200 dark:border-slate-700">
+            <span className="text-[11px] font-mono text-slate-500 mt-0.5 px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 rounded w-fit border border-slate-200 dark:border-slate-700 transition-colors duration-500">
               {row.reference}
             </span>
           </div>
@@ -170,7 +174,7 @@ export default function ExpensesPage() {
       accessorKey: "entryDate",
       sortable: true,
       cell: (row: any) => (
-        <span className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+        <span className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5 transition-colors duration-500">
           <Clock className="w-3.5 h-3.5 text-slate-400" />
           {formatDate(row.entryDate)}
         </span>
@@ -183,7 +187,7 @@ export default function ExpensesPage() {
       cell: (row: any) => {
         const total = calculateTotalExpense(row);
         return (
-          <span className="font-black text-rose-600 dark:text-rose-400 tracking-tight text-base">
+          <span className="font-black text-rose-600 dark:text-rose-400 tracking-tight text-base transition-colors duration-500">
             {formatVND(total)}
           </span>
         );
@@ -196,9 +200,9 @@ export default function ExpensesPage() {
       cell: (row: any) => {
         const isPosted = row.postingStatus === "POSTED";
         return (
-          <div className="flex justify-center">
+          <div className="flex justify-center transition-colors duration-500">
              <span className={cn(
-               "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border shadow-sm",
+               "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border shadow-sm transition-colors duration-500",
                isPosted ? "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30" 
                         : "bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30"
              )}>
@@ -216,22 +220,22 @@ export default function ExpensesPage() {
       cell: (row: any) => {
         const isPosted = row.postingStatus === "POSTED";
         return (
-          <div className="flex items-center justify-end gap-1">
+          <div className="flex items-center justify-end gap-1 transition-colors duration-500">
             {!isPosted && (
               <>
-                <button onClick={() => handlePost(row.journalId, row.reference)} disabled={isPosting} title="Ghi sổ (Hạch toán)" className="p-2 text-emerald-600 hover:text-white bg-emerald-50 hover:bg-emerald-500 dark:bg-emerald-500/10 dark:hover:bg-emerald-600 rounded-xl transition-colors shadow-sm active:scale-95 disabled:opacity-50">
+                <button onClick={() => handlePost(row.journalId, row.reference)} disabled={isPosting} title="Ghi sổ (Hạch toán)" className="p-2 text-emerald-600 hover:text-white bg-emerald-50 hover:bg-emerald-500 dark:bg-emerald-500/10 dark:hover:bg-emerald-600 rounded-xl transition-colors shadow-sm active:scale-95 disabled:opacity-50 duration-500">
                   <FileText className="w-4 h-4" />
                 </button>
-                <button onClick={() => openModal(row)} title="Sửa chứng từ" className="p-2 text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/30 rounded-xl transition-colors shadow-sm active:scale-95">
+                <button onClick={() => openModal(row)} title="Sửa chứng từ" className="p-2 text-indigo-600 hover:text-white bg-indigo-50 hover:bg-indigo-500 dark:bg-indigo-500/10 dark:hover:bg-indigo-600 rounded-xl transition-colors shadow-sm active:scale-95 duration-500">
                   <Edit className="w-4 h-4" />
                 </button>
-                <button onClick={() => handleDelete(row.journalId, row.reference)} disabled={isDeleting} title="Xóa nháp" className="p-2 text-rose-500 hover:text-white bg-rose-50 hover:bg-rose-500 dark:bg-rose-500/10 dark:hover:bg-rose-600 rounded-xl transition-colors shadow-sm active:scale-95 disabled:opacity-50">
+                <button onClick={() => handleDelete(row.journalId, row.reference)} disabled={isDeleting} title="Xóa nháp" className="p-2 text-rose-500 hover:text-white bg-rose-50 hover:bg-rose-500 dark:bg-rose-500/10 dark:hover:bg-rose-600 rounded-xl transition-colors shadow-sm active:scale-95 disabled:opacity-50 duration-500">
                   <Trash2 className="w-4 h-4" />
                 </button>
               </>
             )}
             {isPosted && (
-              <span className="text-[10px] italic text-slate-400 px-2 font-medium bg-slate-100 dark:bg-slate-800 rounded-lg py-1 border border-slate-200 dark:border-slate-700">🔒 Kế toán đã khóa</span>
+              <span className="text-[10px] italic text-slate-400 px-2 font-medium bg-slate-100 dark:bg-slate-800 rounded-lg py-1 border border-slate-200 dark:border-slate-700 transition-colors duration-500">🔒 Kế toán đã khóa</span>
             )}
           </div>
         );
@@ -241,14 +245,14 @@ export default function ExpensesPage() {
 
   // 🚀 BỘ LỌC NÂNG CAO (UI ĐỂ BƠM VÀO DATATABLE)
   const expenseFiltersNode = (
-    <div className="flex flex-wrap items-center gap-4 w-full">
+    <div className="flex flex-wrap items-center gap-4 w-full transition-colors duration-500">
       <div className="w-full sm:w-64">
-        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Lọc theo Tình trạng Kế toán</label>
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block transition-colors duration-500">Lọc theo Tình trạng Kế toán</label>
         <div className="relative group">
           <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-rose-500 transition-colors" />
           <select 
             value={filterPostingStatus} onChange={(e) => setFilterPostingStatus(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-rose-500 outline-none transition-all shadow-sm appearance-none cursor-pointer"
+            className="w-full pl-9 pr-4 py-2 bg-transparent border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-rose-500 outline-none transition-all shadow-sm appearance-none cursor-pointer text-slate-900 dark:text-white duration-500"
           >
             <option value="ALL">Tất cả chứng từ</option>
             <option value="DRAFT">Chờ Kế toán duyệt (Nháp)</option>
@@ -263,33 +267,44 @@ export default function ExpensesPage() {
   const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
   const itemVariants: Variants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } };
 
+  // 🚀 LÁ CHẮN UI: KHÔNG CÓ CHI NHÁNH
+  if (!activeBranchId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[70vh] w-full text-center transition-colors duration-500">
+        <AlertOctagon className="w-16 h-16 text-amber-500 mb-4 animate-pulse" />
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2 transition-colors duration-500">Chưa chọn Chi nhánh</h2>
+        <p className="text-slate-500 transition-colors duration-500">Vui lòng chọn Chi nhánh hoạt động ở góc trên màn hình để tải Dữ liệu Chi phí.</p>
+      </div>
+    );
+  }
+
   if (isError) return (
-    <div className="flex flex-col items-center justify-center h-[70vh] w-full text-center">
+    <div className="flex flex-col items-center justify-center h-[70vh] w-full text-center transition-colors duration-500">
       <AlertOctagon className="w-16 h-16 text-rose-500 mb-4 animate-pulse" />
-      <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Lỗi truy xuất Dữ liệu Chi phí</h2>
-      <button onClick={() => refetch()} className="px-6 py-3 mt-4 bg-rose-600 text-white rounded-xl shadow-lg active:scale-95 flex items-center gap-2">
+      <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2 transition-colors duration-500">Lỗi truy xuất Dữ liệu Chi phí</h2>
+      <button onClick={() => refetch()} className="px-6 py-3 mt-4 bg-rose-600 text-white rounded-xl shadow-lg active:scale-95 flex items-center gap-2 transition-all duration-500">
         <RefreshCcw className={cn("w-5 h-5", isFetching && "animate-spin")} /> Thử lại
       </button>
     </div>
   );
 
   return (
-    <div className="w-full flex flex-col gap-6 pb-10">
+    <div className="w-full flex flex-col gap-6 pb-10 transition-colors duration-500">
       
       <Header 
         title={t("Quản lý Chi phí")} 
         subtitle={t("Ghi nhận, phân loại và theo dõi dòng tiền ra (OPEX/CAPEX).")}
         rightNode={
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 transition-colors duration-500">
             <button 
               onClick={handleExportData}
-              className="px-4 py-2.5 flex items-center gap-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-xl border border-slate-200 dark:border-slate-700 transition-all active:scale-95 shadow-sm"
+              className="px-4 py-2.5 flex items-center gap-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-xl border border-slate-200 dark:border-slate-700 transition-all active:scale-95 shadow-sm duration-500"
             >
               <Download className="w-4 h-4" /> <span className="hidden sm:inline">Xuất File</span>
             </button>
             <button 
               onClick={() => openModal()} 
-              className="px-5 py-2.5 flex items-center gap-2 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-rose-500/30 transition-all active:scale-95"
+              className="px-5 py-2.5 flex items-center gap-2 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-rose-500/30 transition-all active:scale-95 duration-500"
             >
               <Plus className="w-5 h-5" /> <span className="hidden sm:inline">Ghi nhận Chi phí</span>
             </button>
@@ -298,50 +313,48 @@ export default function ExpensesPage() {
       />
 
       {isLoading ? <ExpensesSkeleton /> : (
-        <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-6 w-full">
+        <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-6 w-full transition-colors duration-500">
           
           {/* KPI CARDS (GLASSMORPHISM) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 transition-colors duration-500">
             <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:shadow-rose-500/10 hover:border-rose-400/50 transition-all duration-300">
               <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform duration-500"><TrendingDown className="w-24 h-24 text-rose-500"/></div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 relative z-10 flex items-center gap-1"><Wallet className="w-3.5 h-3.5"/> Tổng Tiền Đã Chi</p>
-              <h3 className="text-3xl lg:text-4xl font-black text-rose-600 dark:text-rose-400 relative z-10 tracking-tight truncate">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 relative z-10 flex items-center gap-1 transition-colors duration-500"><Wallet className="w-3.5 h-3.5"/> Tổng Tiền Đã Chi</p>
+              <h3 className="text-3xl lg:text-4xl font-black text-rose-600 dark:text-rose-400 relative z-10 tracking-tight truncate transition-colors duration-500">
                 {formatVND(summary.totalAmount)}
               </h3>
-              <p className="text-[11px] font-medium text-slate-500 mt-2 relative z-10 flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded w-fit">
+              <p className="text-[11px] font-medium text-slate-500 mt-2 relative z-10 flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded w-fit transition-colors duration-500">
                 Từ {summary.totalCount} chứng từ {filterPostingStatus !== "ALL" && "(Đã lọc)"}
               </p>
             </motion.div>
             
             <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:shadow-amber-500/10 hover:border-amber-400/50 transition-all duration-300">
               <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform duration-500"><Clock className="w-24 h-24 text-amber-500"/></div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 relative z-10 flex items-center gap-1"><Clock className="w-3.5 h-3.5"/> Chờ Ghi Sổ (Draft)</p>
-              <div className="flex items-center gap-3 relative z-10">
-                <h3 className="text-4xl font-black text-amber-500 tracking-tight">{summary.pendingCount}</h3>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 relative z-10 flex items-center gap-1 transition-colors duration-500"><Clock className="w-3.5 h-3.5"/> Chờ Ghi Sổ (Draft)</p>
+              <div className="flex items-center gap-3 relative z-10 transition-colors duration-500">
+                <h3 className="text-4xl font-black text-amber-500 tracking-tight transition-colors duration-500">{summary.pendingCount}</h3>
                 {summary.pendingCount > 0 && <span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span></span>}
               </div>
-              <p className="text-[11px] font-medium text-slate-500 mt-2 relative z-10 flex items-center gap-1">Cần kế toán duyệt và hạch toán</p>
+              <p className="text-[11px] font-medium text-slate-500 mt-2 relative z-10 flex items-center gap-1 transition-colors duration-500">Cần kế toán duyệt và hạch toán</p>
             </motion.div>
             
             <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:shadow-emerald-500/10 hover:border-emerald-400/50 transition-all duration-300">
               <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform duration-500"><CheckCircle2 className="w-24 h-24 text-emerald-500"/></div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 relative z-10 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5"/> Đã Ghi Sổ (Posted)</p>
-              <h3 className="text-4xl font-black text-emerald-600 dark:text-emerald-400 relative z-10 tracking-tight">{summary.postedCount}</h3>
-              <p className="text-[11px] font-medium text-slate-500 mt-2 relative z-10 flex items-center gap-1">Đã phản ánh vào Báo cáo tài chính</p>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 relative z-10 flex items-center gap-1 transition-colors duration-500"><CheckCircle2 className="w-3.5 h-3.5"/> Đã Ghi Sổ (Posted)</p>
+              <h3 className="text-4xl font-black text-emerald-600 dark:text-emerald-400 relative z-10 tracking-tight transition-colors duration-500">{summary.postedCount}</h3>
+              <p className="text-[11px] font-medium text-slate-500 mt-2 relative z-10 flex items-center gap-1 transition-colors duration-500">Đã phản ánh vào Báo cáo tài chính</p>
             </motion.div>
           </div>
 
           {/* DATATABLE */}
-          <motion.div variants={itemVariants} className="w-full relative">
-            <div className="glass-panel rounded-3xl overflow-hidden shadow-md border border-slate-200 dark:border-white/10">
+          <motion.div variants={itemVariants} className="w-full relative transition-colors duration-500">
+            <div className="glass-panel rounded-3xl overflow-hidden shadow-md border border-slate-200 dark:border-white/10 transition-colors duration-500">
               <DataTable 
                 data={expensesList} 
                 columns={columns} 
-                searchKey="searchField" // 💡 Quét dữ liệu bằng trường ảo gộp (Reference + Nội dung)
+                searchKey="searchField" 
                 searchPlaceholder="Tìm mã phiếu hoặc diễn giải..." 
                 itemsPerPage={10} 
-                
-                // 🚀 BƠM UI BỘ LỌC VÀO TRONG BẢNG
                 advancedFilterNode={expenseFiltersNode}
               />
             </div>

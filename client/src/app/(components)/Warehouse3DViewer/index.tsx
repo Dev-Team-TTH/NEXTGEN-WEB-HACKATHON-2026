@@ -12,9 +12,10 @@ import {
   Loader2, PackageSearch, Box as BoxIcon, 
   AlertOctagon, Maximize, Target, Zap, CheckCircle2, RotateCcw, Building2
 } from "lucide-react";
-import { toast } from "react-hot-toast"; // ĐÃ THÊM: Import thư viện Toast
+import { toast } from "react-hot-toast"; 
 
 // --- REDUX & API ---
+import { useAppSelector } from "@/app/redux"; // 🚀 BỔ SUNG: Context Chi nhánh
 import { 
   useGetBinsQuery, 
   useGetProductsQuery,
@@ -103,38 +104,38 @@ const BinNode = ({ position, binData, index, binCode, isHighlighted, pickQuantit
         <Html position={[0, isHighlighted ? 2.0 : 1.5, 0]} center zIndexRange={[100, 0]} className="pointer-events-none">
           <motion.div 
             initial={{ opacity: 0, scale: 0.5, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
-            className={`backdrop-blur-xl px-4 py-3 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.3)] border flex flex-col min-w-[200px] ${
+            className={`backdrop-blur-xl px-4 py-3 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.3)] border flex flex-col min-w-[200px] transition-colors duration-500 ${
               isHighlighted 
                 ? "bg-cyan-900/90 border-cyan-400 text-white shadow-cyan-500/50" 
                 : "bg-white/95 dark:bg-slate-900/95 border-slate-200 dark:border-white/10"
             }`}
           >
-            <div className="flex items-center gap-2 mb-2 border-b border-current/20 pb-2">
-              <BoxIcon className={`w-4 h-4 ${isHighlighted ? "text-cyan-300" : "text-indigo-500"}`} />
-              <span className={`font-black text-sm ${isHighlighted ? "text-white" : "text-slate-900 dark:text-white"}`}>
+            <div className="flex items-center gap-2 mb-2 border-b border-current/20 pb-2 transition-colors duration-500">
+              <BoxIcon className={`w-4 h-4 transition-colors duration-500 ${isHighlighted ? "text-cyan-300" : "text-indigo-500"}`} />
+              <span className={`font-black text-sm transition-colors duration-500 ${isHighlighted ? "text-white" : "text-slate-900 dark:text-white"}`}>
                 {binCode}
               </span>
             </div>
             
             {isHighlighted ? (
-              <div className="flex flex-col gap-1 items-center bg-cyan-950/50 p-2 rounded-xl">
-                <span className="text-xs text-cyan-200 font-bold uppercase tracking-wider">Hệ thống yêu cầu lấy</span>
-                <span className="text-3xl font-black text-cyan-400 drop-shadow-md">{pickQuantity}</span>
+              <div className="flex flex-col gap-1 items-center bg-cyan-950/50 p-2 rounded-xl transition-colors duration-500">
+                <span className="text-xs text-cyan-200 font-bold uppercase tracking-wider transition-colors duration-500">Hệ thống yêu cầu lấy</span>
+                <span className="text-3xl font-black text-cyan-400 drop-shadow-md transition-colors duration-500">{pickQuantity}</span>
               </div>
             ) : (
               <>
-                <div className="flex justify-between items-center text-xs mb-1">
-                  <span className="font-bold text-slate-500">Sức chứa:</span>
-                  <span className={`font-black ${capacityPercent >= 85 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                <div className="flex justify-between items-center text-xs mb-1 transition-colors duration-500">
+                  <span className="font-bold text-slate-500 transition-colors duration-500">Sức chứa:</span>
+                  <span className={`font-black transition-colors duration-500 ${capacityPercent >= 85 ? 'text-rose-500' : 'text-emerald-500'}`}>
                     {Math.round(capacityPercent)}%
                   </span>
                 </div>
-                <div className="text-[10px] text-slate-400 font-medium flex justify-between mb-2">
-                  <span>Đang lưu: {binData?.currentLoad || 0}</span>
-                  <span>Max: {binData?.capacity || 100}</span>
+                <div className="text-[10px] text-slate-400 font-medium flex justify-between mb-2 transition-colors duration-500">
+                  <span className="transition-colors duration-500">Đang lưu: {binData?.currentLoad || 0}</span>
+                  <span className="transition-colors duration-500">Max: {binData?.capacity || 100}</span>
                 </div>
-                <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
-                  <div className="h-full rounded-full" style={{ width: `${capacityPercent}%`, backgroundColor: getColor() }} />
+                <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner transition-colors duration-500">
+                  <div className="h-full rounded-full transition-colors duration-500" style={{ width: `${capacityPercent}%`, backgroundColor: getColor() }} />
                 </div>
               </>
             )}
@@ -150,12 +151,12 @@ const BinNode = ({ position, binData, index, binCode, isHighlighted, pickQuantit
 // ==========================================
 const WarehouseScene = ({ 
   binsData, 
-  highlightedPicks, 
+  highlightedPicksMap, // 🚀 TỐI ƯU HÓA O(1) Hash Map
   focusTarget,
   isWarehouseSelected
 }: { 
   binsData: any[]; 
-  highlightedPicks: any[];
+  highlightedPicksMap: Map<string, any>; // 🚀 O(1) Lookup Map
   focusTarget: THREE.Vector3 | null;
   isWarehouseSelected: boolean;
 }) => {
@@ -252,7 +253,8 @@ const WarehouseScene = ({
 
       {/* BINS & ITEMS */}
       {isWarehouseSelected && layout.map((item, index) => {
-        const pickData = highlightedPicks.find(p => p.binCode === item.binCode);
+        // 🚀 O(1) LOOKUP THAY VÌ O(N): Giải cứu GPU khỏi việc lặp Array.find()
+        const pickData = highlightedPicksMap.get(item.binCode);
         return (
           <BinNode 
             key={index} 
@@ -291,6 +293,9 @@ interface Warehouse3DViewerProps { warehouseId?: string; }
 
 export default function Warehouse3DViewer({ warehouseId }: Warehouse3DViewerProps) {
   
+  // 🚀 LÁ CHẮN BẢO MẬT: Bơm Redux Context để giới hạn dữ liệu tra cứu
+  const { activeBranchId } = useAppSelector((state: any) => state.global);
+
   // --- STATES ---
   const [localWarehouseId, setLocalWarehouseId] = useState<string>(warehouseId || "");
   const [selectedProductId, setSelectedProductId] = useState("");
@@ -304,21 +309,33 @@ export default function Warehouse3DViewer({ warehouseId }: Warehouse3DViewerProp
     if (warehouseId) setLocalWarehouseId(warehouseId);
   }, [warehouseId]);
 
-  // --- APIs ---
-  const { data: warehousesData } = useGetWarehousesQuery({});
+  // --- APIs (🚀 ĐÃ BỌC THEO CHI NHÁNH) ---
+  const { data: warehousesData } = useGetWarehousesQuery(
+    { branchId: activeBranchId } as any, 
+    { skip: !activeBranchId }
+  );
   const warehouses = Array.isArray(warehousesData) ? warehousesData : ((warehousesData as any)?.data || []);
 
-  // CHỈ FETCH BINS KHI ĐÃ CÓ ID KHO
   const { data: binsData, isLoading: loadingBins, isError } = useGetBinsQuery(
     { warehouseId: localWarehouseId }, 
     { skip: !localWarehouseId }
   );
-  
   const bins = Array.isArray(binsData) ? binsData : ((binsData as any)?.data || []);
-  const { data: productsData } = useGetProductsQuery({ limit: 100 } as any); 
+  
+  const { data: productsData } = useGetProductsQuery(
+    { branchId: activeBranchId, limit: 1000 } as any, 
+    { skip: !activeBranchId }
+  ); 
   const products = Array.isArray(productsData) ? productsData : ((productsData as any)?.data || []);
   
   const [autoPick] = useAutoPickStockMutation();
+
+  // 🚀 THUẬT TOÁN TỐI ƯU HÓA HASH MAP (O(1) Lookup cho 3D Render)
+  const highlightedPicksMap = useMemo(() => {
+    const map = new Map<string, any>();
+    pickResults.forEach(p => map.set(p.binCode, p));
+    return map;
+  }, [pickResults]);
 
   // Tính Legend
   const stats = useMemo(() => {
@@ -391,33 +408,33 @@ export default function Warehouse3DViewer({ warehouseId }: Warehouse3DViewerProp
     setPickResults([]);
   };
 
-  if (isError) return (<div className="w-full h-[500px] flex justify-center items-center bg-slate-50 dark:bg-slate-900 rounded-3xl border border-dashed border-rose-200"><AlertOctagon className="w-12 h-12 text-rose-500"/></div>);
+  if (isError) return (<div className="w-full h-[500px] flex justify-center items-center bg-slate-50 dark:bg-slate-900 rounded-3xl border border-dashed border-rose-200 transition-colors duration-500"><AlertOctagon className="w-12 h-12 text-rose-500 transition-colors duration-500"/></div>);
 
   return (
-    <div className="relative w-full h-[700px] bg-[#090D14] rounded-3xl overflow-hidden shadow-2xl group">
+    <div className="relative w-full h-[700px] bg-[#090D14] rounded-3xl overflow-hidden shadow-2xl group transition-colors duration-500">
       
       {/* HEADER OVERLAY */}
-      <div className="absolute top-6 left-6 z-10 pointer-events-none">
-        <h3 className="text-3xl font-black text-white flex items-center gap-2 drop-shadow-md">
-          <PackageSearch className="w-8 h-8 text-indigo-500" /> Digital Twin Warehouse
+      <div className="absolute top-6 left-6 z-10 pointer-events-none transition-colors duration-500">
+        <h3 className="text-3xl font-black text-white flex items-center gap-2 drop-shadow-md transition-colors duration-500">
+          <PackageSearch className="w-8 h-8 text-indigo-500 transition-colors duration-500" /> Digital Twin Warehouse
         </h3>
-        <p className="text-sm font-semibold flex items-center gap-1.5 mt-2 bg-black/40 backdrop-blur-md w-fit px-4 py-2 rounded-xl border border-white/20 text-slate-200">
-          <Target className="w-4 h-4 text-cyan-400 animate-pulse"/> Dùng chuột để Cuộn, Zoom & Khám phá
+        <p className="text-sm font-semibold flex items-center gap-1.5 mt-2 bg-black/40 backdrop-blur-md w-fit px-4 py-2 rounded-xl border border-white/20 text-slate-200 transition-colors duration-500">
+          <Target className="w-4 h-4 text-cyan-400 animate-pulse transition-colors duration-500"/> Dùng chuột để Cuộn, Zoom & Khám phá
         </p>
       </div>
 
       {/* WIDGET: AUTO PICK SMART PANEL */}
-      <div className="absolute top-6 right-6 z-10 w-80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 flex flex-col overflow-hidden">
-        <div className="bg-gradient-to-r from-cyan-600 to-blue-600 p-4 flex items-center gap-3 text-white">
-          <Zap className="w-5 h-5 fill-white" />
-          <h4 className="font-bold text-sm">Thuật toán Gom hàng FEFO</h4>
+      <div className="absolute top-6 right-6 z-10 w-80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 flex flex-col overflow-hidden transition-colors duration-500">
+        <div className="bg-gradient-to-r from-cyan-600 to-blue-600 p-4 flex items-center gap-3 text-white transition-colors duration-500">
+          <Zap className="w-5 h-5 fill-white transition-colors duration-500" />
+          <h4 className="font-bold text-sm transition-colors duration-500">Thuật toán Gom hàng FEFO</h4>
         </div>
         
-        <div className="p-4 flex flex-col gap-4">
+        <div className="p-4 flex flex-col gap-4 transition-colors duration-500">
           
           {/* LỰA CHỌN KHO HÀNG (DYNAMICS) */}
-          <div>
-            <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1"><Building2 className="w-3.5 h-3.5"/> Vị trí Kho:</label>
+          <div className="transition-colors duration-500">
+            <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1 transition-colors duration-500"><Building2 className="w-3.5 h-3.5 transition-colors duration-500"/> Vị trí Kho:</label>
             <select 
               value={localWarehouseId} 
               onChange={(e) => {
@@ -425,7 +442,7 @@ export default function Warehouse3DViewer({ warehouseId }: Warehouse3DViewerProp
                 setPickResults([]);
                 setFocusTarget(null);
               }}
-              className="w-full bg-slate-100 dark:bg-slate-800 p-2.5 rounded-lg text-sm border-none focus:ring-2 focus:ring-cyan-500 outline-none dark:text-white font-semibold"
+              className="w-full bg-slate-100 dark:bg-slate-800 p-2.5 rounded-lg text-sm border-none focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white font-semibold transition-colors duration-500 cursor-pointer"
             >
               <option value="">-- Chọn kho cần xem --</option>
               {warehouses.map((wh: any) => (
@@ -434,13 +451,13 @@ export default function Warehouse3DViewer({ warehouseId }: Warehouse3DViewerProp
             </select>
           </div>
 
-          <div>
-            <label className="text-xs font-bold text-slate-500 mb-1 block">Chọn Sản phẩm (SKU):</label>
+          <div className="transition-colors duration-500">
+            <label className="text-xs font-bold text-slate-500 mb-1 block transition-colors duration-500">Chọn Sản phẩm (SKU):</label>
             <select 
               value={selectedProductId} 
               onChange={(e) => setSelectedProductId(e.target.value)}
               disabled={!localWarehouseId}
-              className="w-full bg-slate-100 dark:bg-slate-800 p-2.5 rounded-lg text-sm border-none focus:ring-2 focus:ring-cyan-500 outline-none dark:text-white disabled:opacity-50"
+              className="w-full bg-slate-100 dark:bg-slate-800 p-2.5 rounded-lg text-sm border-none focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white disabled:opacity-50 transition-colors duration-500 cursor-pointer"
             >
               <option value="">-- Chọn vật tư cần xuất --</option>
               {products.map((p: any) => (
@@ -449,29 +466,29 @@ export default function Warehouse3DViewer({ warehouseId }: Warehouse3DViewerProp
             </select>
           </div>
 
-          <div>
-            <label className="text-xs font-bold text-slate-500 mb-1 block">Số lượng cần xuất:</label>
+          <div className="transition-colors duration-500">
+            <label className="text-xs font-bold text-slate-500 mb-1 block transition-colors duration-500">Số lượng cần xuất:</label>
             <input 
               type="number" min="1" 
               value={requiredQty} onChange={(e) => setRequiredQty(Number(e.target.value))}
               disabled={!localWarehouseId || !selectedProductId}
-              className="w-full bg-slate-100 dark:bg-slate-800 p-2.5 rounded-lg text-sm border-none focus:ring-2 focus:ring-cyan-500 outline-none dark:text-white disabled:opacity-50"
+              className="w-full bg-slate-100 dark:bg-slate-800 p-2.5 rounded-lg text-sm border-none focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white disabled:opacity-50 transition-colors duration-500"
             />
           </div>
 
-          <div className="flex gap-2 mt-2">
+          <div className="flex gap-2 mt-2 transition-colors duration-500">
             <button 
               onClick={handleRunAlgorithm}
               disabled={isPicking || !selectedProductId || !localWarehouseId}
-              className="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2.5 rounded-xl shadow-lg shadow-cyan-600/30 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
+              className="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2.5 rounded-xl shadow-lg shadow-cyan-600/30 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 duration-500"
             >
-              {isPicking ? <Loader2 className="w-4 h-4 animate-spin"/> : <Target className="w-4 h-4" />}
+              {isPicking ? <Loader2 className="w-4 h-4 animate-spin transition-colors duration-500"/> : <Target className="w-4 h-4 transition-colors duration-500" />}
               Chạy AI Pick
             </button>
             
             {pickResults.length > 0 && (
-              <button onClick={handleResetCamera} className="px-3 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95">
-                <RotateCcw className="w-5 h-5" />
+              <button onClick={handleResetCamera} className="px-3 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 duration-500">
+                <RotateCcw className="w-5 h-5 transition-colors duration-500" />
               </button>
             )}
           </div>
@@ -480,17 +497,17 @@ export default function Warehouse3DViewer({ warehouseId }: Warehouse3DViewerProp
         {/* RESULTS PANEL */}
         <AnimatePresence>
           {pickResults.length > 0 && (
-            <motion.div initial={{ height: 0 }} animate={{ height: "auto" }} exit={{ height: 0 }} className="bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-white/10 p-4 max-h-48 overflow-y-auto custom-scrollbar">
-              <h5 className="text-xs font-black text-cyan-600 dark:text-cyan-400 mb-3 flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4" /> KẾT QUẢ ĐIỀU HƯỚNG
+            <motion.div initial={{ height: 0 }} animate={{ height: "auto" }} exit={{ height: 0 }} className="bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-white/10 p-4 max-h-48 overflow-y-auto custom-scrollbar transition-colors duration-500">
+              <h5 className="text-xs font-black text-cyan-600 dark:text-cyan-400 mb-3 flex items-center gap-2 transition-colors duration-500">
+                <CheckCircle2 className="w-4 h-4 transition-colors duration-500" /> KẾT QUẢ ĐIỀU HƯỚNG
               </h5>
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2 transition-colors duration-500">
                 {pickResults.map((p, i) => (
-                  <div key={i} className="flex justify-between items-center bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-white/5 shadow-sm">
-                    <span className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                      <BoxIcon className="w-4 h-4 text-slate-400" /> {p.binCode}
+                  <div key={i} className="flex justify-between items-center bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-white/5 shadow-sm transition-colors duration-500">
+                    <span className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2 transition-colors duration-500">
+                      <BoxIcon className="w-4 h-4 text-slate-400 transition-colors duration-500" /> {p.binCode}
                     </span>
-                    <span className="text-xs font-black bg-cyan-100 dark:bg-cyan-900/50 text-cyan-700 dark:text-cyan-300 px-2 py-1 rounded">Lấy {p.quantity}</span>
+                    <span className="text-xs font-black bg-cyan-100 dark:bg-cyan-900/50 text-cyan-700 dark:text-cyan-300 px-2 py-1 rounded transition-colors duration-500">Lấy {p.quantity}</span>
                   </div>
                 ))}
               </div>
@@ -501,42 +518,42 @@ export default function Warehouse3DViewer({ warehouseId }: Warehouse3DViewerProp
 
       {/* LEGEND BOTTOM LEFT */}
       {localWarehouseId && (
-        <div className="absolute bottom-6 left-6 z-10 bg-black/60 backdrop-blur-xl p-5 rounded-2xl border border-white/10">
-          <h4 className="text-xs font-black text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2"><Maximize className="w-4 h-4" /> Tình trạng tải</h4>
-          <div className="space-y-3 text-sm font-bold text-white">
-            <div className="flex items-center justify-between gap-8"><span className="flex items-center gap-2"><span className="w-4 h-4 rounded bg-rose-500"></span> Quá tải</span> <span>{stats.full}</span></div>
-            <div className="flex items-center justify-between gap-8"><span className="flex items-center gap-2"><span className="w-4 h-4 rounded bg-amber-500"></span> Đang dùng</span> <span>{stats.partial}</span></div>
-            <div className="flex items-center justify-between gap-8"><span className="flex items-center gap-2"><span className="w-4 h-4 rounded border-2 border-emerald-500"></span> Trống</span> <span>{stats.empty}</span></div>
+        <div className="absolute bottom-6 left-6 z-10 bg-black/60 backdrop-blur-xl p-5 rounded-2xl border border-white/10 transition-colors duration-500">
+          <h4 className="text-xs font-black text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2 transition-colors duration-500"><Maximize className="w-4 h-4 transition-colors duration-500" /> Tình trạng tải</h4>
+          <div className="space-y-3 text-sm font-bold text-white transition-colors duration-500">
+            <div className="flex items-center justify-between gap-8 transition-colors duration-500"><span className="flex items-center gap-2 transition-colors duration-500"><span className="w-4 h-4 rounded bg-rose-500 transition-colors duration-500"></span> Quá tải</span> <span className="transition-colors duration-500">{stats.full}</span></div>
+            <div className="flex items-center justify-between gap-8 transition-colors duration-500"><span className="flex items-center gap-2 transition-colors duration-500"><span className="w-4 h-4 rounded bg-amber-500 transition-colors duration-500"></span> Đang dùng</span> <span className="transition-colors duration-500">{stats.partial}</span></div>
+            <div className="flex items-center justify-between gap-8 transition-colors duration-500"><span className="flex items-center gap-2 transition-colors duration-500"><span className="w-4 h-4 rounded border-2 border-emerald-500 transition-colors duration-500"></span> Trống</span> <span className="transition-colors duration-500">{stats.empty}</span></div>
           </div>
         </div>
       )}
 
       {/* EMPTY STATE OVERLAY (Khi chưa chọn Kho) */}
       {!localWarehouseId && !loadingBins && (
-        <div className="absolute inset-0 z-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm pointer-events-none">
+        <div className="absolute inset-0 z-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm pointer-events-none transition-colors duration-500">
           <motion.div 
             initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-            className="flex flex-col items-center justify-center p-8 bg-slate-900/80 rounded-3xl border border-white/10 shadow-2xl"
+            className="flex flex-col items-center justify-center p-8 bg-slate-900/80 rounded-3xl border border-white/10 shadow-2xl transition-colors duration-500"
           >
-            <Building2 className="w-16 h-16 text-cyan-500 mb-4 opacity-80" />
-            <h2 className="text-xl font-bold text-white mb-2">Chưa chọn Kho hàng</h2>
-            <p className="text-slate-400 text-sm max-w-sm text-center">Vui lòng chọn một kho hàng từ bảng điều khiển bên phải để tải và hiển thị bản sao kỹ thuật số 3D của hệ thống giá kệ.</p>
+            <Building2 className="w-16 h-16 text-cyan-500 mb-4 opacity-80 transition-colors duration-500" />
+            <h2 className="text-xl font-bold text-white mb-2 transition-colors duration-500">Chưa chọn Kho hàng</h2>
+            <p className="text-slate-400 text-sm max-w-sm text-center transition-colors duration-500">Vui lòng chọn một kho hàng từ bảng điều khiển bên phải để tải và hiển thị bản sao kỹ thuật số 3D của hệ thống giá kệ.</p>
           </motion.div>
         </div>
       )}
 
       {/* 3D RENDER SCENE */}
-      <div className="absolute inset-0 cursor-grab active:cursor-grabbing">
+      <div className="absolute inset-0 cursor-grab active:cursor-grabbing transition-colors duration-500">
         {loadingBins ? (
-          <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900/50 backdrop-blur-sm z-50">
-            <Loader2 className="w-12 h-12 animate-spin text-cyan-500 mb-4" />
+          <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900/50 backdrop-blur-sm z-50 transition-colors duration-500">
+            <Loader2 className="w-12 h-12 animate-spin text-cyan-500 mb-4 transition-colors duration-500" />
           </div>
         ) : (
           <Suspense fallback={null}>
             <Canvas camera={{ position: [25, 20, 30], fov: 40 }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}>
               <WarehouseScene 
                 binsData={bins} 
-                highlightedPicks={pickResults} 
+                highlightedPicksMap={highlightedPicksMap} // 🚀 ĐÃ TRUYỀN HASH MAP TỐI ƯU
                 focusTarget={focusTarget} 
                 isWarehouseSelected={!!localWarehouseId}
               />

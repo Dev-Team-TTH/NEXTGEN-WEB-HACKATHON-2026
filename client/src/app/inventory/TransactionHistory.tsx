@@ -10,6 +10,7 @@ import {
 import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
+import { useAppSelector } from "@/app/redux"; // 🚀 BỔ SUNG: Import Redux để lấy Bối cảnh Chi nhánh
 import { useGetInventoryTransactionsQuery, InventoryTransaction } from "@/state/api";
 
 // --- COMPONENTS & UTILS (SIÊU VŨ KHÍ) ---
@@ -37,8 +38,8 @@ const getDirectionUI = (direction: string) => {
 // 2. SKELETON LOADING
 // ==========================================
 const HistorySkeleton = () => (
-  <div className="w-full animate-pulse flex flex-col gap-6 mt-4">
-    <div className="h-[400px] w-full bg-slate-200 dark:bg-slate-800/50 rounded-3xl"></div>
+  <div className="w-full animate-pulse flex flex-col gap-6 mt-4 transition-colors duration-500">
+    <div className="h-[400px] w-full bg-slate-200 dark:bg-slate-800/50 rounded-3xl transition-colors duration-500"></div>
   </div>
 );
 
@@ -46,10 +47,17 @@ const HistorySkeleton = () => (
 // COMPONENT CHÍNH: LỊCH SỬ GIAO DỊCH KHO
 // ==========================================
 export default function TransactionHistory() {
+  
+  // 🚀 BỐI CẢNH REDUX (CÔ LẬP DỮ LIỆU ĐA CHI NHÁNH)
+  const { activeBranchId } = useAppSelector((state: any) => state.global);
+
   const [filterDirection, setFilterDirection] = useState<string>("ALL");
 
-  // 👉 FETCH DATA THẬT
-  const { data: responseData, isLoading, isError, refetch, isFetching } = useGetInventoryTransactionsQuery({});
+  // 👉 FETCH DATA THẬT (🚀 BƠM NGỮ CẢNH VÀ CHẶN API KHI TRỐNG)
+  const { data: responseData, isLoading, isError, refetch, isFetching } = useGetInventoryTransactionsQuery(
+    { branchId: activeBranchId } as any, 
+    { skip: !activeBranchId }
+  );
 
   // Bóc tách mảng data
   const transactions: InventoryTransaction[] = useMemo(() => {
@@ -90,22 +98,22 @@ export default function TransactionHistory() {
       "Ghi chú": tx.document?.note || ""
     }));
     
-    exportToCSV(exportData, "Lich_Su_The_Kho_Giao_Dich");
+    exportToCSV(exportData, `Lich_Su_The_Kho_${activeBranchId}`);
     toast.success("Xuất Lịch sử Thẻ kho thành công!");
   };
 
-  // --- ĐỊNH NGHĨA CỘT CHO DATATABLE ---
-  const columns: ColumnDef<any>[] = [
+  // --- ĐỊNH NGHĨA CỘT CHO DATATABLE (🚀 GÓI BẰNG USEMEMO ĐỂ TỐI ƯU RENDER) ---
+  const columns: ColumnDef<any>[] = useMemo(() => [
     {
       header: "Thời gian",
       accessorKey: "timestamp",
       sortable: true,
       cell: (row) => (
-        <div className="flex flex-col">
-          <span className="font-semibold text-slate-800 dark:text-slate-200">
+        <div className="flex flex-col transition-colors duration-500">
+          <span className="font-semibold text-slate-800 dark:text-slate-200 transition-colors duration-500">
             {formatDate(row.timestamp)}
           </span>
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-slate-500 transition-colors duration-500">
             {formatDate(row.timestamp, "HH:mm:ss")}
           </span>
         </div>
@@ -117,7 +125,7 @@ export default function TransactionHistory() {
       cell: (row) => {
         const { label, color, bg, icon: Icon } = getDirectionUI(row.movementDirection);
         return (
-          <div className={cn("inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold", bg, color)}>
+          <div className={cn("inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors duration-500", bg, color)}>
             <Icon className="w-4 h-4" /> {label}
           </div>
         );
@@ -127,9 +135,9 @@ export default function TransactionHistory() {
       header: "Sản phẩm",
       accessorKey: "product",
       cell: (row) => (
-        <div className="flex flex-col max-w-[200px]">
-          <span className="font-bold text-slate-900 dark:text-white truncate" title={row.product?.name}>{row.product?.name || "N/A"}</span>
-          <span className="text-[10px] text-slate-500 font-mono">{row.product?.productCode}</span>
+        <div className="flex flex-col max-w-[200px] transition-colors duration-500">
+          <span className="font-bold text-slate-900 dark:text-white truncate transition-colors duration-500" title={row.product?.name}>{row.product?.name || "N/A"}</span>
+          <span className="text-[10px] text-slate-500 font-mono transition-colors duration-500">{row.product?.productCode}</span>
         </div>
       )
     },
@@ -141,7 +149,7 @@ export default function TransactionHistory() {
         const isPositive = row.quantity > 0;
         return (
           <span className={cn(
-            "font-extrabold text-base", 
+            "font-extrabold text-base transition-colors duration-500", 
             row.movementDirection === 'OUT' ? 'text-rose-500' : row.movementDirection === 'IN' ? 'text-emerald-500' : 'text-slate-700 dark:text-slate-300'
           )}>
             {isPositive ? "+" : ""}{formatQty(row.quantity)}
@@ -155,7 +163,7 @@ export default function TransactionHistory() {
       cell: (row) => {
         if (row.movementDirection === "TRANSFER") {
           return (
-            <div className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-400">
+            <div className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-400 transition-colors duration-500">
               <span className="truncate max-w-[80px]" title={row.fromWarehouse?.name}>{row.fromWarehouse?.name}</span>
               <ArrowRightLeft className="w-3 h-3 text-indigo-500 shrink-0" />
               <span className="truncate max-w-[80px]" title={row.toWarehouse?.name}>{row.toWarehouse?.name}</span>
@@ -163,7 +171,7 @@ export default function TransactionHistory() {
           );
         }
         return (
-          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300 transition-colors duration-500">
             {row.fromWarehouse?.name || row.toWarehouse?.name || "Hệ thống"}
           </span>
         );
@@ -173,30 +181,30 @@ export default function TransactionHistory() {
       header: "Chứng từ (Ref)",
       accessorKey: "searchReference", // 💡 Trỏ vào trường ảo để Search DataTable
       cell: (row) => (
-        <div className="flex flex-col">
-          <span className="text-sm font-bold text-blue-600 dark:text-blue-400 cursor-pointer hover:underline">
+        <div className="flex flex-col transition-colors duration-500">
+          <span className="text-sm font-bold text-blue-600 dark:text-blue-400 cursor-pointer hover:underline transition-colors duration-500">
             {row.document?.documentNumber || row.documentId}
           </span>
           {row.document?.note && (
-            <span className="text-[10px] text-slate-500 truncate max-w-[150px]" title={row.document.note}>
+            <span className="text-[10px] text-slate-500 truncate max-w-[150px] transition-colors duration-500" title={row.document.note}>
               {row.document.note}
             </span>
           )}
         </div>
       )
     }
-  ];
+  ], []); // 🚀 Khóa tham chiếu để tránh re-render rác
 
   // 🚀 TẠO BỘ LỌC NÂNG CAO ĐỂ BƠM VÀO DATA TABLE
   const historyFiltersNode = (
-    <div className="flex flex-wrap items-center justify-between gap-4 w-full">
+    <div className="flex flex-wrap items-center justify-between gap-4 w-full transition-colors duration-500">
       <div className="w-full sm:w-80">
-        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Lọc theo Loại Giao dịch</label>
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block transition-colors duration-500">Lọc theo Loại Giao dịch</label>
         <div className="relative group">
           <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
           <select 
             value={filterDirection} onChange={(e) => setFilterDirection(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm appearance-none cursor-pointer"
+            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm appearance-none cursor-pointer text-slate-900 dark:text-white duration-500"
           >
             <option value="ALL">Tất cả giao dịch kho</option>
             <option value="IN">Nhập kho (IN)</option>
@@ -208,7 +216,7 @@ export default function TransactionHistory() {
       </div>
 
       {/* Tích hợp nút Xuất dữ liệu vào góc bộ lọc cho gọn gàng */}
-      <button onClick={handleExportData} className="flex items-center gap-1.5 px-4 py-2 mt-4 sm:mt-0 rounded-xl text-sm font-bold transition-all active:scale-95 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-sm">
+      <button onClick={handleExportData} className="flex items-center gap-1.5 px-4 py-2 mt-4 sm:mt-0 rounded-xl text-sm font-bold transition-all active:scale-95 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-sm duration-500">
         <Download className="w-4 h-4" /> <span className="hidden sm:inline">Xuất Thẻ Kho</span>
       </button>
     </div>
@@ -218,12 +226,23 @@ export default function TransactionHistory() {
   const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
   const itemVariants: Variants = { hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } };
 
+  // 🚀 LÁ CHẮN UI: KHÔNG CÓ CHI NHÁNH
+  if (!activeBranchId) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 w-full text-center glass rounded-3xl mt-6 transition-colors duration-500">
+        <AlertOctagon className="w-16 h-16 text-amber-500 mb-4 animate-pulse" />
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2 transition-colors duration-500">Chưa chọn Chi nhánh</h2>
+        <p className="text-slate-500 transition-colors duration-500">Vui lòng chọn Chi nhánh hoạt động ở góc trên màn hình để xem Thẻ kho.</p>
+      </div>
+    );
+  }
+
   if (isError) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 w-full text-center glass rounded-3xl mt-6">
+      <div className="flex flex-col items-center justify-center py-12 w-full text-center glass rounded-3xl mt-6 transition-colors duration-500">
         <AlertOctagon className="w-12 h-12 text-rose-500 mb-3 animate-pulse" />
-        <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-2">Lỗi tải dữ liệu Thẻ kho</h3>
-        <button onClick={() => refetch()} className="px-5 py-2 mt-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 flex items-center gap-2">
+        <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-2 transition-colors duration-500">Lỗi tải dữ liệu Thẻ kho</h3>
+        <button onClick={() => refetch()} className="px-5 py-2 mt-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 flex items-center gap-2 duration-500">
           <RefreshCcw className={cn("w-4 h-4", isFetching && "animate-spin")} /> Thử lại
         </button>
       </div>
@@ -231,13 +250,13 @@ export default function TransactionHistory() {
   }
 
   return (
-    <motion.div variants={containerVariants} initial="hidden" animate="show" className="w-full flex flex-col gap-4 mt-6">
+    <motion.div variants={containerVariants} initial="hidden" animate="show" className="w-full flex flex-col gap-4 mt-6 transition-colors duration-500">
       {/* KHU VỰC HIỂN THỊ DỮ LIỆU */}
-      <motion.div variants={itemVariants} className="w-full">
+      <motion.div variants={itemVariants} className="w-full transition-colors duration-500">
         {isLoading ? (
           <HistorySkeleton />
         ) : (
-          <div className="glass-panel rounded-3xl overflow-hidden shadow-sm border border-slate-100 dark:border-white/5">
+          <div className="glass-panel rounded-3xl overflow-hidden shadow-sm border border-slate-100 dark:border-white/5 transition-colors duration-500">
             <DataTable 
               data={filteredData} 
               columns={columns} 

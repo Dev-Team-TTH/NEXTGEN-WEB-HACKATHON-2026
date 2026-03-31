@@ -72,13 +72,18 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
 
   // --- HANDLERS ---
   const handleCreateNextYear = async () => {
-    const nextYearNum = new Date().getFullYear() + 1; 
+    // 🚀 THUẬT TOÁN THÔNG MINH: Lấy Năm lớn nhất hiện tại trong DB rồi +1
+    // Chặn đứng lỗi tạo trùng lặp hoặc văng Unique Constraint.
+    const currentMaxYear = years.length > 0 ? Math.max(...years.map((y: any) => Number(y.year))) : new Date().getFullYear() - 1;
+    const nextYearNum = currentMaxYear + 1;
+
     if (window.confirm(`Hệ thống sẽ tự động khởi tạo Năm Tài Chính ${nextYearNum} cùng 12 kỳ kế toán tương ứng. Xác nhận?`)) {
       try {
+        // 🚀 CHUẨN HÓA DỮ LIỆU: Bắn chuẩn định dạng ISO-8601
         await createYear({
           year: nextYearNum,
-          startDate: `${nextYearNum}-01-01`,
-          endDate: `${nextYearNum}-12-31`
+          startDate: new Date(`${nextYearNum}-01-01T00:00:00Z`).toISOString(),
+          endDate: new Date(`${nextYearNum}-12-31T23:59:59Z`).toISOString()
         } as any).unwrap();
         toast.success(`Đã khởi tạo thành công Năm ${nextYearNum}!`);
       } catch (err: any) {
@@ -143,39 +148,39 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
       {isOpen && (
         <motion.div
           variants={backdropVariants} initial="hidden" animate="visible" exit="hidden"
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-slate-900/80 backdrop-blur-md"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-slate-900/80 backdrop-blur-md transition-colors duration-500"
         >
           <div className="absolute inset-0" onClick={!isProcessing ? onClose : undefined} />
 
           <motion.div
             variants={modalVariants} initial="hidden" animate="visible" exit="exit"
-            className="relative w-full max-w-5xl bg-slate-50 dark:bg-[#0B0F19] rounded-3xl shadow-[0_20px_60px_rgba(0,0,0,0.5)] border border-slate-200 dark:border-white/10 overflow-hidden z-10 flex flex-col md:flex-row h-[85vh]"
+            className="relative w-full max-w-5xl bg-slate-50 dark:bg-[#0B0F19] rounded-3xl shadow-[0_20px_60px_rgba(0,0,0,0.5)] border border-slate-200 dark:border-white/10 overflow-hidden z-10 flex flex-col md:flex-row h-[85vh] transition-colors duration-500"
           >
             
             {/* === CỘT TRÁI: DANH SÁCH NĂM TÀI CHÍNH === */}
-            <div className="w-full md:w-[320px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-white/5 flex flex-col shrink-0 z-20">
-              <div className="p-6 border-b border-slate-200 dark:border-white/5 bg-gradient-to-b from-indigo-50/50 to-white dark:from-indigo-950/20 dark:to-slate-900">
+            <div className="w-full md:w-[320px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-white/5 flex flex-col shrink-0 z-20 transition-colors duration-500">
+              <div className="p-6 border-b border-slate-200 dark:border-white/5 bg-gradient-to-b from-indigo-50/50 to-white dark:from-indigo-950/20 dark:to-slate-900 transition-colors duration-500">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/50 rounded-xl text-indigo-600 dark:text-indigo-400">
+                  <div className="p-2.5 bg-indigo-100 dark:bg-indigo-900/50 rounded-xl text-indigo-600 dark:text-indigo-400 transition-colors duration-500">
                     <CalendarDays className="w-5 h-5" />
                   </div>
-                  <button onClick={onClose} disabled={isProcessing} className="md:hidden p-1.5 text-slate-400 hover:text-rose-500 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                  <button onClick={onClose} disabled={isProcessing} className="md:hidden p-1.5 text-slate-400 hover:text-rose-500 bg-slate-100 dark:bg-slate-800 rounded-lg transition-colors duration-500">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
-                <h2 className="text-xl font-black text-slate-900 dark:text-white">Niên độ Kế toán</h2>
-                <p className="text-xs font-medium text-slate-500 mt-1">Quản lý vòng đời dữ liệu tài chính</p>
+                <h2 className="text-xl font-black text-slate-900 dark:text-white transition-colors duration-500">Niên độ Kế toán</h2>
+                <p className="text-xs font-medium text-slate-500 mt-1 transition-colors duration-500">Quản lý vòng đời dữ liệu tài chính</p>
                 
                 <button 
                   onClick={handleCreateNextYear} disabled={isProcessing}
-                  className="mt-4 w-full py-2.5 flex items-center justify-center gap-2 bg-slate-100 hover:bg-indigo-50 text-indigo-600 dark:bg-slate-800 dark:hover:bg-indigo-900/30 dark:text-indigo-400 text-sm font-bold rounded-xl transition-colors border border-dashed border-indigo-200 dark:border-indigo-800"
+                  className="mt-4 w-full py-2.5 flex items-center justify-center gap-2 bg-slate-100 hover:bg-indigo-50 text-indigo-600 dark:bg-slate-800 dark:hover:bg-indigo-900/30 dark:text-indigo-400 text-sm font-bold rounded-xl transition-colors border border-dashed border-indigo-200 dark:border-indigo-800 disabled:opacity-50"
                 >
                   {isCreatingYear ? <Loader2 className="w-4 h-4 animate-spin"/> : <Plus className="w-4 h-4" />}
                   Khởi tạo Năm Mới
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2 scrollbar-thin">
+              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2 scrollbar-thin transition-colors duration-500">
                 {loadingYears ? (
                   <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-indigo-500" /></div>
                 ) : years.map((rawYear: any) => {
@@ -193,21 +198,21 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
                       )}
                     >
                       <div className="flex items-center justify-between mb-2 relative z-10">
-                        <h4 className={cn("font-bold text-lg", isActive ? "text-indigo-700 dark:text-indigo-400" : "text-slate-700 dark:text-slate-300")}>
+                        <h4 className={cn("font-bold text-lg transition-colors duration-500", isActive ? "text-indigo-700 dark:text-indigo-400" : "text-slate-700 dark:text-slate-300")}>
                           {yearNameDisplay}
                         </h4>
                         {isClosed ? (
-                          <div className="p-1.5 bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 rounded-lg"><Lock className="w-3.5 h-3.5"/></div>
+                          <div className="p-1.5 bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 rounded-lg transition-colors duration-500"><Lock className="w-3.5 h-3.5"/></div>
                         ) : (
-                          <div className="p-1.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg"><Unlock className="w-3.5 h-3.5"/></div>
+                          <div className="p-1.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg transition-colors duration-500"><Unlock className="w-3.5 h-3.5"/></div>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 text-[10px] font-semibold text-slate-500 relative z-10">
+                      <div className="flex items-center gap-2 text-[10px] font-semibold text-slate-500 relative z-10 transition-colors duration-500">
                         <span>{formatDate(rawYear.startDate, "MM/YYYY")}</span>
                         <ArrowRight className="w-3 h-3" />
                         <span>{formatDate(rawYear.endDate, "MM/YYYY")}</span>
                       </div>
-                      {isActive && <motion.div layoutId="activeYear" className="absolute inset-0 border-2 border-indigo-500 rounded-2xl shadow-[0_0_15px_rgba(99,102,241,0.2)] pointer-events-none" />}
+                      {isActive && <motion.div layoutId="activeYear" className="absolute inset-0 border-2 border-indigo-500 rounded-2xl shadow-[0_0_15px_rgba(99,102,241,0.2)] pointer-events-none transition-colors duration-500" />}
                     </div>
                   );
                 })}
@@ -215,7 +220,7 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
             </div>
 
             {/* === CỘT PHẢI: QUẢN LÝ KỲ (THÁNG) === */}
-            <div className="flex-1 flex flex-col min-w-0 bg-slate-50/50 dark:bg-transparent relative overflow-hidden">
+            <div className="flex-1 flex flex-col min-w-0 bg-slate-50/50 dark:bg-transparent relative overflow-hidden transition-colors duration-500">
               
               {/* Nút tắt Modal cho Mobile */}
               <div className="hidden md:flex items-center justify-end p-4 absolute top-0 right-0 z-30">
@@ -225,7 +230,7 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
               </div>
 
               {!selectedYearId ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+                <div className="flex-1 flex flex-col items-center justify-center text-slate-400 transition-colors duration-500">
                   <CalendarDays className="w-16 h-16 mb-4 opacity-20" />
                   <p className="font-bold">Chọn một Năm tài chính để xem chi tiết.</p>
                 </div>
@@ -233,15 +238,15 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
                 <div className="flex-1 flex flex-col p-6 sm:p-8 overflow-y-auto scrollbar-thin">
                   
                   {/* WIDGET TỔNG QUAN NĂM */}
-                  <div className="mb-8 bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none"><ShieldAlert className="w-32 h-32"/></div>
+                  <div className="mb-8 bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm relative overflow-hidden transition-colors duration-500">
+                    <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none transition-colors duration-500"><ShieldAlert className="w-32 h-32"/></div>
                     
-                    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-4 relative z-10">
+                    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-4 relative z-10 transition-colors duration-500">
                       <div>
-                        <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-1">
+                        <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-1 transition-colors duration-500">
                           Trạng thái {(selectedYear as any)?.yearName || (selectedYear as any)?.year}
                         </h3>
-                        <p className="text-sm font-medium text-slate-500 flex items-center gap-1.5">
+                        <p className="text-sm font-medium text-slate-500 flex items-center gap-1.5 transition-colors duration-500">
                           <Lock className="w-4 h-4 text-rose-500"/>
                           Khóa sổ đảm bảo tính vô tỳ vết của Báo cáo tài chính.
                         </p>
@@ -261,30 +266,30 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
                     </div>
 
                     {/* Progress Bar */}
-                    <div className="relative z-10">
-                      <div className="flex justify-between text-xs font-bold uppercase tracking-wider mb-2">
+                    <div className="relative z-10 transition-colors duration-500">
+                      <div className="flex justify-between text-xs font-bold uppercase tracking-wider mb-2 transition-colors duration-500">
                         <span className="text-slate-500">Tiến trình Khóa sổ</span>
                         <span className={progress.percent === 100 ? "text-emerald-500" : "text-indigo-500"}>
                           {progress.closed} / {progress.total} Kỳ ({progress.percent}%)
                         </span>
                       </div>
-                      <div className="w-full h-3 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden flex shadow-inner">
+                      <div className="w-full h-3 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden flex shadow-inner transition-colors duration-500">
                         <motion.div 
                           initial={{ width: 0 }} animate={{ width: `${progress.percent}%` }} transition={{ duration: 1, ease: "easeOut" }}
-                          className={cn("h-full stripe-pattern", progress.percent === 100 ? "bg-emerald-500" : "bg-indigo-500")}
+                          className={cn("h-full stripe-pattern transition-colors duration-500", progress.percent === 100 ? "bg-emerald-500" : "bg-indigo-500")}
                         />
                       </div>
                     </div>
                   </div>
 
                   {/* LƯỚI 12 KỲ KẾ TOÁN */}
-                  <div className="flex items-center gap-2 mb-4">
+                  <div className="flex items-center gap-2 mb-4 transition-colors duration-500">
                     <CalendarClock className="w-5 h-5 text-indigo-500" />
-                    <h4 className="font-bold text-slate-800 dark:text-white">Chi tiết 12 Kỳ Kế toán (Tháng)</h4>
+                    <h4 className="font-bold text-slate-800 dark:text-white transition-colors duration-500">Chi tiết 12 Kỳ Kế toán (Tháng)</h4>
                   </div>
 
                   {loadingPeriods ? (
-                    <div className="flex justify-center py-20"><Loader2 className="w-10 h-10 animate-spin text-indigo-500"/></div>
+                    <div className="flex justify-center py-20 transition-colors duration-500"><Loader2 className="w-10 h-10 animate-spin text-indigo-500"/></div>
                   ) : (
                     <motion.div variants={listVariants} initial="hidden" animate="visible" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                       {periods.map((rawPeriod: any) => {
@@ -300,26 +305,26 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
                               isClosed ? "bg-slate-50 border-slate-200 dark:bg-[#0d1321] dark:border-slate-800" : "bg-white border-emerald-200 shadow-sm hover:shadow-md dark:bg-slate-800 dark:border-emerald-500/30"
                             )}
                           >
-                            <div className="absolute -right-4 -bottom-4 opacity-[0.03] dark:opacity-5 pointer-events-none">
+                            <div className="absolute -right-4 -bottom-4 opacity-[0.03] dark:opacity-5 pointer-events-none transition-colors duration-500">
                               {isClosed ? <Lock className="w-24 h-24 text-slate-500"/> : <Unlock className="w-24 h-24 text-emerald-500"/>}
                             </div>
 
-                            <div className="flex items-start justify-between relative z-10">
+                            <div className="flex items-start justify-between relative z-10 transition-colors duration-500">
                               <div>
-                                <h5 className={cn("font-black text-lg flex items-center gap-1.5", isClosed ? "text-slate-500" : "text-emerald-700 dark:text-emerald-400")}>
+                                <h5 className={cn("font-black text-lg flex items-center gap-1.5 transition-colors duration-500", isClosed ? "text-slate-500" : "text-emerald-700 dark:text-emerald-400")}>
                                   {periodName}
                                   {isClosed && <span title="Đã có Snapshot tồn kho"><Camera className="w-3.5 h-3.5 text-indigo-400" /></span>}
                                 </h5>
-                                <p className="text-[10px] font-mono text-slate-400 mt-0.5">
+                                <p className="text-[10px] font-mono text-slate-400 mt-0.5 transition-colors duration-500">
                                   {formatDate(rawPeriod.startDate, "DD/MM")} - {formatDate(rawPeriod.endDate, "DD/MM/YYYY")}
                                 </p>
                               </div>
-                              <div className={cn("p-2 rounded-xl", isClosed ? "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400" : "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-sm")}>
+                              <div className={cn("p-2 rounded-xl transition-colors duration-500", isClosed ? "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400" : "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-sm")}>
                                 {isClosed ? <Lock className="w-4 h-4"/> : <Unlock className="w-4 h-4"/>}
                               </div>
                             </div>
 
-                            <div className="relative z-10 mt-auto pt-2">
+                            <div className="relative z-10 mt-auto pt-2 transition-colors duration-500">
                               {!isYearClosed ? (
                                 <button 
                                   onClick={() => handleTogglePeriod(rawPeriod)} disabled={isProcessing}
@@ -332,7 +337,7 @@ export default function FiscalPeriodModal({ isOpen, onClose }: FiscalPeriodModal
                                   {isClosed ? "Mở khóa kỳ này" : "Khóa sổ & Snapshot"}
                                 </button>
                               ) : (
-                                <div className="w-full py-2 text-xs font-bold text-center text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-xl">
+                                <div className="w-full py-2 text-xs font-bold text-center text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-xl transition-colors duration-500">
                                   Đã niêm phong theo Năm
                                 </div>
                               )}

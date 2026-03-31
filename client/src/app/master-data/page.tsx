@@ -4,377 +4,740 @@ import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { 
-  Database, Building2, Users, Package, DollarSign, 
-  MapPin, Hash, Briefcase, Landmark, Percent, Coins, 
-  BookOpen, Plus, Loader2, Download
+  FileText, Plus, Search, Filter, Anchor, CreditCard, 
+  Trash2, AlertOctagon, RefreshCcw, Loader2, TrendingUp, 
+  TrendingDown, ShoppingCart, Truck, Receipt, CheckCircle2,
+  Clock, ArrowRightLeft, Building, Download, Printer
 } from "lucide-react";
+import dayjs from "dayjs";
+import 'dayjs/locale/vi';
 import { toast } from "react-hot-toast";
 
-// --- REDUX & API THẬT (FULL CRUD) ---
+// --- REDUX & API ---
+import { useAppSelector } from "@/app/redux"; // 🚀 BỔ SUNG CONTEXT CHI NHÁNH
 import { 
-  useGetCompaniesQuery, 
-  useGetBranchesQuery, useCreateBranchMutation, useUpdateBranchMutation, useDeleteBranchMutation,
-  useGetWarehousesQuery, useCreateWarehouseMutation, useUpdateWarehouseMutation, useDeleteWarehouseMutation,
-  useGetBinsQuery, useCreateBinMutation, useUpdateBinMutation, useDeleteBinMutation,
-  useGetDepartmentsQuery, useCreateDepartmentMutation, useUpdateDepartmentMutation, useDeleteDepartmentMutation,
-  useGetSuppliersQuery, useCreateSupplierMutation, useUpdateSupplierMutation, useDeleteSupplierMutation,
-  useGetCustomersQuery, useCreateCustomerMutation, useUpdateCustomerMutation, useDeleteCustomerMutation,
-  useGetCategoriesQuery, useCreateCategoryMutation, useUpdateCategoryMutation, useDeleteCategoryMutation,
-  useGetUoMsQuery, useCreateUoMMutation, useUpdateUoMMutation, useDeleteUoMMutation,
-  useGetTaxesQuery, useCreateTaxMutation, useUpdateTaxMutation, useDeleteTaxMutation,
-  useGetCurrenciesQuery, useCreateCurrencyMutation, useUpdateCurrencyMutation, useDeleteCurrencyMutation,
-  useGetAccountsQuery, useCreateAccountMutation, useUpdateAccountMutation, useDeleteAccountMutation,
-  useGetPriceListsQuery, useDeletePriceListMutation
+  useGetDocumentsQuery,
+  useDeleteDocumentMutation,
+  useApproveDocumentDirectlyMutation
 } from "@/state/api";
 
+// --- COMPONENTS GIAO DIỆN LÕI ---
 import Header from "@/app/(components)/Header";
-import DataTable from "@/app/(components)/DataTable";
-import PriceListModal from "./PriceListModal";
-import UniversalMasterDataModal from "./UniversalMasterDataModal";
-// 🚀 TÁI SỬ DỤNG COMPONENTS VÀ UTILS CÓ SẴN
+import DataTable, { ColumnDef } from "@/app/(components)/DataTable";
 import RequirePermission from "@/app/(components)/RequirePermission";
+
+// --- UTILS (SIÊU VŨ KHÍ) ---
+import { formatVND, formatDateTime } from "@/utils/formatters";
 import { exportToCSV } from "@/utils/exportUtils";
-import { formatVND, safeRound } from "@/utils/formatters";
 import { cn } from "@/utils/helpers";
 
-// --- SEPARATED CONFIGS ---
-import { getFormConfig } from "./formConfig";
-import { useMasterDataColumns } from "./useMasterDataColumns";
+// --- SIÊU COMPONENTS VỆ TINH (MODALS) ---
+import LandedCostModal from "../transactions/LandedCostModal";
+import CreateDocumentModal from "../transactions/CreateDocumentModal";
+import PaymentModal from "../transactions/PaymentModal";
 
-type MainTab = "ORG_INV" | "PARTNERS" | "PRODUCTS" | "FINANCE";
+dayjs.locale('vi');
 
-const MAIN_TABS = [
-  { id: "ORG_INV", label: "Tổ chức & Kho bãi", icon: Building2, color: "text-blue-500", bg: "bg-blue-500" },
-  { id: "PARTNERS", label: "Danh bạ Đối tác", icon: Users, color: "text-emerald-500", bg: "bg-emerald-500" },
-  { id: "PRODUCTS", label: "Thuộc tính Hàng hóa", icon: Package, color: "text-amber-500", bg: "bg-amber-500" },
-  { id: "FINANCE", label: "Kế toán & Tài chính", icon: Landmark, color: "text-purple-500", bg: "bg-purple-500" }
-];
+// ==========================================
+// 1. HELPERS (DATA VIZ)
+// ==========================================
+const getDocTypeUI = (type: string) => {
+  switch (type) {
+    case "PURCHASE_ORDER": return { label: "Đơn Mua (PO)", printLabel: "ĐƠN ĐẶT HÀNG MUA", icon: ShoppingCart, color: "text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/30" };
+    case "SALES_ORDER": return { label: "Đơn Bán (SO)", printLabel: "ĐƠN ĐẶT HÀNG BÁN", icon: TrendingUp, color: "text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30" };
+    case "GOODS_RECEIPT": return { label: "Nhập Kho (GRPO)", printLabel: "PHIẾU NHẬP KHO", icon: Truck, color: "text-purple-600 bg-purple-50 dark:text-purple-400 dark:bg-purple-500/10 border-purple-200 dark:border-purple-500/30" };
+    case "INVOICE": return { label: "Hóa Đơn", printLabel: "HÓA ĐƠN TÀI CHÍNH", icon: Receipt, color: "text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30" };
+    default: return { label: type, printLabel: "CHỨNG TỪ KẾ TOÁN", icon: FileText, color: "text-slate-600 bg-slate-50 dark:text-slate-400 dark:bg-slate-500/10 border-slate-200 dark:border-slate-500/30" };
+  }
+};
 
-export default function MasterDataPage() {
+const getPaymentStatusUI = (paid: number, total: number) => {
+  if (total === 0) return { label: "N/A", color: "text-slate-500", bar: "bg-slate-200 dark:bg-slate-700", percent: 0 };
+  const percent = Math.round((paid / total) * 100);
+  if (percent >= 100) return { label: "Đã thanh toán", color: "text-emerald-600 dark:text-emerald-400", bar: "bg-emerald-500", percent: 100 };
+  if (percent > 0) return { label: "Trả 1 phần", color: "text-amber-600 dark:text-amber-400", bar: "bg-amber-500", percent };
+  return { label: "Chưa thanh toán (Nợ)", color: "text-rose-600 dark:text-rose-400", bar: "bg-rose-500", percent: 0 };
+};
+
+type DocTab = "ALL" | "PURCHASE_ORDER" | "SALES_ORDER" | "GOODS_RECEIPT" | "INVOICE";
+
+// ==========================================
+// 2. SKELETON LOADING
+// ==========================================
+const TransactionsSkeleton = () => (
+  <div className="flex flex-col gap-6 w-full animate-pulse mt-6 transition-colors duration-500">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+      {[1, 2, 3, 4].map(i => <div key={i} className="h-32 rounded-3xl bg-slate-200 dark:bg-slate-800/50 transition-colors duration-500"></div>)}
+    </div>
+    <div className="h-16 w-full rounded-2xl bg-slate-200 dark:bg-slate-800/50 transition-colors duration-500"></div>
+    <div className="h-[500px] w-full bg-slate-200 dark:bg-slate-800/50 rounded-3xl mt-2 transition-colors duration-500"></div>
+  </div>
+);
+
+// ==========================================
+// COMPONENT CHÍNH: TRUNG TÂM CHỨNG TỪ
+// ==========================================
+export default function TransactionsPage() {
   const { t } = useTranslation();
 
-  const [activeMainTab, setActiveMainTab] = useState<MainTab>("ORG_INV");
-  const [activeSubTab, setActiveSubTab] = useState<string>("branches");
+  // 🚀 BỐI CẢNH REDUX (CONTEXT ISOLATION)
+  const { activeBranchId } = useAppSelector((state: any) => state.global);
 
-  const [isPriceListModalOpen, setIsPriceListModalOpen] = useState(false);
-  const [isUniversalModalOpen, setIsUniversalModalOpen] = useState(false);
-  const [editingData, setEditingData] = useState<any>(null);
+  // --- STATE TABS & LỌC ---
+  const [activeTab, setActiveTab] = useState<DocTab>("ALL");
+  const [searchQuery, setSearchQuery] = useState("");
+  
+  // 🚀 STATE BỘ LỌC NÂNG CAO (ADVANCED FILTERS)
+  const [filterDocStatus, setFilterDocStatus] = useState("ALL");
+  const [filterPaymentStatus, setFilterPaymentStatus] = useState("ALL");
 
-  const handleMainTabChange = (tabId: MainTab) => {
-    setActiveMainTab(tabId);
-    if (tabId === "ORG_INV") setActiveSubTab("branches");
-    if (tabId === "PARTNERS") setActiveSubTab("suppliers");
-    if (tabId === "PRODUCTS") setActiveSubTab("categories");
-    if (tabId === "FINANCE") setActiveSubTab("taxes");
-  };
+  // --- STATE MODALS & PRINT ---
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [selectedDocForLandedCost, setSelectedDocForLandedCost] = useState<string | null>(null);
+  const [selectedDocForPayment, setSelectedDocForPayment] = useState<string | null>(null);
+  const [selectedDocForPrint, setSelectedDocForPrint] = useState<any | null>(null); 
 
-  const { data: r0, isLoading: l0 } = useGetCompaniesQuery(undefined, { skip: activeMainTab !== "ORG_INV" });
-  const companies = Array.isArray(r0) ? r0 : ((r0 as any)?.data || []);
+  // 👉 FETCH & MUTATION API (🚀 ĐÃ BƠM BỐI CẢNH CHI NHÁNH VÀ KHÓA KHI TRỐNG)
+  const { data: rawDocuments = [], isLoading, isError, refetch, isFetching } = useGetDocumentsQuery(
+    { branchId: activeBranchId } as any, 
+    { skip: !activeBranchId }
+  );
+  
+  const [deleteDocument, { isLoading: isDeleting }] = useDeleteDocumentMutation();
+  const [approveDocument, { isLoading: isApproving }] = useApproveDocumentDirectlyMutation();
 
-  const { data: r1, isLoading: l1 } = useGetBranchesQuery({ limit: 1000 } as any, { skip: activeMainTab !== "ORG_INV" });
-  const branches = Array.isArray(r1) ? r1 : ((r1 as any)?.data || []);
+  // --- 🚀 XỬ LÝ LỌC THÔNG MINH TRÊN CLIENT (BAO GỒM BỘ LỌC NÂNG CAO) ---
+  const documents = useMemo(() => {
+    return rawDocuments.filter((doc: any) => {
+      // 1. Lọc theo Tab (Loại chứng từ)
+      const matchTab = activeTab === "ALL" || doc.type === activeTab;
+      
+      // 2. Lọc theo Search (Số chứng từ & Đối tác)
+      const searchStr = searchQuery.toLowerCase();
+      const partnerName = (doc.supplier?.name || doc.customer?.name || doc.partner?.name || "").toLowerCase();
+      const matchSearch = 
+        (doc.documentNumber && doc.documentNumber.toLowerCase().includes(searchStr)) ||
+        partnerName.includes(searchStr);
+      
+      // 3. Lọc theo Trạng thái chứng từ
+      const matchDocStatus = filterDocStatus === "ALL" || doc.status === filterDocStatus;
 
-  const { data: r2, isLoading: l2 } = useGetWarehousesQuery({ limit: 1000 } as any, { skip: activeMainTab !== "ORG_INV" });
-  const warehouses = Array.isArray(r2) ? r2 : ((r2 as any)?.data || []);
-
-  const { data: r3, isLoading: l3 } = useGetBinsQuery({ limit: 1000 } as any, { skip: activeMainTab !== "ORG_INV" });
-  const bins = Array.isArray(r3) ? r3 : ((r3 as any)?.data || []);
-
-  const { data: r4, isLoading: l4 } = useGetDepartmentsQuery({ limit: 1000 } as any, { skip: activeMainTab !== "ORG_INV" });
-  const depts = Array.isArray(r4) ? r4 : ((r4 as any)?.data || []);
-
-  const { data: r5, isLoading: l5 } = useGetSuppliersQuery({ limit: 1000 } as any, { skip: activeMainTab !== "PARTNERS" });
-  const suppliers = Array.isArray(r5) ? r5 : ((r5 as any)?.data || []);
-
-  const { data: r6, isLoading: l6 } = useGetCustomersQuery({ limit: 1000 } as any, { skip: activeMainTab !== "PARTNERS" });
-  const customers = Array.isArray(r6) ? r6 : ((r6 as any)?.data || []);
-
-  const { data: r7, isLoading: l7 } = useGetCategoriesQuery({ limit: 1000 } as any, { skip: activeMainTab !== "PRODUCTS" });
-  const categories = Array.isArray(r7) ? r7 : ((r7 as any)?.data || []);
-
-  const { data: r8, isLoading: l8 } = useGetUoMsQuery({ limit: 1000 } as any, { skip: activeMainTab !== "PRODUCTS" });
-  const uoms = Array.isArray(r8) ? r8 : ((r8 as any)?.data || []);
-
-  const { data: r9, isLoading: l9 } = useGetTaxesQuery({ limit: 1000 } as any);
-  const taxes = Array.isArray(r9) ? r9 : ((r9 as any)?.data || []);
-
-  const { data: r10, isLoading: l10 } = useGetCurrenciesQuery({ limit: 1000 } as any);
-  const currencies = Array.isArray(r10) ? r10 : ((r10 as any)?.data || []);
-
-  const { data: r11, isLoading: l11 } = useGetAccountsQuery({ limit: 1000 } as any); 
-  const accounts = Array.isArray(r11) ? r11 : ((r11 as any)?.data || []);
-
-  const { data: r12, isLoading: l12 } = useGetPriceListsQuery({ limit: 1000 } as any, { skip: activeMainTab !== "FINANCE" });
-  const priceLists = Array.isArray(r12) ? r12 : ((r12 as any)?.data || []);
-
-  const isLoading = l0 || l1 || l2 || l3 || l4 || l5 || l6 || l7 || l8 || l9 || l10 || l11 || l12;
-
-  const [createBranch] = useCreateBranchMutation(); const [updateBranch] = useUpdateBranchMutation();
-  const [createWarehouse] = useCreateWarehouseMutation(); const [updateWarehouse] = useUpdateWarehouseMutation();
-  const [createBin] = useCreateBinMutation(); const [updateBin] = useUpdateBinMutation();
-  const [createDepartment] = useCreateDepartmentMutation(); const [updateDepartment] = useUpdateDepartmentMutation();
-  const [createSupplier] = useCreateSupplierMutation(); const [updateSupplier] = useUpdateSupplierMutation();
-  const [createCustomer] = useCreateCustomerMutation(); const [updateCustomer] = useUpdateCustomerMutation();
-  const [createCategory] = useCreateCategoryMutation(); const [updateCategory] = useUpdateCategoryMutation();
-  const [createUoM] = useCreateUoMMutation(); const [updateUoM] = useUpdateUoMMutation();
-  const [createTax] = useCreateTaxMutation(); const [updateTax] = useUpdateTaxMutation();
-  const [createCurrency] = useCreateCurrencyMutation(); const [updateCurrency] = useUpdateCurrencyMutation();
-  const [createAccount] = useCreateAccountMutation(); const [updateAccount] = useUpdateAccountMutation();
-
-  const [deleteBranch] = useDeleteBranchMutation();
-  const [deleteWarehouse] = useDeleteWarehouseMutation();
-  const [deleteBin] = useDeleteBinMutation();
-  const [deleteDepartment] = useDeleteDepartmentMutation();
-  const [deleteSupplier] = useDeleteSupplierMutation();
-  const [deleteCustomer] = useDeleteCustomerMutation();
-  const [deleteCategory] = useDeleteCategoryMutation();
-  const [deleteUoM] = useDeleteUoMMutation();
-  const [deleteTax] = useDeleteTaxMutation();
-  const [deleteCurrency] = useDeleteCurrencyMutation();
-  const [deleteAccount] = useDeleteAccountMutation();
-  const [deletePriceList] = useDeletePriceListMutation();
-
-  const [isSavingMasterData, setIsSavingMasterData] = useState(false);
-
-  const subModules = useMemo(() => {
-    switch (activeMainTab) {
-      case "ORG_INV": return [
-        { id: "branches", title: "Chi nhánh", data: branches, icon: Building2, desc: "Trụ sở & Công ty con" },
-        { id: "departments", title: "Phòng ban", data: depts, icon: Briefcase, desc: "Cơ cấu tổ chức" },
-        { id: "warehouses", title: "Kho lưu trữ", data: warehouses, icon: Database, desc: "Nhà kho vật lý" },
-        { id: "bins", title: "Vị trí Kệ (Bin)", data: bins, icon: MapPin, desc: "Tọa độ hàng hóa" }
-      ];
-      case "PARTNERS": return [
-        { id: "suppliers", title: "Nhà Cung Cấp", data: suppliers, icon: Building2, desc: "Đối tác cung ứng vật tư" },
-        { id: "customers", title: "Khách hàng", data: customers, icon: Users, desc: "Đối tác mua/dịch vụ" }
-      ];
-      case "PRODUCTS": return [
-        { id: "categories", title: "Nhóm Hàng", data: categories, icon: Package, desc: "Phân loại SP & Thuế" },
-        { id: "uoms", title: "Đơn vị tính (UoM)", data: uoms, icon: Hash, desc: "Cái, Hộp, Thùng, Kg" }
-      ];
-      case "FINANCE": return [
-        { id: "taxes", title: "Biểu Thuế", data: taxes, icon: Percent, desc: "VAT, Tiêu thụ ĐB" },
-        { id: "currencies", title: "Tiền tệ & Tỷ giá", data: currencies, icon: Coins, desc: "VND, USD, EUR" },
-        { id: "accounts", title: "Hệ thống Tài khoản", data: accounts, icon: BookOpen, desc: "Sổ cái (COA)" },
-        { id: "price_lists", title: "Bảng giá", data: priceLists, icon: DollarSign, desc: "Chính sách giá bán" }
-      ];
-      default: return [];
-    }
-  }, [activeMainTab, branches, depts, warehouses, bins, suppliers, customers, categories, uoms, taxes, currencies, accounts, priceLists]);
-
-  const activeModule = subModules.find(m => m.id === activeSubTab) || subModules[0];
-
-  const handleExportData = () => {
-    if (!activeModule?.data || activeModule.data.length === 0) {
-      toast.error(`Không có dữ liệu ${activeModule.title} để xuất!`); return;
-    }
-    const flattenData = activeModule.data.map((rawItem: any) => {
-      const item = rawItem as Record<string, any>;
-      const rowData: Record<string, any> = {};
-      Object.keys(item).forEach(key => {
-        if (item[key] !== null && typeof item[key] !== 'object') {
-          rowData[key] = item[key];
+      // 4. Lọc theo Trạng thái thanh toán
+      let matchPayment = true;
+      if (filterPaymentStatus !== "ALL") {
+        const total = doc.totalAmount || 0;
+        const paid = doc.paidAmount || 0;
+        
+        if (filterPaymentStatus === "PAID") {
+          matchPayment = paid >= total && total > 0;
+        } else if (filterPaymentStatus === "PARTIAL") {
+          matchPayment = paid > 0 && paid < total;
+        } else if (filterPaymentStatus === "UNPAID") {
+          matchPayment = paid === 0 && total > 0;
         }
-      });
-      return rowData;
+      }
+      
+      return matchTab && matchSearch && matchDocStatus && matchPayment;
     });
-    exportToCSV(flattenData, `Danh_Sach_${activeSubTab}`);
-    toast.success(`Đã xuất file ${activeModule.title} thành công!`);
-  };
+  }, [rawDocuments, activeTab, searchQuery, filterDocStatus, filterPaymentStatus]);
 
-  const handleOpenAddModal = () => {
-    setEditingData(null);
-    if (activeSubTab === "price_lists") setIsPriceListModalOpen(true);
-    else setIsUniversalModalOpen(true);
-  };
+  // --- TÍNH TOÁN KPI ĐỈNH CAO (LUÔN TÍNH TRÊN DATA GỐC ĐỂ KHÔNG BỊ SAI LỆCH KHI LỌC) ---
+  const kpis = useMemo(() => {
+    let totalPurchases = 0, totalSales = 0;
+    let totalDebt = 0, totalReceivables = 0; 
+    let pendingDocs = 0;
 
-  const handleOpenEditModal = (row: any) => {
-    const mappedData = { ...row };
-    if (activeSubTab === "branches" && row.company) mappedData.companyId = row.company.companyId || row.company.id;
-    if (activeSubTab === "departments" && row.branch) mappedData.branchId = row.branch.branchId || row.branch.id;
-    if (activeSubTab === "warehouses" && row.branch) mappedData.branchId = row.branch.branchId || row.branch.id;
-    if (activeSubTab === "bins" && row.warehouse) mappedData.warehouseId = row.warehouse.warehouseId || row.warehouse.id;
-    if (activeSubTab === "categories" && row.tax) mappedData.taxId = row.tax.taxId || row.tax.id;
-    if (activeSubTab === "accounts" && row.parentAccount) mappedData.parentAccountId = row.parentAccount.accountId || row.parentAccount.id;
+    rawDocuments.forEach((doc: any) => {
+      const total = doc.totalAmount || 0;
+      const paid = doc.paidAmount || 0;
+      const remaining = total - paid;
 
-    setEditingData(mappedData);
-    if (activeSubTab === "price_lists") setIsPriceListModalOpen(true);
-    else setIsUniversalModalOpen(true);
-  };
-
-  const getIdField = (subTab: string) => {
-    switch (subTab) {
-      case "branches": return "branchId"; case "warehouses": return "warehouseId"; case "bins": return "binId";
-      case "departments": return "departmentId"; case "suppliers": return "supplierId"; case "customers": return "customerId";
-      case "categories": return "categoryId"; case "uoms": return "uomId"; case "taxes": return "taxId";
-      case "currencies": return "currencyCode"; case "accounts": return "accountId"; case "price_lists": return "priceListId";
-      default: return "id";
-    }
-  };
-
-  const handleUniversalSave = async (data: any) => {
-    setIsSavingMasterData(true);
-    try {
-      const isUpdating = !!editingData;
-      const recordIdField = getIdField(activeSubTab);
-      const recordId = isUpdating ? (editingData[recordIdField] || editingData.id) : null; 
-
-      switch (activeSubTab) {
-        case "branches": if (isUpdating) await updateBranch({ id: recordId, data }).unwrap(); else await createBranch(data).unwrap(); break;
-        case "warehouses": if (isUpdating) await updateWarehouse({ id: recordId, data }).unwrap(); else await createWarehouse(data).unwrap(); break;
-        case "bins": if (isUpdating) await updateBin({ id: recordId, data }).unwrap(); else await createBin(data).unwrap(); break;
-        case "departments": if (isUpdating) await updateDepartment({ id: recordId, data }).unwrap(); else await createDepartment(data).unwrap(); break;
-        case "suppliers": if (isUpdating) await updateSupplier({ id: recordId, data }).unwrap(); else await createSupplier(data).unwrap(); break;
-        case "customers": 
-          // 🚀 ÁP DỤNG safeRound CHO CÁC CHỈ SỐ TÀI CHÍNH
-          const custData = { ...data, creditLimit: data.creditLimit ? safeRound(Number(data.creditLimit)) : undefined };
-          if (isUpdating) await updateCustomer({ id: recordId, data: custData }).unwrap(); else await createCustomer(custData).unwrap(); break;
-        case "categories": if (isUpdating) await updateCategory({ id: recordId, data }).unwrap(); else await createCategory(data).unwrap(); break;
-        case "uoms": if (isUpdating) await updateUoM({ id: recordId, data }).unwrap(); else await createUoM(data).unwrap(); break;
-        case "taxes": 
-          const taxData = { ...data, rate: safeRound(Number(data.rate)) };
-          if (isUpdating) await updateTax({ id: recordId, data: taxData }).unwrap(); else await createTax(taxData).unwrap(); break;
-        case "currencies": 
-          const currData = { ...data, exchangeRate: safeRound(Number(data.exchangeRate)) };
-          if (isUpdating) await updateCurrency({ currencyCode: recordId, data: currData }).unwrap(); else await createCurrency(currData).unwrap(); break;
-        case "accounts": if (isUpdating) await updateAccount({ id: recordId, data }).unwrap(); else await createAccount(data).unwrap(); break;
-        default: throw new Error("Module không xác định!");
+      if (doc.type === "PURCHASE_ORDER" || doc.type === "GOODS_RECEIPT") {
+        totalPurchases += total;
+        if (remaining > 0) totalDebt += remaining;
+      } else if (doc.type === "SALES_ORDER" || doc.type === "INVOICE") {
+        totalSales += total;
+        if (remaining > 0) totalReceivables += remaining;
       }
 
-      toast.success(`${isUpdating ? 'Cập nhật' : 'Khởi tạo'} bản ghi thành công!`);
-      setIsUniversalModalOpen(false);
-    } catch (error: any) {
-      toast.error(error?.data?.message || "Lỗi giao tiếp máy chủ khi lưu dữ liệu!");
-    } finally {
-      setIsSavingMasterData(false);
+      if (doc.status === "PENDING" || doc.status === "DRAFT") pendingDocs++;
+    });
+
+    return { totalPurchases, totalSales, totalDebt, totalReceivables, pendingDocs, totalDocs: rawDocuments.length };
+  }, [rawDocuments]);
+
+  // --- HANDLERS DỮ LIỆU ---
+  const handleDelete = async (id: string, docNum: string) => {
+    if (window.confirm(`Xóa Chứng từ [${docNum}]?\nChỉ có thể xóa các chứng từ nháp hoặc chưa phát sinh hạch toán.`)) {
+      try {
+        await deleteDocument(id).unwrap();
+        toast.success(`Đã xóa thành công chứng từ ${docNum}`);
+      } catch (err: any) {
+        toast.error(err?.data?.message || "Không thể xóa chứng từ này vì đã có dữ liệu liên kết!");
+      }
     }
   };
 
-  const handleUniversalDelete = async (row: any) => {
-    const recordIdField = getIdField(activeSubTab);
-    const recordId = row[recordIdField] || row.id;
-    const recordName = row.code || row.name || "Bản ghi này";
+  const handleApprove = async (id: string, docNum: string) => {
+    if (window.confirm(`Duyệt Nhanh Chứng từ [${docNum}]?\nHệ thống sẽ tự động sinh phiếu nhập/xuất kho và hạch toán kế toán.`)) {
+      try {
+        const promise = approveDocument({ id, data: { action: "APPROVE", comment: "Duyệt nhanh từ Dashboard" } }).unwrap();
+        toast.promise(promise, {
+          loading: 'Đang xử lý phê duyệt...',
+          success: `Đã duyệt chứng từ ${docNum}!`,
+          error: (err) => err?.data?.message || "Lỗi khi duyệt chứng từ!"
+        });
+      } catch (err: any) {}
+    }
+  };
 
-    if (!window.confirm(`HÀNH ĐỘNG NGUY HIỂM:\nBạn có chắc chắn muốn xóa vĩnh viễn [${recordName}] không?\nHành động này không thể hoàn tác!`)) {
+  // --- HANDLER GỌI LỆNH IN (PRINT PDF) ---
+  const handlePrint = (doc: any) => {
+    setSelectedDocForPrint(doc);
+    setTimeout(() => {
+      window.print();
+    }, 300);
+  };
+
+  // --- EXPORT DỮ LIỆU CHỨNG TỪ ---
+  const handleExportData = () => {
+    if (documents.length === 0) {
+      toast.error("Không có dữ liệu để xuất!");
       return;
     }
+    
+    const exportData = documents.map((doc: any) => {
+      const partnerName = doc.supplier?.name || doc.customer?.name || doc.partner?.name || "Khách lẻ / Ẩn danh";
+      const total = doc.totalAmount || 0;
+      const paid = doc.paidAmount || 0;
+      const remaining = total - paid;
+      
+      return {
+        "Số chứng từ": doc.documentNumber,
+        "Loại chứng từ": getDocTypeUI(doc.type).label,
+        "Đối tác": partnerName,
+        "Ngày tạo": formatDateTime(doc.issueDate || doc.createdAt),
+        "Tổng giá trị": total,
+        "Đã thanh toán": paid,
+        "Còn nợ": remaining > 0 ? remaining : 0,
+        "Trạng thái tài liệu": doc.status,
+        "Tiến độ thanh toán": getPaymentStatusUI(paid, total).label
+      };
+    });
 
-    setIsSavingMasterData(true);
-    try {
-      switch (activeSubTab) {
-        case "branches": await deleteBranch(recordId).unwrap(); break;
-        case "warehouses": await deleteWarehouse(recordId).unwrap(); break;
-        case "bins": await deleteBin(recordId).unwrap(); break;
-        case "departments": await deleteDepartment(recordId).unwrap(); break;
-        case "suppliers": await deleteSupplier(recordId).unwrap(); break;
-        case "customers": await deleteCustomer(recordId).unwrap(); break;
-        case "categories": await deleteCategory(recordId).unwrap(); break;
-        case "uoms": await deleteUoM(recordId).unwrap(); break;
-        case "taxes": await deleteTax(recordId).unwrap(); break;
-        case "currencies": await deleteCurrency(recordId).unwrap(); break;
-        case "accounts": await deleteAccount(recordId).unwrap(); break;
-        case "price_lists": await deletePriceList(recordId).unwrap(); break;
-        default: throw new Error("Module không xác định!");
-      }
-      toast.success(`Đã xóa thành công [${recordName}]!`);
-    } catch (error: any) {
-      toast.error(error?.data?.message || "Không thể xóa! Dữ liệu này đang được tham chiếu bởi các chứng từ khác.");
-    } finally {
-      setIsSavingMasterData(false);
-    }
+    exportToCSV(exportData, "Danh_Sach_Chung_Tu_Giao_Dich");
   };
 
-  const tableColumns = useMasterDataColumns({
-    activeSubTab, branches, warehouses, taxes, accounts, handleOpenEditModal, handleUniversalDelete
-  });
+  // --- 🚀 CỘT BẢNG (DATATABLE COLUMNS) ĐƯỢC BỌC USEMEMO ĐỂ TĂNG TỐC HIỆU NĂNG TRÁNH RE-RENDER ---
+  const columns: ColumnDef<any>[] = useMemo(() => [
+    {
+      header: "Số Chứng từ",
+      accessorKey: "documentNumber",
+      sortable: true,
+      cell: (row) => {
+        const ui = getDocTypeUI(row.type);
+        const Icon = ui.icon;
+        return (
+          <div className="flex items-center gap-3 transition-colors duration-500">
+            <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border shadow-sm group-hover:scale-105 transition-all duration-500", ui.color)}>
+              <Icon className="w-5 h-5" />
+            </div>
+            <div className="flex flex-col transition-colors duration-500">
+              <span className="font-bold text-slate-900 dark:text-white uppercase tracking-wider transition-colors duration-500">{row.documentNumber || "N/A"}</span>
+              <span className="text-[10px] text-slate-500 font-medium mt-0.5 transition-colors duration-500">{formatDateTime(row.issueDate || row.createdAt)}</span>
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      header: "Đối tác (Partner)",
+      accessorKey: "partner",
+      cell: (row) => {
+        const partnerName = row.supplier?.name || row.customer?.name || row.partner?.name || "Khách lẻ / Ẩn danh";
+        const isSupplier = row.type === "PURCHASE_ORDER" || row.type === "GOODS_RECEIPT";
+        return (
+          <div className="flex flex-col max-w-[200px] transition-colors duration-500">
+            <span className="font-semibold text-slate-800 dark:text-slate-200 truncate transition-colors duration-500" title={partnerName}>
+              {partnerName}
+            </span>
+            <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1 mt-1 transition-colors duration-500">
+              <Building className={cn("w-3 h-3 transition-colors duration-500", isSupplier ? "text-orange-500" : "text-emerald-500")} />
+              {isSupplier ? "Nhà Cung Cấp" : "Khách Hàng"}
+            </span>
+          </div>
+        );
+      }
+    },
+    {
+      header: "Giá trị & Thanh toán",
+      accessorKey: "totalAmount",
+      sortable: true,
+      cell: (row) => {
+        const total = row.totalAmount || 0;
+        const paid = row.paidAmount || 0;
+        const payUI = getPaymentStatusUI(paid, total);
 
-  const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
-  const itemVariants: Variants = { hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } };
-
-  return (
-    <div className="w-full flex flex-col gap-6 pb-10">
-      <Header title={t("Dữ liệu Nền tảng")} subtitle={t("Trung tâm cấu hình cốt lõi của hệ thống ERP.")} />
-
-      <div className="w-full overflow-x-auto scrollbar-hide">
-        <div className="flex items-center gap-2 p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl w-fit border border-slate-200 dark:border-white/5">
-          {MAIN_TABS.map(tab => (
-            <button 
-              key={tab.id} onClick={() => handleMainTabChange(tab.id as MainTab)} 
-              className={cn("relative px-5 py-2.5 text-sm font-bold rounded-xl transition-colors z-10 flex items-center gap-2 whitespace-nowrap", activeMainTab === tab.id ? tab.color : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300")}
-            >
-              {activeMainTab === tab.id && <motion.div layoutId="masterTab" className="absolute inset-0 bg-white dark:bg-slate-700 rounded-xl shadow-sm -z-10" />}
-              <tab.icon className="w-4 h-4" /> {tab.label}
+        return (
+          <div className="flex flex-col w-48 transition-colors duration-500">
+            <div className="flex justify-between items-end mb-1 text-[11px] transition-colors duration-500">
+              <span className="font-black text-slate-800 dark:text-white transition-colors duration-500">{formatVND(total)}</span>
+              <span className={cn("font-bold transition-colors duration-500", payUI.color)}>{payUI.percent}%</span>
+            </div>
+            <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700/50 rounded-full overflow-hidden shadow-inner transition-colors duration-500">
+              <motion.div 
+                initial={{ width: 0 }} animate={{ width: `${payUI.percent}%` }} transition={{ duration: 1, ease: "easeOut" }}
+                className={cn("h-full rounded-full transition-colors duration-500", payUI.bar)}
+              />
+            </div>
+            <div className="text-[10px] text-slate-500 mt-1 flex justify-between transition-colors duration-500">
+              <span>{payUI.label}</span>
+              {payUI.percent < 100 && <span className="font-semibold text-rose-500 transition-colors duration-500">Nợ: {formatVND(total - paid)}</span>}
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      header: "Trạng thái",
+      accessorKey: "status",
+      cell: (row) => {
+        const isPending = row.status === "PENDING" || row.status === "DRAFT";
+        return (
+          <span className={cn(
+            "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border shadow-sm transition-colors duration-500",
+            isPending 
+              ? "bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30" 
+              : "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30"
+          )}>
+            {isPending ? <Clock className="w-3.5 h-3.5 animate-pulse" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+            {row.status}
+          </span>
+        );
+      }
+    },
+    {
+      header: "Thao tác",
+      accessorKey: "id",
+      align: "right",
+      cell: (row) => {
+        const docId = row.id || row.documentId;
+        const isGRPO = row.type === "GOODS_RECEIPT";
+        const isPending = row.status === "PENDING" || row.status === "DRAFT";
+        const canPay = row.totalAmount > row.paidAmount && row.status === "APPROVED";
+        
+        return (
+          <div className="flex items-center justify-end gap-1.5 transition-colors duration-500">
+            
+            {/* Nút In ấn (PDF) */}
+            <button onClick={() => handlePrint(row)} title="In Chứng từ / Lưu PDF" className="p-2 text-slate-600 hover:text-indigo-600 bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-indigo-500/20 rounded-xl transition-colors shadow-sm duration-500">
+              <Printer className="w-4 h-4" />
             </button>
-          ))}
+
+            {/* LÁ CHẮN BẢO MẬT: Nút Duyệt Nhanh */}
+            {isPending && (
+              <RequirePermission roles={["ADMIN", "MANAGER"]}>
+                <button onClick={() => handleApprove(docId, row.documentNumber)} disabled={isApproving} title="Duyệt Chứng từ" className="p-2 text-emerald-600 hover:text-white bg-emerald-50 hover:bg-emerald-600 dark:bg-emerald-500/10 dark:hover:bg-emerald-600 rounded-xl transition-colors shadow-sm duration-500">
+                  <CheckCircle2 className="w-4 h-4" />
+                </button>
+              </RequirePermission>
+            )}
+
+            {/* Nút Landed Cost */}
+            {isGRPO && !isPending && (
+              <button onClick={() => setSelectedDocForLandedCost(docId)} title="Phân bổ Landed Cost" className="p-2 text-orange-500 bg-orange-50 hover:bg-orange-100 dark:bg-orange-500/10 dark:hover:bg-orange-500/30 rounded-xl transition-colors shadow-sm duration-500">
+                <Anchor className="w-4 h-4" />
+              </button>
+            )}
+            
+            {/* Nút Thanh toán */}
+            {canPay && (
+              <RequirePermission roles={["ADMIN", "ACCOUNTANT", "MANAGER"]}>
+                <button onClick={() => setSelectedDocForPayment(docId)} title="Gạch nợ / Thanh toán" className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-500/10 dark:hover:bg-blue-500/30 rounded-xl transition-colors shadow-sm duration-500">
+                  <CreditCard className="w-4 h-4" />
+                </button>
+              </RequirePermission>
+            )}
+
+            {/* LÁ CHẮN BẢO MẬT: Nút Xóa */}
+            {isPending && (
+              <RequirePermission roles={["ADMIN"]}>
+                <button onClick={() => handleDelete(docId, row.documentNumber)} disabled={isDeleting} title="Xóa chứng từ" className="p-2 text-rose-400 hover:text-white bg-rose-50 hover:bg-rose-500 dark:bg-rose-500/10 dark:hover:bg-rose-600 rounded-xl transition-colors shadow-sm duration-500">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </RequirePermission>
+            )}
+          </div>
+        );
+      }
+    }
+  ], [isApproving, isDeleting]); 
+  // 🚀 Tối ưu React: Khóa cứng bộ nhớ của Columns, chỉ render lại nếu hàm Xóa/Duyệt thay đổi
+
+  // 🚀 BỘ LỌC NÂNG CAO (UI ĐỂ BƠM VÀO DATATABLE)
+  const transactionFiltersNode = (
+    <div className="flex flex-wrap items-center gap-4 w-full transition-colors duration-500">
+      <div className="w-full sm:w-64 transition-colors duration-500">
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block transition-colors duration-500">Lọc theo Trạng thái Chứng từ</label>
+        <div className="relative group transition-colors duration-500">
+          <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors duration-500" />
+          <select 
+            value={filterDocStatus} onChange={(e) => setFilterDocStatus(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm appearance-none cursor-pointer text-slate-900 dark:text-white duration-500"
+          >
+            <option value="ALL">Tất cả trạng thái</option>
+            <option value="DRAFT">Nháp (Draft)</option>
+            <option value="PENDING">Chờ duyệt (Pending)</option>
+            <option value="APPROVED">Đã duyệt (Approved)</option>
+            <option value="COMPLETED">Hoàn tất (Completed)</option>
+            <option value="CANCELLED">Đã hủy (Cancelled)</option>
+          </select>
         </div>
       </div>
+      
+      <div className="w-full sm:w-64 transition-colors duration-500">
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block transition-colors duration-500">Lọc theo Thanh toán Công nợ</label>
+        <div className="relative group transition-colors duration-500">
+          <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors duration-500" />
+          <select 
+            value={filterPaymentStatus} onChange={(e) => setFilterPaymentStatus(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm appearance-none cursor-pointer text-slate-900 dark:text-white duration-500"
+          >
+            <option value="ALL">Tất cả tiến độ</option>
+            <option value="PAID">Đã thanh toán đủ 100%</option>
+            <option value="PARTIAL">Thanh toán 1 phần</option>
+            <option value="UNPAID">Chưa thanh toán (Nợ)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  );
 
-      <AnimatePresence mode="wait">
-        <motion.div key={activeMainTab} variants={containerVariants} initial="hidden" animate="show" exit={{ opacity: 0, y: -10 }} className="flex flex-col gap-6 w-full">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {subModules.map((mod) => {
-              const isActive = activeSubTab === mod.id;
-              return (
-                <motion.div 
-                  key={mod.id} variants={itemVariants} onClick={() => setActiveSubTab(mod.id)}
-                  className={cn("cursor-pointer relative overflow-hidden rounded-2xl p-4 transition-all duration-200 border", isActive ? "bg-white dark:bg-slate-800 border-blue-500 shadow-md transform scale-[1.02]" : "bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10")}
+  // --- ANIMATION ---
+  const containerVariants: Variants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
+  const itemVariants: Variants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } };
+
+  // 🚀 LÁ CHẮN UI: KHÔNG CÓ CHI NHÁNH
+  if (!activeBranchId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[70vh] w-full text-center transition-colors duration-500">
+        <AlertOctagon className="w-16 h-16 text-amber-500 mb-4 animate-pulse transition-colors duration-500" />
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2 transition-colors duration-500">Chưa chọn Chi nhánh</h2>
+        <p className="text-slate-500 transition-colors duration-500">Vui lòng chọn Chi nhánh hoạt động ở góc trên màn hình để truy cập Trung tâm Giao dịch.</p>
+      </div>
+    );
+  }
+
+  // 🚀 LÁ CHẮN UI: LỖI SERVER
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[70vh] w-full text-center transition-colors duration-500">
+        <AlertOctagon className="w-16 h-16 text-rose-500 mb-4 animate-pulse transition-colors duration-500" />
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2 transition-colors duration-500">Lỗi truy xuất hệ thống Giao dịch</h2>
+        <button onClick={() => refetch()} className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg active:scale-95 flex items-center gap-2 mt-4 transition-colors duration-500">
+          <RefreshCcw className={cn("w-5 h-5", isFetching && "animate-spin")} /> Tải lại dữ liệu
+        </button>
+      </div>
+    );
+  }
+
+  // Phục vụ Render Template In 
+  const partnerNamePrint = selectedDocForPrint?.supplier?.name || selectedDocForPrint?.customer?.name || "Khách lẻ / Khách vãng lai";
+  const partnerAddressPrint = selectedDocForPrint?.supplier?.address || selectedDocForPrint?.customer?.address || "...............................................................";
+  const partnerPhonePrint = selectedDocForPrint?.supplier?.phone || selectedDocForPrint?.customer?.phone || ".........................";
+
+  return (
+    <>
+      {/* BAO BỌC GIAO DIỆN CHÍNH, ẨN ĐI KHI IN (print:hidden) */}
+      <div className="w-full flex flex-col gap-6 pb-10 print:hidden transition-colors duration-500">
+        
+        {/* 1. HEADER CHUẨN ENTERPRISE */}
+        <Header 
+          title={t("Giao dịch & Mua bán")} 
+          subtitle={t("Kiểm soát toàn bộ vòng đời Đơn hàng, Nhập xuất kho và Thanh toán Công nợ.")}
+          rightNode={
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide transition-colors duration-500">
+              <button 
+                onClick={handleExportData}
+                className="px-4 py-2.5 flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 whitespace-nowrap border border-slate-200 dark:border-slate-700 shadow-sm text-sm font-bold duration-500"
+              >
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">Xuất Dữ liệu</span>
+              </button>
+              <RequirePermission roles={["ADMIN", "MANAGER", "STAFF"]}>
+                <button 
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="px-6 py-2.5 flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-black rounded-xl shadow-xl shadow-blue-500/30 transition-all active:scale-95 whitespace-nowrap duration-500"
                 >
-                  <div className={cn("absolute -right-4 -bottom-4 p-4 opacity-[0.03] dark:opacity-5", isActive ? "text-blue-500" : "text-slate-500")}><mod.icon className="w-24 h-24" /></div>
-                  <div className="flex justify-between items-start mb-3 relative z-10">
-                    <div className={cn("p-2 rounded-xl", isActive ? "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400" : "bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400")}><mod.icon className="w-5 h-5" /></div>
-                    <span className="text-xl font-black text-slate-800 dark:text-slate-200">{isLoading ? <Loader2 className="w-4 h-4 animate-spin text-slate-300" /> : mod.data?.length || 0}</span>
+                  <Plus className="w-5 h-5" />
+                  <span className="hidden sm:inline">Khởi tạo Chứng từ</span>
+                </button>
+              </RequirePermission>
+            </div>
+          }
+        />
+
+        {isLoading ? <TransactionsSkeleton /> : (
+          <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex flex-col gap-6 w-full transition-colors duration-500">
+            
+            {/* 2. KHỐI THỐNG KÊ KÉP (KPI CARDS) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 transition-colors duration-500">
+              
+              <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-blue-400 transition-colors duration-500">
+                <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform duration-500"><ShoppingCart className="w-20 h-20 text-blue-500"/></div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10 transition-colors duration-500">Chi phí Mua Hàng (PO)</p>
+                <h3 className="text-2xl font-black text-blue-700 dark:text-blue-400 truncate relative z-10 transition-colors duration-500">{formatVND(kpis.totalPurchases)}</h3>
+                <p className="text-[11px] font-bold text-rose-500 mt-2 relative z-10 flex items-center gap-1 bg-rose-50 dark:bg-rose-500/10 px-2.5 py-1.5 rounded-lg w-fit border border-rose-100 dark:border-rose-500/20 transition-colors duration-500">
+                  Nợ phải trả: {formatVND(kpis.totalDebt)}
+                </p>
+              </motion.div>
+              
+              <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-emerald-400 transition-colors duration-500">
+                <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform duration-500"><TrendingUp className="w-20 h-20 text-emerald-500"/></div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10 transition-colors duration-500">Doanh thu Bán Hàng (SO)</p>
+                <h3 className="text-2xl font-black text-emerald-700 dark:text-emerald-400 truncate relative z-10 transition-colors duration-500">{formatVND(kpis.totalSales)}</h3>
+                <p className="text-[11px] font-bold text-amber-600 dark:text-amber-500 mt-2 relative z-10 flex items-center gap-1 bg-amber-50 dark:bg-amber-500/10 px-2.5 py-1.5 rounded-lg w-fit border border-amber-200 dark:border-amber-500/20 transition-colors duration-500">
+                  Nợ phải thu: {formatVND(kpis.totalReceivables)}
+                </p>
+              </motion.div>
+
+              <motion.div variants={itemVariants} className={cn("glass p-5 rounded-3xl border shadow-sm relative overflow-hidden group transition-colors duration-500", kpis.pendingDocs > 0 ? "border-amber-300 bg-amber-50/30 dark:border-amber-500/30 dark:bg-amber-900/10" : "border-slate-200 dark:border-white/10")}>
+                <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform duration-500"><Clock className="w-20 h-20 text-amber-500"/></div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10 transition-colors duration-500">Chứng từ Chờ Duyệt</p>
+                <div className="flex items-center gap-3 relative z-10 transition-colors duration-500">
+                  <h3 className={cn("text-3xl font-black transition-colors duration-500", kpis.pendingDocs > 0 ? "text-amber-600 dark:text-amber-400" : "text-slate-400")}>
+                    {kpis.pendingDocs}
+                  </h3>
+                  {kpis.pendingDocs > 0 && (
+                    <span className="flex h-3 w-3 relative transition-colors duration-500">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] font-medium text-slate-500 mt-2 relative z-10 transition-colors duration-500">Đang chờ phê duyệt</p>
+              </motion.div>
+
+              <motion.div variants={itemVariants} className="glass p-5 rounded-3xl border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group hover:border-purple-400 transition-colors duration-500">
+                 <div className="absolute right-0 top-0 p-4 opacity-[0.03] dark:opacity-5 group-hover:scale-110 transition-transform duration-500"><ArrowRightLeft className="w-20 h-20 text-purple-500"/></div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10 transition-colors duration-500">Tổng Lưu lượng (Volume)</p>
+                <h3 className="text-3xl font-black text-purple-600 dark:text-purple-400 relative z-10 transition-colors duration-500">{kpis.totalDocs} <span className="text-sm font-medium text-slate-500">phiếu</span></h3>
+                <p className="text-[11px] font-medium text-slate-500 mt-2 relative z-10 transition-colors duration-500">Tất cả giao dịch trong hệ thống</p>
+              </motion.div>
+
+            </div>
+
+            {/* 3. THANH CÔNG CỤ ĐIỀU HƯỚNG TABS (STICKY GLASSMORPHISM) */}
+            <motion.div variants={itemVariants} className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-3 rounded-3xl border border-slate-200/50 dark:border-white/10 shadow-sm z-30 sticky top-4 transition-colors duration-500">
+              
+              {/* Tabs Filter */}
+              <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200/50 dark:border-white/5 transition-colors duration-500">
+                {[
+                  { id: "ALL", label: "Tất cả" },
+                  { id: "PURCHASE_ORDER", label: "Đơn Mua (PO)" },
+                  { id: "SALES_ORDER", label: "Đơn Bán (SO)" },
+                  { id: "GOODS_RECEIPT", label: "Nhập Kho (GRPO)" },
+                  { id: "INVOICE", label: "Hóa Đơn" }
+                ].map(tab => (
+                  <button 
+                    key={tab.id} onClick={() => setActiveTab(tab.id as DocTab)} 
+                    className={cn(
+                      "relative px-4 py-2.5 text-xs font-bold rounded-xl transition-colors whitespace-nowrap z-10 duration-500",
+                      activeTab === tab.id ? "text-slate-900 dark:text-white" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                    )}
+                  >
+                    {activeTab === tab.id && <motion.div layoutId="docFilterTab" className="absolute inset-0 bg-white dark:bg-slate-700 shadow-sm rounded-xl -z-10 border border-slate-200/50 dark:border-slate-600 transition-colors duration-500" />}
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Thanh Tìm kiếm ngoài */}
+              <div className="relative w-full sm:w-80 transition-colors duration-500">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 transition-colors duration-500" />
+                <input 
+                  type="text" placeholder="Tìm số phiếu, đối tác..." 
+                  value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500 transition-colors shadow-sm text-slate-900 dark:text-white duration-500"
+                />
+              </div>
+            </motion.div>
+
+            {/* 4. BẢNG DỮ LIỆU ĐỘNG (DATATABLE) - ĐƯỢC BƠM ADVANCED FILTERS */}
+            <motion.div variants={itemVariants} className="glass-panel rounded-3xl overflow-hidden shadow-md border border-slate-200 dark:border-white/10 transition-colors duration-500">
+              {documents.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-24 text-slate-400 transition-colors duration-500">
+                  <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4 transition-colors duration-500">
+                    <FileText className="w-10 h-10 opacity-50 transition-colors duration-500" />
                   </div>
-                  <div className="relative z-10">
-                    <h4 className={cn("font-bold text-sm", isActive ? "text-slate-900 dark:text-white" : "text-slate-600 dark:text-slate-400")}>{mod.title}</h4>
-                    <p className="text-[10px] text-slate-500 mt-0.5 truncate">{mod.desc}</p>
-                  </div>
-                </motion.div>
-              );
-            })}
+                  <p className="font-bold text-slate-600 dark:text-slate-300 text-lg transition-colors duration-500">Không có dữ liệu</p>
+                  <p className="text-sm mt-1 transition-colors duration-500">Chưa có chứng từ nào khớp với tiêu chí lọc của bạn.</p>
+                </div>
+              ) : (
+                <DataTable 
+                  data={documents} 
+                  columns={columns} 
+                  searchKey="documentNumber" 
+                  searchPlaceholder="Lọc nhanh mã phiếu trong bảng..." 
+                  itemsPerPage={10} 
+                  // 🚀 TRUYỀN UI BỘ LỌC VÀO TRONG DATA TABLE
+                  advancedFilterNode={transactionFiltersNode}
+                />
+              )}
+            </motion.div>
+
+          </motion.div>
+        )}
+
+        {/* ==========================================
+            5. KHU VỰC TÍCH HỢP CÁC SIÊU MODALS 
+            ========================================== */}
+            
+        <CreateDocumentModal 
+          isOpen={isCreateModalOpen} 
+          onClose={() => { setIsCreateModalOpen(false); refetch(); }} 
+        />
+
+        <LandedCostModal 
+          isOpen={!!selectedDocForLandedCost} 
+          onClose={() => setSelectedDocForLandedCost(null)} 
+          documentId={selectedDocForLandedCost} 
+        />
+
+        <PaymentModal 
+          docId={selectedDocForPayment} 
+          isOpen={!!selectedDocForPayment} 
+          onClose={() => setSelectedDocForPayment(null)} 
+        />
+
+      </div>
+
+      {/* ==========================================
+          6. TEMPLATE IN ẨN (CHỈ HIỂN THỊ KHI BẤM Ctrl+P) 
+          ========================================== */}
+      {selectedDocForPrint && (
+        <div className="hidden print:block fixed inset-0 bg-white w-full min-h-screen text-black font-serif text-sm z-[9999] p-8">
+          
+          {/* HEADER CHỨNG TỪ */}
+          <div className="flex justify-between items-start border-b-2 border-black pb-4 mb-6">
+            <div className="flex items-center gap-4">
+              <div className="w-20 h-20 bg-gray-100 border border-black flex items-center justify-center font-bold text-lg">
+                LOGO
+              </div>
+              <div>
+                <h1 className="font-black text-xl uppercase">CÔNG TY CỔ PHẦN TTH ENTERPRISE</h1>
+                <p>Địa chỉ: Khu công nghệ cao Biên Hòa, Đồng Nai, Việt Nam</p>
+                <p>Mã số thuế: 0101234567 | Điện thoại: (0251) 388 9999</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="font-bold text-xs italic">Mẫu số: 01GTKT</p>
+              <p className="text-xs italic">(Ban hành theo thông tư hệ thống ERP)</p>
+            </div>
           </div>
 
-          <motion.div variants={itemVariants} className="glass-panel rounded-3xl shadow-sm border border-slate-200 dark:border-white/10 overflow-hidden flex flex-col h-[500px]">
-            <div className="flex flex-wrap items-center justify-between p-5 bg-white dark:bg-[#0B0F19] border-b border-slate-100 dark:border-white/5 shrink-0 gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center border border-blue-100 dark:border-blue-800/30">{activeModule && <activeModule.icon className="w-5 h-5 text-blue-600 dark:text-blue-400" />}</div>
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">{activeModule?.title}</h3>
-                  <p className="text-xs text-slate-500">Quản lý danh sách {activeModule?.title.toLowerCase()} gốc</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={handleExportData} className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-xl transition-all shadow-sm border border-slate-200 dark:border-slate-700"><Download className="w-4 h-4" /> Xuất File</button>
-                {/* 🚀 BẢO MẬT NÚT TẠO MỚI */}
-                <RequirePermission permissions={["MANAGE_MASTER_DATA"]}>
-                  <button onClick={handleOpenAddModal} className="flex items-center gap-2 px-5 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-blue-600 dark:hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all shadow-md"><Plus className="w-4 h-4" /> Thêm Mới</button>
-                </RequirePermission>
-              </div>
-            </div>
+          {/* TIÊU ĐỀ CHỨNG TỪ */}
+          <div className="text-center mb-8">
+            <h2 className="text-3xl font-black uppercase tracking-widest mb-1">
+              {getDocTypeUI(selectedDocForPrint.type).printLabel}
+            </h2>
+            <p className="italic">
+              Ngày {dayjs(selectedDocForPrint.issueDate || selectedDocForPrint.createdAt).format('DD')} tháng {dayjs(selectedDocForPrint.issueDate || selectedDocForPrint.createdAt).format('MM')} năm {dayjs(selectedDocForPrint.issueDate || selectedDocForPrint.createdAt).format('YYYY')}
+            </p>
+            <p className="font-bold mt-1">Số: {selectedDocForPrint.documentNumber}</p>
+          </div>
 
-            <div className="flex-1 overflow-hidden bg-slate-50 dark:bg-slate-900/50 p-4">
-              {isLoading ? (
-                <div className="flex flex-col items-center justify-center h-full text-slate-400"><Loader2 className="w-8 h-8 animate-spin mb-4 text-blue-500" /><p className="text-sm font-medium">Đang tải cấu hình hệ thống...</p></div>
-              ) : activeModule?.data && activeModule.data.length > 0 ? (
-                <div className="h-full rounded-2xl overflow-hidden border border-slate-200 dark:border-white/5 bg-white dark:bg-slate-900 shadow-sm"><DataTable data={activeModule.data} columns={tableColumns} searchKey="name" searchPlaceholder={`Tìm kiếm trong ${activeModule.title}...`} itemsPerPage={10} /></div>
+          {/* THÔNG TIN ĐỐI TÁC */}
+          <div className="mb-6 space-y-2">
+            <p><span className="font-bold w-40 inline-block">Khách hàng / Đơn vị:</span> {partnerNamePrint}</p>
+            <p><span className="font-bold w-40 inline-block">Địa chỉ:</span> {partnerAddressPrint}</p>
+            <p><span className="font-bold w-40 inline-block">Điện thoại:</span> {partnerPhonePrint}</p>
+            <p><span className="font-bold w-40 inline-block">Diễn giải:</span> {selectedDocForPrint.note || "...................................................................................................."}</p>
+          </div>
+
+          {/* BẢNG CHI TIẾT HÀNG HÓA */}
+          <table className="w-full border-collapse border border-black mb-6 text-sm">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="border border-black p-2 text-center w-12">STT</th>
+                <th className="border border-black p-2 text-left">Tên Hàng hóa / Dịch vụ</th>
+                <th className="border border-black p-2 text-center w-24">Số lượng</th>
+                <th className="border border-black p-2 text-right w-32">Đơn giá</th>
+                <th className="border border-black p-2 text-right w-32">Thành tiền</th>
+              </tr>
+            </thead>
+            <tbody>
+              {selectedDocForPrint.transactions && selectedDocForPrint.transactions.length > 0 ? (
+                selectedDocForPrint.transactions.map((item: any, idx: number) => (
+                  <tr key={idx}>
+                    <td className="border border-black p-2 text-center">{idx + 1}</td>
+                    <td className="border border-black p-2 text-left font-semibold">
+                      {item.product?.name || "Vật tư không xác định"}
+                    </td>
+                    <td className="border border-black p-2 text-center">{item.quantity}</td>
+                    <td className="border border-black p-2 text-right">{formatVND(item.unitPrice)}</td>
+                    <td className="border border-black p-2 text-right">{formatVND(item.totalPrice)}</td>
+                  </tr>
+                ))
               ) : (
-                <div className="flex flex-col items-center justify-center h-full text-slate-500 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900/20"><Database className="w-12 h-12 mb-3 opacity-20" /><p className="text-sm font-bold text-slate-700 dark:text-slate-300">Chưa có dữ liệu {activeModule?.title}</p><p className="text-xs mt-1">Bấm "Thêm Mới" để thiết lập bản ghi đầu tiên.</p></div>
+                <tr>
+                  <td colSpan={5} className="border border-black p-8 text-center italic text-gray-500">
+                    (Không có dữ liệu chi tiết hàng hóa hoặc chưa tải)
+                  </td>
+                </tr>
               )}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan={4} className="border border-black p-2 text-right font-bold uppercase">Tổng Cộng:</td>
+                <td className="border border-black p-2 text-right font-black text-lg">
+                  {formatVND(selectedDocForPrint.totalAmount)}
+                </td>
+              </tr>
+              <tr>
+                <td colSpan={4} className="border border-black p-2 text-right font-bold uppercase">Đã Thanh Toán:</td>
+                <td className="border border-black p-2 text-right">
+                  {formatVND(selectedDocForPrint.paidAmount)}
+                </td>
+              </tr>
+              <tr>
+                <td colSpan={4} className="border border-black p-2 text-right font-bold uppercase">Số Tiền Còn Nợ:</td>
+                <td className="border border-black p-2 text-right font-bold">
+                  {formatVND(selectedDocForPrint.totalAmount - selectedDocForPrint.paidAmount)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+
+          {/* CHỮ KÝ */}
+          <div className="grid grid-cols-4 gap-4 mt-12 text-center">
+            <div>
+              <p className="font-bold">Người Lập Phiếu</p>
+              <p className="text-xs italic">(Ký, họ tên)</p>
+              <div className="h-24"></div>
             </div>
-          </motion.div>
-        </motion.div>
-      </AnimatePresence>
-
-      <PriceListModal isOpen={isPriceListModalOpen} onClose={() => { setIsPriceListModalOpen(false); setEditingData(null); }} priceListToEdit={editingData} />
-
-      {activeModule && (
-        <UniversalMasterDataModal
-          isOpen={isUniversalModalOpen} onClose={() => setIsUniversalModalOpen(false)}
-          title={editingData ? `Sửa: ${activeModule.title}` : `Thêm Mới: ${activeModule.title}`}
-          subtitle={getFormConfig(activeSubTab, { companies, branches, warehouses, currencies, taxes, accounts }).subtitle}
-          fields={getFormConfig(activeSubTab, { companies, branches, warehouses, currencies, taxes, accounts }).fields}
-          initialData={editingData} onSave={handleUniversalSave} isSaving={isSavingMasterData}
-        />
+            <div>
+              <p className="font-bold">Người Nhận / Giao Hàng</p>
+              <p className="text-xs italic">(Ký, họ tên)</p>
+              <div className="h-24"></div>
+            </div>
+            <div>
+              <p className="font-bold">Kế Toán Trưởng</p>
+              <p className="text-xs italic">(Ký, họ tên)</p>
+              <div className="h-24"></div>
+            </div>
+            <div>
+              <p className="font-bold">Giám Đốc</p>
+              <p className="text-xs italic">(Ký, đóng dấu)</p>
+              <div className="h-24"></div>
+            </div>
+          </div>
+          
+          <div className="text-center text-xs italic mt-16 text-gray-500">
+            Chứng từ được kết xuất tự động từ Hệ thống TTH ERP - Ngày in: {formatDateTime(new Date())}
+          </div>
+        </div>
       )}
-    </div>
+    </>
   );
 }

@@ -93,11 +93,11 @@ export default function RequirePermission({
     return checkUniversalPermission(currentUser, roles, permissions, requireAll);
   }, [currentUser, roles, permissions, requireAll, isMounted]);
 
-  if (!isMounted) return <>{fallback}</>;
+  if (!isMounted) return <span className="transition-colors duration-500">{fallback}</span>;
 
   if (isAllowed) {
-    return <>{children}</>;
+    return <span className="transition-colors duration-500">{children}</span>;
   }
 
-  return <>{fallback}</>;
+  return <span className="transition-colors duration-500">{fallback}</span>;
 }

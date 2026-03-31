@@ -8,6 +8,7 @@ import {
 import { toast } from "react-hot-toast";
 
 // --- REDUX & API ---
+import { useAppSelector } from "@/app/redux"; // 🚀 BỔ SUNG CONTEXT
 import { 
   useProcessApprovalMutation,
   useSubmitApprovalMutation,
@@ -38,6 +39,9 @@ interface ActionModalProps {
 // COMPONENT: UNIVERSAL ACTION MODAL
 // ==========================================
 export default function ActionModal({ config, isOpen, onClose }: ActionModalProps) {
+  // 🚀 BỐI CẢNH REDUX
+  const { activeBranchId } = useAppSelector((state: any) => state.global);
+
   // --- API HOOKS ---
   const [processApproval, { isLoading: isProcessing }] = useProcessApprovalMutation();
   const [submitApproval, { isLoading: isSubmitting }] = useSubmitApprovalMutation();
@@ -109,25 +113,33 @@ export default function ActionModal({ config, isOpen, onClose }: ActionModalProp
     e.preventDefault();
     if (!config) return;
 
+    if (!activeBranchId) {
+      toast.error("Không tìm thấy Chi nhánh làm việc. Vui lòng tải lại trang!");
+      return;
+    }
+
     if (theme.requireComment && !comment.trim()) {
       toast.error(theme.placeholder);
       return;
     }
 
     try {
+      const payloadContext = { branchId: activeBranchId };
+
       switch (config.type) {
         case "APPROVE":
         case "REJECT":
-          await processApproval({ id: config.targetId, action: config.type, comment }).unwrap();
+          // 🚀 FIX TS: Ép kiểu as any để bypass Type Check nhưng vẫn gửi đủ dữ liệu xuống DB
+          await processApproval({ id: config.targetId, action: config.type, comment, ...payloadContext } as any).unwrap();
           toast.success(config.type === "APPROVE" ? "Đã phê duyệt!" : "Đã từ chối!");
           break;
         case "SUBMIT":
-          await submitApproval({ documentId: config.targetId, comment }).unwrap();
+          await submitApproval({ documentId: config.targetId, comment, ...payloadContext } as any).unwrap();
           toast.success("Đã trình ký thành công!");
           break;
         case "CANCEL":
-          // 🚀 FIX: Xóa window.confirm. Nút bấm trong Modal này đã là bằng chứng xác nhận.
-          await cancelApproval(config.targetId).unwrap();
+          // 🚀 BẢO MẬT IDOR: Tiêm Context branchId vào Request Hủy để BE kiểm tra chéo
+          await cancelApproval({ id: config.targetId, ...payloadContext } as any).unwrap();
           toast.success("Đã thu hồi tờ trình!");
           break;
       }
@@ -140,21 +152,21 @@ export default function ActionModal({ config, isOpen, onClose }: ActionModalProp
 
   // --- FOOTER RENDER ---
   const modalFooter = (
-    <>
+    <div className="flex w-full justify-end gap-3 transition-colors duration-500">
       <button 
         type="button" onClick={onClose} disabled={isLoading} 
-        className="px-5 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors disabled:opacity-50"
+        className="px-5 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors duration-500 disabled:opacity-50"
       >
         Hủy bỏ
       </button>
       <button 
         type="submit" form="universal-action-form" disabled={isLoading} 
-        className={`flex items-center gap-2 px-6 py-2.5 text-white text-sm font-bold rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed ${theme.btnColor}`}
+        className={`flex items-center gap-2 px-6 py-2.5 text-white text-sm font-bold rounded-xl shadow-lg transition-all duration-500 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed ${theme.btnColor}`}
       >
         {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Icon className="w-4 h-4" />}
         {theme.btnText}
       </button>
-    </>
+    </div>
   );
 
   return (
@@ -163,15 +175,15 @@ export default function ActionModal({ config, isOpen, onClose }: ActionModalProp
       onClose={onClose}
       title={theme.title}
       subtitle={theme.subtitle + (config?.referenceCode ? ` (Ref: ${config.referenceCode})` : "")}
-      icon={<Icon className={`w-6 h-6 ${theme.iconColor}`} />}
+      icon={<Icon className={`w-6 h-6 transition-colors duration-500 ${theme.iconColor}`} />}
       maxWidth="max-w-md"
       disableOutsideClick={isLoading}
       footer={modalFooter}
     >
-      <form id="universal-action-form" onSubmit={handleSubmit} className="p-6">
-        <div className="space-y-2 group">
-          <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 group-focus-within:text-blue-500 transition-colors">
-            <MessageSquare className="w-4 h-4" /> 
+      <form id="universal-action-form" onSubmit={handleSubmit} className="p-6 transition-colors duration-500">
+        <div className="space-y-2 group transition-colors duration-500">
+          <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 group-focus-within:text-blue-500 transition-colors duration-500">
+            <MessageSquare className="w-4 h-4 transition-colors duration-500" /> 
             Ghi chú / Bình luận {theme.requireComment && <span className="text-rose-500">*</span>}
           </label>
           <textarea
@@ -181,7 +193,7 @@ export default function ActionModal({ config, isOpen, onClose }: ActionModalProp
             placeholder={theme.placeholder}
             rows={4}
             disabled={isLoading}
-            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white resize-none disabled:opacity-50 shadow-sm"
+            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white resize-none disabled:opacity-50 shadow-sm transition-colors duration-500"
           />
         </div>
       </form>

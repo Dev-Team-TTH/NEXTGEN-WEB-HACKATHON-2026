@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Message } from "./types";
+import { useAppSelector } from "@/app/redux"; // 🚀 BỔ SUNG: Kéo Context từ Redux
 
 const getAuthToken = (): string => {
   if (typeof window !== "undefined") {
@@ -9,6 +10,9 @@ const getAuthToken = (): string => {
 };
 
 export function useChatLogic() {
+  // 🚀 LÁ CHẮN BẢO VỆ NGỮ CẢNH: Lấy ID Chi nhánh hiện tại
+  const activeBranchId = useAppSelector((state: any) => state.global?.activeBranchId);
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'init-1',
@@ -53,7 +57,7 @@ export function useChatLogic() {
     setIsTyping(true);
 
     try {
-      // 🚀 FIX LỖI TOKEN OVERFLOW: Chỉ lấy tối đa 10 tin nhắn gần nhất để làm Context (Tránh file payload quá nặng)
+      // 🚀 FIX LỖI TOKEN OVERFLOW: Chỉ lấy tối đa 10 tin nhắn gần nhất để làm Context
       const historyPayload = messages
         .filter(m => m.id !== 'init-1' && !m.isError) 
         .slice(-10) 
@@ -75,7 +79,8 @@ export function useChatLogic() {
         body: JSON.stringify({
           message: textToSend, 
           contextData: contextData,
-          history: historyPayload
+          history: historyPayload,
+          branchId: activeBranchId // 🚀 TIÊM NGỮ CẢNH: Giúp AI filter DB theo đúng Chi nhánh!
         })
       });
 
