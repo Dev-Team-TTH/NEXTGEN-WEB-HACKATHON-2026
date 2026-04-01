@@ -14,6 +14,7 @@ interface HeaderProps {
 
 // ==========================================
 // COMPONENT: TIÊU ĐỀ TRANG (PAGE HEADER ĐẲNG CẤP ENTERPRISE)
+// Đã được giải phẫu và tối ưu hóa triệt để cho Dark Mode & Mobile
 // ==========================================
 export default function Header({ title, subtitle, rightNode }: HeaderProps) {
   return (
@@ -21,23 +22,35 @@ export default function Header({ title, subtitle, rightNode }: HeaderProps) {
       initial={{ opacity: 0, y: -15 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: [0.25, 0.8, 0.25, 1] }} 
-      className="relative flex flex-col md:flex-row md:items-center justify-between gap-5 mb-8 sm:mb-10 transform-gpu will-change-transform w-full transition-colors duration-500"
+      // 🚀 VÁ LỖI TỔNG THỂ: 
+      // - Đổi 'transition-colors' thành 'transition-all ease-in-out' để ép trình duyệt nội suy toàn bộ CSS.
+      // - Thu gọn gap và margin trên Mobile để tiết kiệm diện tích màn hình.
+      className="relative flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-5 mb-6 sm:mb-8 md:mb-10 transform-gpu will-change-transform w-full transition-all duration-500 ease-in-out"
     >
       {/* 1. HIỆU ỨNG KHÔNG GIAN TẠO CHIỀU SÂU (AMBIENT GLOW) */}
-      <div className="absolute -top-6 -left-6 w-32 h-32 bg-blue-500/10 dark:bg-blue-500/20 rounded-full blur-3xl pointer-events-none z-0 transition-colors duration-500" />
+      {/* 🚀 TỐI ƯU MOBILE: Quầng sáng tự động thu nhỏ trên điện thoại để không gây tràn thanh cuộn ngang */}
+      <div className="absolute -top-4 -left-4 sm:-top-6 sm:-left-6 w-24 h-24 sm:w-32 sm:h-32 bg-blue-500/15 dark:bg-blue-500/20 rounded-full blur-2xl sm:blur-3xl pointer-events-none z-0 transition-all duration-500 ease-in-out" />
       
       {/* 2. KHỐI VĂN BẢN & MỎ NEO THỊ GIÁC */}
-      <div className="relative z-10 flex items-stretch gap-3.5 sm:gap-4 transition-colors duration-500">
-        {/* Accent Pillar: Thanh mỏ neo thị giác Gradient */}
-        <div className="w-1.5 shrink-0 rounded-full bg-gradient-to-b from-blue-600 via-indigo-600 to-purple-600 shadow-[0_0_12px_rgba(79,70,229,0.4)] dark:shadow-[0_0_16px_rgba(79,70,229,0.3)] transition-colors duration-500" />
+      {/* 🚀 VÁ LỖI TRÀN FLEXBOX: Bổ sung 'w-full md:w-auto min-w-0' để chống vỡ khung text */}
+      <div className="relative z-10 flex items-stretch gap-3 sm:gap-4 transition-all duration-500 ease-in-out w-full md:w-auto min-w-0">
         
-        <div className="flex flex-col justify-center py-0.5 transition-colors duration-500">
-          {/* 🚀 ĐÃ VÁ LỖI CHẾT MÀU: Bổ sung dark:text-white để hiển thị tốt trên nền tối */}
-          <h1 className="text-2xl sm:text-[28px] lg:text-3xl font-black tracking-tight text-slate-900 dark:text-white leading-none transition-colors duration-500">
+        {/* Accent Pillar: Thanh mỏ neo thị giác Gradient */}
+        <div className="w-1.5 shrink-0 rounded-full bg-gradient-to-b from-blue-600 via-indigo-600 to-purple-600 shadow-[0_0_8px_rgba(79,70,229,0.4)] dark:shadow-[0_0_16px_rgba(79,70,229,0.3)] transition-all duration-500 ease-in-out" />
+        
+        <div className="flex flex-col justify-center py-0.5 min-w-0 transition-all duration-500 ease-in-out w-full">
+          {/* 🚀 VÁ LỖI CHỮ ĐEN (COLOR DEADLOCK): 
+              - Ép cứng 'text-slate-900 dark:text-white'.
+              - 'transition-all duration-500 ease-in-out' giải quyết triệt để độ sượng màu.
+              - Responsive Text: Tự động scale từ xl (Mobile) lên 3xl (PC).
+              - 'truncate break-words' chống tràn chữ phá vỡ layout.
+          */}
+          <h1 className="text-xl sm:text-2xl md:text-[28px] lg:text-3xl font-black tracking-tight text-slate-900 dark:text-white leading-tight sm:leading-none truncate break-words transition-all duration-500 ease-in-out">
             {title}
           </h1>
+          
           {subtitle && (
-            <p className="text-[13px] sm:text-sm font-semibold text-slate-500 dark:text-slate-400 mt-1.5 sm:mt-2 max-w-xl leading-relaxed transition-colors duration-500">
+            <p className="text-xs sm:text-[13px] md:text-sm font-semibold text-slate-500 dark:text-slate-400 mt-1 sm:mt-1.5 md:mt-2 max-w-full md:max-w-xl leading-relaxed transition-all duration-500 ease-in-out">
               {subtitle}
             </p>
           )}
@@ -45,8 +58,12 @@ export default function Header({ title, subtitle, rightNode }: HeaderProps) {
       </div>
 
       {/* 3. KHỐI NÚT BẤM (ADAPTIVE ACTION BAR) */}
+      {/* 🚀 TỐI ƯU UX MOBILE:
+          - Đổi 'flex-wrap' thành 'overflow-x-auto scrollbar-hide'.
+          - Giờ đây nếu có 3-4 nút bấm, chúng sẽ xếp ngang 1 hàng và có thể vuốt (swipe) mượt mà trên điện thoại!
+      */}
       {rightNode && (
-        <div className="relative z-10 w-full md:w-auto flex flex-wrap items-center justify-start md:justify-end gap-3 mt-1 md:mt-0 transition-colors duration-500">
+        <div className="relative z-10 w-full md:w-auto flex flex-row items-center justify-start md:justify-end gap-2.5 sm:gap-3 mt-2 md:mt-0 overflow-x-auto scrollbar-hide pb-1 md:pb-0 transition-all duration-500 ease-in-out">
           {rightNode}
         </div>
       )}

@@ -71,7 +71,8 @@ export default function AIChatbot() {
             exit={{ opacity: 0, y: 50, scale: 0.95 }}
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
             className={cn(
-              "fixed z-[9999] flex flex-col bg-white/95 dark:bg-[#0B0F19]/95 backdrop-blur-3xl shadow-[0_20px_80px_rgba(0,0,0,0.3)] overflow-hidden transform-gpu origin-bottom-right transition-all duration-300 ease-out",
+              // 🚀 ĐỒNG BỘ THEME CHÍNH: Thay đổi duration-300 thành duration-500 ease-in-out
+              "fixed z-[99999] flex flex-col bg-white/95 dark:bg-[#0B0F19]/95 backdrop-blur-3xl shadow-[0_20px_80px_rgba(0,0,0,0.3)] overflow-hidden transform-gpu origin-bottom-right transition-all duration-500 ease-in-out",
               isMinimized 
                 ? "bottom-4 left-4 right-4 sm:left-auto sm:bottom-6 sm:right-6 sm:w-[350px] rounded-2xl border border-slate-200/50 dark:border-white/10" 
                 : "top-0 left-0 right-0 bottom-0 h-[100dvh] w-full rounded-none sm:top-auto sm:left-auto sm:bottom-6 sm:right-6 sm:w-[420px] sm:h-[75vh] sm:max-h-[800px] sm:rounded-[2rem] sm:border border-slate-200/50 dark:border-white/10"
@@ -80,40 +81,41 @@ export default function AIChatbot() {
             {/* HEADER CHAT WINDOW */}
             <div 
               className={cn(
-                "flex items-center justify-between px-5 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 cursor-pointer select-none shrink-0 transition-all duration-300",
+                // 🚀 ĐỒNG BỘ THEME HEADER
+                "flex items-center justify-between px-5 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 cursor-pointer select-none shrink-0 transition-all duration-500 ease-in-out",
                 isMinimized 
                   ? "py-3 sm:py-4" 
                   : "py-4 pt-[max(1rem,env(safe-area-inset-top))] sm:pt-4" 
               )}
               onClick={() => setIsMinimized(!isMinimized)}
             >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-md shadow-inner shrink-0">
-                  <Bot className="w-5 h-5 text-white" />
+              <div className="flex items-center gap-3 transition-all duration-500 ease-in-out">
+                <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-md shadow-inner shrink-0 transition-all duration-500 ease-in-out">
+                  <Bot className="w-5 h-5 text-white transition-all duration-500 ease-in-out" />
                 </div>
-                <div className="min-w-0">
-                  <h3 className="text-sm font-black text-white leading-tight flex items-center gap-2 truncate">
+                <div className="min-w-0 transition-all duration-500 ease-in-out">
+                  <h3 className="text-sm font-black text-white leading-tight flex items-center gap-2 truncate transition-all duration-500 ease-in-out">
                     TTH AI Core 
-                    <span className="flex h-2 w-2 relative shrink-0">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    <span className="flex h-2 w-2 relative shrink-0 transition-all duration-500 ease-in-out">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 transition-all duration-500 ease-in-out"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 transition-all duration-500 ease-in-out"></span>
                     </span>
                   </h3>
-                  <p className="text-[11px] font-medium text-indigo-100 mt-0.5 truncate">Trợ lý Phân tích Hệ thống</p>
+                  <p className="text-[11px] font-medium text-indigo-100 mt-0.5 truncate transition-all duration-500 ease-in-out">Trợ lý Phân tích Hệ thống</p>
                 </div>
               </div>
               
-              <div className="flex items-center gap-1 text-white/80 shrink-0 ml-2">
+              <div className="flex items-center gap-1 text-white/80 shrink-0 ml-2 transition-all duration-500 ease-in-out">
                 {!isMinimized && (
-                  <button onClick={(e) => { e.stopPropagation(); clearChat(); }} className="p-2 hover:bg-white/20 hover:text-white rounded-lg transition-colors" title="Làm mới">
-                    <RefreshCcw className="w-4 h-4" />
+                  <button onClick={(e) => { e.stopPropagation(); clearChat(); }} className="p-2 hover:bg-white/20 hover:text-white rounded-lg transition-all duration-500 ease-in-out" title="Làm mới">
+                    <RefreshCcw className="w-4 h-4 transition-all duration-500 ease-in-out" />
                   </button>
                 )}
-                <button onClick={(e) => { e.stopPropagation(); setIsMinimized(!isMinimized); }} className="p-2 hover:bg-white/20 hover:text-white rounded-lg transition-colors">
-                  {isMinimized ? <Maximize2 className="w-4 h-4" /> : <Minus className="w-4 h-4" />}
+                <button onClick={(e) => { e.stopPropagation(); setIsMinimized(!isMinimized); }} className="p-2 hover:bg-white/20 hover:text-white rounded-lg transition-all duration-500 ease-in-out">
+                  {isMinimized ? <Maximize2 className="w-4 h-4 transition-all duration-500 ease-in-out" /> : <Minus className="w-4 h-4 transition-all duration-500 ease-in-out" />}
                 </button>
-                <button onClick={(e) => { e.stopPropagation(); setIsOpen(false); }} className="p-2 hover:bg-rose-500 hover:text-white rounded-lg transition-colors">
-                  <X className="w-5 h-5" />
+                <button onClick={(e) => { e.stopPropagation(); setIsOpen(false); }} className="p-2 hover:bg-rose-500 hover:text-white rounded-lg transition-all duration-500 ease-in-out">
+                  <X className="w-5 h-5 transition-all duration-500 ease-in-out" />
                 </button>
               </div>
             </div>
@@ -123,7 +125,7 @@ export default function AIChatbot() {
               {!isMinimized && (
                 <motion.div 
                   initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
-                  className="flex flex-col flex-1 overflow-hidden"
+                  className="flex flex-col flex-1 overflow-hidden transition-all duration-500 ease-in-out"
                 >
                   <MessageList messages={messages} isTyping={isTyping} />
                   <ChatInput 
